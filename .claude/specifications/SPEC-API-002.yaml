@@ -1,0 +1,95 @@
+# SUPERSEDED by SPEC-API-003 (2nd architect-review pass found no ownership for
+# rescheduling a Reminder on Deadline/Task edit, no cascade-dismiss of Reminders on
+# delete, no read-time soft-delete exclusion at the API layer, and no confirmation-window
+# expiry check on the voice confirm route). Kept for historical audit-trail purposes only.
+id: SPEC-API-002
+version: 0.1.0
+kind: api
+title: Personal Assistant application API surface
+status: deprecated
+context_and_scope:
+  in_scope:
+    - Collection and id-addressed CRUD routes for Course, Deadline, Task, Note backed by SPEC-DATA-002's tables (list/create at the collection route, get/update/soft-delete at the id-addressed route)
+    - Reminder creation as an automatic side effect of Deadline/Task creation (not a separate user-facing create route) — operationalizes SPEC-CORE-002 AC-006
+    - Reminder list/read endpoint, so undelivered reminders stay visible/queryable per NC-006
+    - Reminder-acknowledgment endpoint (acknowledge/dismiss/snooze) against SPEC-CORE-002's reminder state machine
+    - Voice intake endpoint that creates or continues a SPEC-VOICE-002 session, persisted via SPEC-DATA-002's voice_sessions table
+    - Voice confirm/decline endpoints addressed by session id, so the AwaitingConfirmation round trip resolves against the originally persisted pending_mutation, not a re-parsed one
+    - Auth session handling (Supabase Auth sign-in/out, session-refresh callback)
+  out_of_scope:
+    - Feedback/personalization endpoint (deferred to its own spec update once the underlying schema is added at implementation time)
+    - Third-party productivity-tool integrations
+    - Any endpoint that produces an autonomous external-world side effect without per-action confirmation
+    - Rate limiting implementation details (NC-API-005 states the requirement; the backing store/middleware is an implementation-time decision, not modeled here)
+  external_dependencies:
+    - Supabase Auth (session/JWT verification)
+    - SPEC-VOICE-002 voice_session state machine (orchestrates the voice intake/confirm/decline endpoints)
+  shared_schemas:
+    - "ApiResponse { success: boolean, data: object|null, error: string|null, meta: { total, page, limit } (paginated endpoints only) }"
+    - CoursePayload { code, name, term, meeting_pattern, location, instructor, reminders_enabled, reminder_lead_minutes }
+    - DeadlinePayload { course_id, title, due_at, priority }
+    - TaskPayload { title, due_at (optional), tags, reminder_lead_minutes }
+    - NotePayload { body, linked_course_id (optional), linked_task_id (optional), linked_date (optional) }
+    - "VoiceConfirmResponse { session_id, executed: boolean, result: object|null }"
+state_machines: []
+negative_constraints:
+  - id: NC-API-001
+    message: Every route MUST verify the authenticated Supabase user and scope all reads/writes to that user's own rows — never rely on RLS alone at the API layer.
+    severity: critical
+  - id: NC-API-002
+    message: State fields (deadlines.status, tasks.status, reminders.acknowledgment_state) MUST NOT be settable to an arbitrary value via a generic update; they may only change through an explicit transition action validated against SPEC-CORE-002's deadline_assignment, task_lifecycle, and reminder state machines respectively.
+    severity: critical
+  - id: NC-API-003
+    message: The voice confirm endpoint MUST NOT execute a mutating intent except by resolving the target session's persisted pending_mutation — it must never accept or re-derive a mutation payload from the confirm request itself.
+    severity: critical
+  - id: NC-API-004
+    message: Error responses MUST NOT leak internal details (stack traces, raw database errors) to the client.
+    severity: high
+  - id: NC-API-005
+    message: All state-changing endpoints MUST be rate-limited.
+    severity: medium
+  - id: NC-API-006
+    message: The Deadline/Task/Note delete route MUST perform a soft delete (set deleted_at) and MUST NOT issue a hard DELETE — operationalizes SPEC-DATA-002's NC-DATA-005 at the API layer.
+    severity: critical
+acceptance_criteria:
+  - id: AC-1
+    given: an authenticated request to create a Deadline with a valid payload
+    when: the request is handled
+    then: a row is created scoped to that user, a Reminder is automatically scheduled per SPEC-CORE-002 AC-006, and the response follows the ApiResponse success envelope with the created entity
+    invariant: true
+  - id: AC-2
+    given: a request attempting to set a deadline's or task's status directly to an arbitrary value
+    when: the value does not correspond to a valid transition event in the entity's governing state machine
+    then: the request is rejected with an error envelope, not silently applied
+    invariant: true
+  - id: AC-3
+    given: a voice-intake request whose resolved intent is mutating
+    when: the endpoint processes it
+    then: it persists the pending_mutation via the voice session and returns an AwaitingConfirmation response naming the session id, rather than performing the mutation
+    invariant: true
+  - id: AC-4
+    given: a request from user A addressing a resource id owned by user B
+    when: the route handler runs
+    then: it returns not-found/forbidden rather than another user's data, independent of RLS
+    invariant: true
+  - id: AC-5
+    given: a reminder-acknowledgment request targeting a reminder not in the Delivered state
+    when: the request is handled
+    then: it is rejected as an invalid transition per SPEC-CORE-002's reminder state machine
+    invariant: true
+  - id: AC-6
+    given: a voice confirm request naming a session id in AwaitingConfirmation
+    when: the request is handled
+    then: the session's persisted pending_mutation is executed exactly as it was when AwaitingConfirmation began, and the session responds with the result
+    invariant: true
+  - id: AC-7
+    given: a DELETE request against a Deadline, Task, or Note owned by the requesting user
+    when: the request is handled
+    then: the row's deleted_at is set and the response confirms soft deletion; no SQL DELETE is issued
+    invariant: true
+depends_on:
+  - SPEC-CORE-002
+  - SPEC-DATA-002
+  - SPEC-VOICE-002
+constitution_rules:
+  - NC-SQL-CONCAT

@@ -1,0 +1,110 @@
+# SUPERSEDED by SPEC-INFRA-002 (architect-review found the ENV contract wasn't
+# Next.js-shaped — no NEXT_PUBLIC_ distinction — and the service-role key's blast
+# radius was unscoped — see decision b6131129-9b10-44e6-bf5f-a63279143d25). Kept for
+# historical audit-trail purposes only.
+id: SPEC-INFRA-001
+version: 0.1.0
+kind: infra
+title: Deploy target and runtime contract
+status: deprecated
+context_and_scope:
+  in_scope:
+    - Vercel deploy target for the Next.js app
+    - Environment variable contract for Supabase and voice-vendor credentials
+    - pg_cron reminder-dispatch job definition and its runtime lifecycle (required because Vercel Hobby Cron cannot run more than once/day, per the recorded stack decision)
+    - Health check contract
+  out_of_scope:
+    - CI pipeline definition
+    - The reminder-dispatch Edge Function's business logic (its deploy/runtime contract is covered here; its internals belong to the reminder-engine implementation item)
+  external_dependencies:
+    - Vercel
+    - Supabase (Postgres, pg_cron, Edge Functions runtime)
+  shared_schemas:
+    - ENV { SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY, DEEPGRAM_API_KEY, ELEVENLABS_API_KEY, OPENAI_API_KEY }
+state_machines:
+  - name: rollout
+    states:
+      - BUILDING
+      - STAGED
+      - LIVE
+      - ROLLED_BACK
+    initial: BUILDING
+    transitions:
+      - from: BUILDING
+        event: stage
+        to: STAGED
+      - from: STAGED
+        event: promote
+        to: LIVE
+      - from: LIVE
+        event: rollback
+        to: ROLLED_BACK
+    forbidden:
+      - from: BUILDING
+        to: LIVE
+        reason: must pass through STAGED and a passing health check before receiving live traffic
+  - name: reminder_cron_job
+    states:
+      - Scheduled
+      - Running
+      - Succeeded
+      - Failed
+    initial: Scheduled
+    transitions:
+      - from: Scheduled
+        event: tick
+        to: Running
+      - from: Running
+        event: dispatch_completed
+        to: Succeeded
+      - from: Running
+        event: dispatch_errored
+        to: Failed
+      - from: Failed
+        event: retry_next_tick
+        to: Scheduled
+      - from: Succeeded
+        event: next_tick
+        to: Scheduled
+    forbidden:
+      - from: Failed
+        to: Succeeded
+        reason: a failed dispatch run must not be silently marked successful; it must actually complete a dispatch pass first — protects SPEC-CORE-001's NC-006
+negative_constraints:
+  - id: NC-INF-001
+    message: Secrets (Supabase service role key, Deepgram/ElevenLabs/OpenAI API keys) MUST NOT be committed to the repo or baked into any build artifact; inject at runtime via Vercel/Supabase environment configuration only.
+    severity: critical
+  - id: NC-INF-002
+    message: The reminder-dispatch job MUST NOT be promoted to LIVE without a passing health check confirming it can reach Postgres and the notification channel.
+    severity: high
+  - id: NC-INF-003
+    message: A Failed reminder-dispatch run MUST NOT be silently marked Succeeded; it must retry on the next scheduled tick and remain visible/queryable while failing.
+    severity: high
+  - id: NC-INF-004
+    message: The service MUST NOT serve LIVE production traffic without TLS termination.
+    severity: critical
+acceptance_criteria:
+  - id: AC-1
+    given: a freshly built deployment
+    when: promotion to LIVE is attempted directly from BUILDING
+    then: it is blocked (forbidden BUILDING->LIVE)
+    invariant: true
+  - id: AC-2
+    given: the reminder-dispatch cron job
+    when: a tick fires and the dispatch query succeeds
+    then: the job transitions Running to Succeeded and due reminders are moved out of Scheduled
+    invariant: true
+  - id: AC-3
+    given: the reminder-dispatch cron job
+    when: a tick fires and the dispatch query errors
+    then: the job transitions Running to Failed, the failure is logged and visible, and the next scheduled tick still fires
+    invariant: true
+  - id: AC-4
+    given: the app booting with a required env var missing from the ENV contract
+    when: startup runs
+    then: it fails fast with a clear error rather than starting in a broken state
+    invariant: true
+depends_on:
+  - SPEC-DATA-001
+constitution_rules:
+  - NC-SECRETS

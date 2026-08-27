@@ -1,0 +1,127 @@
+# SUPERSEDED by SPEC-VOICE-002 (architect-review found no backing table for the
+# VoiceSession entity, so the confirmation round-trip across two stateless HTTP
+# requests had nowhere to persist — see decision b6131129-9b10-44e6-bf5f-a63279143d25).
+# Kept for historical audit-trail purposes only.
+id: SPEC-VOICE-001
+version: 0.1.0
+kind: domain
+title: Voice interaction session lifecycle
+status: deprecated
+context_and_scope:
+  in_scope:
+    - "Voice session state machine: capture, transcription, intent resolution, confirmation, execution, spoken response"
+    - Routing a resolved intent to the corresponding SPEC-CORE-001 entity operation (create/update Deadline, Task, Note; query schedule; acknowledge Reminder)
+    - Ambiguous/low-confidence intent handling that asks for clarification rather than guessing (NC-004)
+    - Applying the recorded latency (p50 ≤1.2s / p95 ≤2.5s end-to-end) and intent-accuracy (≥95% first-try) bar as enforceable acceptance criteria
+    - Discarding raw captured audio once transcription completes, per the recorded retention decision
+  out_of_scope:
+    - STT/TTS vendor integration code itself (Deepgram/ElevenLabs client wiring is an implementation concern, not modeled here)
+    - Extended multi-turn open-ended conversation or general chit-chat beyond a single clarification round-trip — v1 supports task-directed commands only
+    - Wake-word or always-listening background capture — v1 assumes explicit user-initiated capture (press-to-talk)
+  external_dependencies:
+    - Deepgram (speech-to-text, per the recorded stack decision)
+    - ElevenLabs Flash v2.5 with OpenAI TTS fallback (text-to-speech, per the recorded stack decision)
+    - An LLM for intent parsing/NLU (vendor not yet decided — flagged as a linked-but-separate decision in the recorded stack decision)
+  shared_schemas:
+    - VoiceSession { id, user_id, started_at, ended_at, transcript, resolved_intent, confidence_score }
+state_machines:
+  - name: voice_session
+    states:
+      - Idle
+      - Listening
+      - Transcribing
+      - IntentResolved
+      - IntentAmbiguous
+      - AwaitingConfirmation
+      - Executing
+      - Responding
+    initial: Idle
+    transitions:
+      - from: Idle
+        event: user_initiates_capture
+        to: Listening
+      - from: Listening
+        event: capture_ends
+        to: Transcribing
+      - from: Transcribing
+        event: intent_resolved_high_confidence
+        to: IntentResolved
+      - from: Transcribing
+        event: intent_ambiguous_or_low_confidence
+        to: IntentAmbiguous
+      - from: IntentAmbiguous
+        event: clarification_requested
+        to: Responding
+      - from: IntentResolved
+        event: read_only_query_resolved
+        to: Executing
+      - from: IntentResolved
+        event: mutating_action_resolved
+        to: AwaitingConfirmation
+      - from: AwaitingConfirmation
+        event: user_confirms
+        to: Executing
+      - from: AwaitingConfirmation
+        event: user_declines
+        to: Responding
+      - from: Executing
+        event: execution_completed
+        to: Responding
+      - from: Executing
+        event: execution_failed
+        to: Responding
+      - from: Responding
+        event: response_delivered
+        to: Idle
+    forbidden:
+      - from: Executing
+        to: Idle
+        reason: execution must never complete silently; it must always pass through Responding so the user is told what happened, success or failure
+      - from: Transcribing
+        to: Executing
+        reason: no intent may be executed before it has been resolved and, if mutating, explicitly confirmed — skipping straight from raw transcription to execution would bypass the NC-002 confirmation requirement entirely
+      - from: Idle
+        to: Executing
+        reason: nothing may execute outside an active session; guards against a stray or replayed execution event firing with no live session context
+negative_constraints:
+  - id: NC-VOICE-001
+    message: An intent with external-world or data-mutating effects MUST NOT execute without first passing through AwaitingConfirmation and receiving user_confirms — operationalizes SPEC-CORE-001's NC-002 at the session-lifecycle level.
+    severity: critical
+  - id: NC-VOICE-002
+    message: A session MUST NOT proceed on a resolved intent whose confidence score is below the recorded ≥95% first-try accuracy bar; below threshold it MUST route to IntentAmbiguous and ask for clarification rather than guess — operationalizes NC-004.
+    severity: high
+  - id: NC-VOICE-003
+    message: Raw voice audio captured during Listening MUST NOT be persisted past the Transcribing step; only the resulting transcript and resolved intent may be retained, per the recorded feedback-retention decision.
+    severity: critical
+  - id: NC-VOICE-004
+    message: The Responding step MUST begin within the recorded p95 latency budget (≤2.5s from the end of Listening); a session that cannot meet this must emit a lightweight acknowledgment rather than leaving the user in silence past the budget.
+    severity: medium
+acceptance_criteria:
+  - id: AC-1
+    given: a resolved intent with confidence at or above the accuracy bar for a read-only query
+    when: read_only_query_resolved fires
+    then: the session moves directly to Executing without requiring confirmation, and Responding begins within the p95 2.5s budget
+    invariant: true
+  - id: AC-2
+    given: a resolved intent that is mutating (create/update/delete a Deadline, Task, or Note)
+    when: mutating_action_resolved fires
+    then: the session moves to AwaitingConfirmation and does not execute until user_confirms is received
+    invariant: true
+  - id: AC-3
+    given: a transcript whose resolved-intent confidence is below the accuracy bar
+    when: intent_ambiguous_or_low_confidence fires
+    then: the session asks a clarifying question via Responding rather than guessing, and the underlying entity is left unmodified
+    invariant: true
+  - id: AC-4
+    given: the Listening step has completed and Transcribing has produced a transcript
+    when: the session proceeds past Transcribing
+    then: the raw audio captured during Listening is discarded and only the transcript and derived intent persist
+    invariant: true
+  - id: AC-5
+    given: a session in AwaitingConfirmation
+    when: user_declines fires
+    then: no entity is created or modified, and the session responds with an acknowledgment of the cancellation
+    invariant: true
+depends_on:
+  - SPEC-CORE-001
+constitution_rules: []

@@ -1,0 +1,142 @@
+# SUPERSEDED by SPEC-DATA-002 (architect-review found missing voice_sessions table,
+# missing reminders.snooze_until/delivered_at, tasks.status wrongly reusing
+# deadline_status, and undefined delete semantics — see decision
+# b6131129-9b10-44e6-bf5f-a63279143d25). Kept for historical audit-trail purposes only.
+id: SPEC-DATA-001
+version: 0.1.0
+kind: data
+title: Personal Assistant Postgres schema
+status: deprecated
+context_and_scope:
+  in_scope:
+    - Postgres schema for courses, deadlines, tasks, notes, and reminders, plus the profiles table backing SPEC-CORE-001's Account entity
+    - Enum types backing the deadline_assignment and reminder state machines from SPEC-CORE-001
+    - Row Level Security policies scoping every table to the authenticated user (auth.uid())
+    - Timestamp/typing conventions for due dates and reminder trigger times
+  out_of_scope:
+    - Feedback/personalization storage schema (deferred until the Step 3 retention-policy decision)
+    - pg_cron job definition and Edge Function dispatch logic (belongs to the infra spec and the reminder-engine implementation item)
+    - Supabase Auth provider configuration itself (assumed present, not modeled here)
+  external_dependencies:
+    - Supabase Postgres
+    - Supabase Auth auth.users table (referenced by profiles.id)
+  shared_schemas:
+    - profiles { id uuid PK references auth.users(id), email text, created_at timestamptz }
+    - courses { id uuid PK, user_id uuid FK profiles(id), code text, name text, term text, meeting_pattern text, location text, instructor text, created_at timestamptz, updated_at timestamptz }
+    - deadlines { id uuid PK, user_id uuid FK profiles(id), course_id uuid FK courses(id), title text, due_at timestamptz, status deadline_status, priority text, created_at timestamptz, updated_at timestamptz }
+    - tasks { id uuid PK, user_id uuid FK profiles(id), title text, due_at timestamptz NULL, status deadline_status, tags text[], created_at timestamptz, updated_at timestamptz }
+    - notes { id uuid PK, user_id uuid FK profiles(id), body text, linked_course_id uuid FK courses(id) NULL, linked_task_id uuid FK tasks(id) NULL, linked_date date NULL, created_at timestamptz }
+    - reminders { id uuid PK, user_id uuid FK profiles(id), target_type text CHECK IN ('deadline','task'), target_id uuid, trigger_at timestamptz, channel text, acknowledgment_state reminder_status, created_at timestamptz }
+state_machines:
+  - name: deadline_status
+    states:
+      - Not Started
+      - In Progress
+      - Submitted
+      - Overdue
+      - Completed
+      - Cancelled
+    initial: Not Started
+    transitions:
+      - from: Not Started
+        event: user_marks_in_progress
+        to: In Progress
+      - from: In Progress
+        event: user_marks_submitted
+        to: Submitted
+      - from: Not Started
+        event: due_date_passed_incomplete
+        to: Overdue
+      - from: In Progress
+        event: due_date_passed_incomplete
+        to: Overdue
+      - from: Overdue
+        event: user_marks_submitted
+        to: Submitted
+      - from: Submitted
+        event: user_confirms_done
+        to: Completed
+      - from: Not Started
+        event: user_cancels
+        to: Cancelled
+      - from: In Progress
+        event: user_cancels
+        to: Cancelled
+    forbidden:
+      - from: Completed
+        to: Not Started
+        reason: completed work must not silently reopen; mirrors SPEC-CORE-001 deadline_assignment
+      - from: Cancelled
+        to: In Progress
+        reason: cancelled items are terminal; mirrors SPEC-CORE-001 deadline_assignment
+      - from: Overdue
+        to: Not Started
+        reason: an overdue transition cannot be un-happened; mirrors SPEC-CORE-001 deadline_assignment
+  - name: reminder_status
+    states:
+      - Scheduled
+      - Delivered
+      - Acknowledged
+      - Dismissed
+      - Snoozed
+      - Expired
+    initial: Scheduled
+    transitions:
+      - from: Scheduled
+        event: trigger_time_reached
+        to: Delivered
+      - from: Delivered
+        event: user_acknowledges
+        to: Acknowledged
+      - from: Delivered
+        event: user_dismisses
+        to: Dismissed
+      - from: Delivered
+        event: user_snoozes
+        to: Snoozed
+      - from: Snoozed
+        event: snooze_time_reached
+        to: Delivered
+      - from: Delivered
+        event: no_response_timeout
+        to: Expired
+    forbidden:
+      - from: Acknowledged
+        to: Scheduled
+        reason: an acknowledged reminder occurrence is terminal; mirrors SPEC-CORE-001 reminder
+      - from: Expired
+        to: Delivered
+        reason: expired reminders must not silently re-fire; mirrors SPEC-CORE-001 reminder
+negative_constraints:
+  - id: NC-DATA-001
+    message: Every table holding user data MUST have a user_id column enforced via Row Level Security restricting rows to auth.uid() = user_id; no such table may be queried with RLS disabled.
+    severity: critical
+  - id: NC-DATA-002
+    message: Status/state columns (deadlines.status, tasks.status, reminders.acknowledgment_state) MUST use the Postgres enum types defined in this spec, never free-text, so invalid states are rejected at the schema level.
+    severity: high
+  - id: NC-DATA-003
+    message: The forbidden transitions declared in SPEC-CORE-001's state machines MUST be enforced by a transition-guard trigger on UPDATE, not left to application code alone.
+    severity: high
+  - id: NC-DATA-004
+    message: All due-date and trigger-time columns MUST use timestamptz, never text or naive timestamp, since reminder scheduling correctness depends on unambiguous timezone handling.
+    severity: high
+acceptance_criteria:
+  - id: AC-1
+    given: a deadline row in a non-terminal or Overdue state
+    when: an UPDATE attempts a forbidden transition (e.g. Completed to Not Started)
+    then: the transaction is rejected by the database trigger, not merely by application-layer logic
+    invariant: true
+  - id: AC-2
+    given: two different authenticated users, each with their own rows across courses/deadlines/tasks/notes/reminders
+    when: user A queries any of these tables
+    then: no row belonging to user B is ever returned, enforced by RLS rather than by query-time filtering alone
+    invariant: true
+  - id: AC-3
+    given: a reminder row with acknowledgment_state Scheduled and trigger_at in the past
+    when: the reminder-dispatch query runs
+    then: the row is selected for delivery and its acknowledgment_state transitions to Delivered
+    invariant: true
+depends_on:
+  - SPEC-CORE-001
+constitution_rules:
+  - NC-SQL-CONCAT

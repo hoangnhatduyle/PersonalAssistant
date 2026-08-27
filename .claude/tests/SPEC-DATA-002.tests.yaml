@@ -1,0 +1,93 @@
+spec_id: SPEC-DATA-002
+generated_at: 2026-08-27T13:03:58.196Z
+cases:
+  - id: T-SPEC-DATA-002-AC-AC_1
+    kind: acceptance
+    traces_to: SPEC-DATA-002#AC-1
+    assertion: given a deadline or task row in a non-terminal or Overdue/Open state, when an UPDATE attempts a forbidden transition (e.g. deadline Completed to Not Started, or task Done to Open), then the transaction is rejected by the database trigger, not merely by application-layer logic
+    invariant: true
+  - id: T-SPEC-DATA-002-AC-AC_2
+    kind: acceptance
+    traces_to: SPEC-DATA-002#AC-2
+    assertion: given two different authenticated users, each with their own rows across courses/deadlines/tasks/notes/reminders/voice_sessions, when user A queries any of these tables, then no row belonging to user B is ever returned, enforced by RLS rather than by query-time filtering alone
+    invariant: true
+  - id: T-SPEC-DATA-002-AC-AC_3
+    kind: acceptance
+    traces_to: SPEC-DATA-002#AC-3
+    assertion: given a reminder row that is either (a) acknowledgment_state Scheduled with trigger_at in the past, or (b) acknowledgment_state Snoozed with snooze_until in the past, when the reminder-dispatch query runs, then the row is selected for delivery, its acknowledgment_state transitions to Delivered, and delivered_at is set to the current time
+    invariant: true
+  - id: T-SPEC-DATA-002-AC-AC_4
+    kind: acceptance
+    traces_to: SPEC-DATA-002#AC-4
+    assertion: given a voice_sessions row in state AwaitingConfirmation with a pending_mutation payload, created by one HTTP request, when a subsequent, separate HTTP request reads that row by its id, then the same pending_mutation payload is available to execute or discard — confirmation state survives across stateless request boundaries
+    invariant: true
+  - id: T-SPEC-DATA-002-AC-AC_5
+    kind: acceptance
+    traces_to: SPEC-DATA-002#AC-5
+    assertion: given a user requests deletion of a deadline, task, or note, when the deletion is processed, then the row's deleted_at is set and the row remains queryable/recoverable; it is never removed from the table
+    invariant: true
+  - id: T-SPEC-DATA-002-FORBID-deadline_status_Completed_Not_Started
+    kind: forbidden-transition
+    traces_to: SPEC-DATA-002#deadline_status:Completed->Not Started
+    assertion: "[deadline_status] transition Completed -> Not Started MUST be rejected (completed work must not silently reopen; mirrors SPEC-CORE-002 deadline_assignment)"
+    invariant: true
+  - id: T-SPEC-DATA-002-FORBID-deadline_status_Cancelled_In_Progress
+    kind: forbidden-transition
+    traces_to: SPEC-DATA-002#deadline_status:Cancelled->In Progress
+    assertion: "[deadline_status] transition Cancelled -> In Progress MUST be rejected (cancelled items are terminal; mirrors SPEC-CORE-002 deadline_assignment)"
+    invariant: true
+  - id: T-SPEC-DATA-002-FORBID-deadline_status_Overdue_Not_Started
+    kind: forbidden-transition
+    traces_to: SPEC-DATA-002#deadline_status:Overdue->Not Started
+    assertion: "[deadline_status] transition Overdue -> Not Started MUST be rejected (an overdue transition cannot be un-happened; mirrors SPEC-CORE-002 deadline_assignment)"
+    invariant: true
+  - id: T-SPEC-DATA-002-FORBID-task_status_Done_Open
+    kind: forbidden-transition
+    traces_to: SPEC-DATA-002#task_status:Done->Open
+    assertion: "[task_status] transition Done -> Open MUST be rejected (mirrors SPEC-CORE-002 task_lifecycle: a done task must not silently reopen)"
+    invariant: true
+  - id: T-SPEC-DATA-002-FORBID-task_status_Cancelled_Open
+    kind: forbidden-transition
+    traces_to: SPEC-DATA-002#task_status:Cancelled->Open
+    assertion: "[task_status] transition Cancelled -> Open MUST be rejected (mirrors SPEC-CORE-002 task_lifecycle: cancelled tasks are terminal)"
+    invariant: true
+  - id: T-SPEC-DATA-002-FORBID-reminder_status_Acknowledged_Scheduled
+    kind: forbidden-transition
+    traces_to: SPEC-DATA-002#reminder_status:Acknowledged->Scheduled
+    assertion: "[reminder_status] transition Acknowledged -> Scheduled MUST be rejected (an acknowledged reminder occurrence is terminal; mirrors SPEC-CORE-002 reminder)"
+    invariant: true
+  - id: T-SPEC-DATA-002-FORBID-reminder_status_Expired_Delivered
+    kind: forbidden-transition
+    traces_to: SPEC-DATA-002#reminder_status:Expired->Delivered
+    assertion: "[reminder_status] transition Expired -> Delivered MUST be rejected (expired reminders must not silently re-fire; mirrors SPEC-CORE-002 reminder)"
+    invariant: true
+  - id: T-SPEC-DATA-002-NC-NC_DATA_001
+    kind: negative-constraint
+    traces_to: SPEC-DATA-002#NC-DATA-001
+    assertion: Every table holding user data MUST have a user_id column enforced via Row Level Security restricting rows to auth.uid() = user_id; no such table may be queried with RLS disabled.
+    invariant: true
+  - id: T-SPEC-DATA-002-NC-NC_DATA_002
+    kind: negative-constraint
+    traces_to: SPEC-DATA-002#NC-DATA-002
+    assertion: Status/state columns (deadlines.status, tasks.status, reminders.acknowledgment_state) MUST use the Postgres enum types defined in this spec, never free-text, so invalid states are rejected at the schema level.
+    invariant: true
+  - id: T-SPEC-DATA-002-NC-NC_DATA_003
+    kind: negative-constraint
+    traces_to: SPEC-DATA-002#NC-DATA-003
+    assertion: The forbidden transitions declared in SPEC-CORE-002's deadline_assignment, task_lifecycle, and reminder state machines MUST be enforced by a transition-guard trigger on UPDATE, not left to application code alone.
+    invariant: true
+  - id: T-SPEC-DATA-002-NC-NC_DATA_004
+    kind: negative-constraint
+    traces_to: SPEC-DATA-002#NC-DATA-004
+    assertion: All due-date, trigger, snooze, and delivery timestamp columns MUST use timestamptz, never text or naive timestamp, since reminder scheduling correctness depends on unambiguous timezone handling.
+    invariant: true
+  - id: T-SPEC-DATA-002-NC-NC_DATA_005
+    kind: negative-constraint
+    traces_to: SPEC-DATA-002#NC-DATA-005
+    assertion: Deadlines, Tasks, and Notes rows MUST be soft-deleted (deleted_at set) rather than removed via SQL DELETE; application code MUST NOT issue a hard DELETE against these tables. Operationalizes SPEC-CORE-002's NC-008.
+    invariant: true
+  - id: T-SPEC-DATA-002-NC-NC_DATA_006
+    kind: negative-constraint
+    traces_to: SPEC-DATA-002#NC-DATA-006
+    assertion: notes.linked_course_id and notes.linked_task_id MUST use ON DELETE SET NULL, so soft-deleting or removing a linked Course/Task never cascade-deletes an unrelated Note.
+    invariant: true

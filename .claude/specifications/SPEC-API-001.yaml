@@ -1,0 +1,77 @@
+# SUPERSEDED by SPEC-API-002 (architect-review found missing id-addressed routes,
+# missing reminder list/ack ownership, and a voice confirm endpoint with no session-id
+# addressing — see decision b6131129-9b10-44e6-bf5f-a63279143d25). Kept for historical
+# audit-trail purposes only.
+id: SPEC-API-001
+version: 0.1.0
+kind: api
+title: Personal Assistant application API surface
+status: deprecated
+context_and_scope:
+  in_scope:
+    - CRUD routes for Course, Deadline, Task, Note backed by SPEC-DATA-001's tables
+    - Voice intake endpoint that drives the SPEC-VOICE-001 session state machine
+    - Reminder-acknowledgment endpoint (acknowledge/dismiss/snooze) against SPEC-CORE-001's reminder state machine
+    - Auth session handling (Supabase Auth sign-in/out, session-refresh callback)
+  out_of_scope:
+    - Feedback/personalization endpoint (deferred to its own spec update once the underlying schema is added at implementation time)
+    - Third-party productivity-tool integrations
+    - Any endpoint that produces an autonomous external-world side effect without per-action confirmation
+  external_dependencies:
+    - Supabase Auth (session/JWT verification)
+    - SPEC-VOICE-001 voice_session state machine (orchestrates the voice intake endpoint)
+  shared_schemas:
+    - "ApiResponse { success: boolean, data: object|null, error: string|null, meta: { total, page, limit } (paginated endpoints only) }"
+    - CoursePayload { code, name, term, meeting_pattern, location, instructor }
+    - DeadlinePayload { course_id, title, due_at, priority }
+    - TaskPayload { title, due_at (optional), tags }
+    - NotePayload { body, linked_course_id (optional), linked_task_id (optional), linked_date (optional) }
+state_machines: []
+negative_constraints:
+  - id: NC-API-001
+    message: Every route MUST verify the authenticated Supabase user and scope all reads/writes to that user's own rows — never rely on RLS alone at the API layer.
+    severity: critical
+  - id: NC-API-002
+    message: State fields (deadlines.status, tasks.status, reminders.acknowledgment_state) MUST NOT be settable to an arbitrary value via a generic update; they may only change through an explicit transition action validated against SPEC-CORE-001's allowed transitions.
+    severity: critical
+  - id: NC-API-003
+    message: The voice intake endpoint MUST NOT execute a mutating intent without the AwaitingConfirmation → user_confirms round trip defined in SPEC-VOICE-001.
+    severity: critical
+  - id: NC-API-004
+    message: Error responses MUST NOT leak internal details (stack traces, raw database errors) to the client.
+    severity: high
+  - id: NC-API-005
+    message: All state-changing endpoints MUST be rate-limited.
+    severity: medium
+acceptance_criteria:
+  - id: AC-1
+    given: an authenticated request to create a Deadline with a valid payload
+    when: the request is handled
+    then: a row is created scoped to that user and the response follows the ApiResponse success envelope with the created entity
+    invariant: true
+  - id: AC-2
+    given: a request attempting to set a deadline's status directly to an arbitrary value
+    when: the value does not correspond to a valid transition event
+    then: the request is rejected with an error envelope, not silently applied
+    invariant: true
+  - id: AC-3
+    given: a voice-intake request whose resolved intent is mutating and no prior confirmation exists
+    when: the endpoint processes it
+    then: it returns an AwaitingConfirmation response rather than performing the mutation
+    invariant: true
+  - id: AC-4
+    given: a request from user A addressing a resource id owned by user B
+    when: the route handler runs
+    then: it returns not-found/forbidden rather than another user's data, independent of RLS
+    invariant: true
+  - id: AC-5
+    given: a reminder-acknowledgment request targeting a reminder not in the Delivered state
+    when: the request is handled
+    then: it is rejected as an invalid transition per SPEC-CORE-001's reminder state machine
+    invariant: true
+depends_on:
+  - SPEC-CORE-001
+  - SPEC-DATA-001
+  - SPEC-VOICE-001
+constitution_rules:
+  - NC-SQL-CONCAT

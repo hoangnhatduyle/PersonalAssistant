@@ -1,0 +1,108 @@
+spec_id: SPEC-CORE-002
+generated_at: 2026-08-27T13:03:57.559Z
+cases:
+  - id: T-SPEC-CORE-002-AC-AC_001
+    kind: acceptance
+    traces_to: SPEC-CORE-002#AC-001
+    assertion: given a Deadline or Task with a due date, whose governing reminder setting (the Deadline's Course, or the Task itself) has reminders enabled, when the current time reaches due_at minus the configured reminder_lead_minutes, then a reminder is delivered via the user's chosen channel, and no such reminder is ever skipped unless reminders were explicitly disabled for that Course (for a Deadline) or that Task
+    invariant: true
+  - id: T-SPEC-CORE-002-AC-AC_002
+    kind: acceptance
+    traces_to: SPEC-CORE-002#AC-002
+    assertion: given an assignment has a due date, when the due date/time passes while status is not Submitted, Completed, or Cancelled, then the assignment transitions to Overdue and an overdue notification is generated; an assignment must never remain Not Started or In Progress past its due date without being marked Overdue
+    invariant: true
+  - id: T-SPEC-CORE-002-AC-AC_003
+    kind: acceptance
+    traces_to: SPEC-CORE-002#AC-003
+    assertion: given the user issues a spoken command to add a task or deadline, when speech-to-text successfully resolves an intent and its entities, then the corresponding Task/Deadline is created exactly once and the system confirms back to the user, by voice and/or text, within an agreed latency budget — never zero creations, never duplicates
+    invariant: true
+  - id: T-SPEC-CORE-002-AC-AC_004
+    kind: acceptance
+    traces_to: SPEC-CORE-002#AC-004
+    assertion: given the user gives feedback (positive/negative or a correction) on a suggestion or reminder, when the feedback is submitted, then it is stored and associated with that specific suggestion/reminder instance for future personalization; feedback must never be discarded silently — if it cannot be stored, the user is notified
+    invariant: true
+  - id: T-SPEC-CORE-002-AC-AC_005
+    kind: acceptance
+    traces_to: SPEC-CORE-002#AC-005
+    assertion: given the user authenticates from a new or different device, when authentication succeeds, then the same up-to-date schedule, tasks, deadlines, and notes are visible as on any other authenticated device; no client-local-only store may be the sole source of truth for account data
+    invariant: true
+  - id: T-SPEC-CORE-002-AC-AC_006
+    kind: acceptance
+    traces_to: SPEC-CORE-002#AC-006
+    assertion: given a Deadline or Task is created with a due date, when the creation succeeds, then a corresponding Reminder row is automatically scheduled at due_at minus the governing reminder_lead_minutes, so reminder delivery never depends on a separate manual scheduling step
+    invariant: true
+  - id: T-SPEC-CORE-002-AC-AC_007
+    kind: acceptance
+    traces_to: SPEC-CORE-002#AC-007
+    assertion: given a user requests deletion of a Deadline, Task, or Note, when the deletion is processed, then the row is soft-deleted (deleted_at set) rather than removed from the database, and remains recoverable
+    invariant: true
+  - id: T-SPEC-CORE-002-FORBID-deadline_assignment_Completed_Not_Started
+    kind: forbidden-transition
+    traces_to: SPEC-CORE-002#deadline_assignment:Completed->Not Started
+    assertion: "[deadline_assignment] transition Completed -> Not Started MUST be rejected (completed work must not silently reopen; a reopen must be its own explicit action, not an automatic transition)"
+    invariant: true
+  - id: T-SPEC-CORE-002-FORBID-deadline_assignment_Cancelled_In_Progress
+    kind: forbidden-transition
+    traces_to: SPEC-CORE-002#deadline_assignment:Cancelled->In Progress
+    assertion: "[deadline_assignment] transition Cancelled -> In Progress MUST be rejected (cancelled items are terminal; the user creates a new item rather than resurrecting one)"
+    invariant: true
+  - id: T-SPEC-CORE-002-FORBID-deadline_assignment_Overdue_Not_Started
+    kind: forbidden-transition
+    traces_to: SPEC-CORE-002#deadline_assignment:Overdue->Not Started
+    assertion: "[deadline_assignment] transition Overdue -> Not Started MUST be rejected (an overdue transition cannot be un-happened; only forward progress (Submitted) or Cancelled is valid from here)"
+    invariant: true
+  - id: T-SPEC-CORE-002-FORBID-task_lifecycle_Done_Open
+    kind: forbidden-transition
+    traces_to: SPEC-CORE-002#task_lifecycle:Done->Open
+    assertion: "[task_lifecycle] transition Done -> Open MUST be rejected (a done task must not silently reopen; mirrors the deadline_assignment precedent — reopening is its own explicit action, modeled as creating a new task rather than an automatic transition)"
+    invariant: true
+  - id: T-SPEC-CORE-002-FORBID-task_lifecycle_Cancelled_Open
+    kind: forbidden-transition
+    traces_to: SPEC-CORE-002#task_lifecycle:Cancelled->Open
+    assertion: "[task_lifecycle] transition Cancelled -> Open MUST be rejected (cancelled tasks are terminal, consistent with deadline_assignment's Cancelled semantics)"
+    invariant: true
+  - id: T-SPEC-CORE-002-FORBID-reminder_Acknowledged_Scheduled
+    kind: forbidden-transition
+    traces_to: SPEC-CORE-002#reminder:Acknowledged->Scheduled
+    assertion: "[reminder] transition Acknowledged -> Scheduled MUST be rejected (an acknowledged reminder occurrence is terminal; a new occurrence must be scheduled fresh, not rewound)"
+    invariant: true
+  - id: T-SPEC-CORE-002-FORBID-reminder_Expired_Delivered
+    kind: forbidden-transition
+    traces_to: SPEC-CORE-002#reminder:Expired->Delivered
+    assertion: "[reminder] transition Expired -> Delivered MUST be rejected (expired reminders must not silently re-fire without a new scheduling decision — protects the reminder-trust success metric)"
+    invariant: true
+  - id: T-SPEC-CORE-002-NC-NC_001
+    kind: negative-constraint
+    traces_to: SPEC-CORE-002#NC-001
+    assertion: Never delete or silently overwrite a user's deadline, task, or note without an explicit, confirmed user action.
+    invariant: true
+  - id: T-SPEC-CORE-002-NC-NC_002
+    kind: negative-constraint
+    traces_to: SPEC-CORE-002#NC-002
+    assertion: Never take an action with external-world effects (submitting, emailing, registering, purchasing) on the user's behalf without explicit per-action confirmation.
+    invariant: true
+  - id: T-SPEC-CORE-002-NC-NC_003
+    kind: negative-constraint
+    traces_to: SPEC-CORE-002#NC-003
+    assertion: Never transmit or store voice or text data unencrypted, at rest or in transit.
+    invariant: true
+  - id: T-SPEC-CORE-002-NC-NC_004
+    kind: negative-constraint
+    traces_to: SPEC-CORE-002#NC-004
+    assertion: Never present an inferred or guessed value (e.g., a class time or deadline) as a confirmed fact; inferred data must be visibly labeled as such.
+    invariant: true
+  - id: T-SPEC-CORE-002-NC-NC_005
+    kind: negative-constraint
+    traces_to: SPEC-CORE-002#NC-005
+    assertion: Never share user data with a third party beyond the minimum required to deliver an explicitly-requested feature (e.g., a chosen speech provider).
+    invariant: true
+  - id: T-SPEC-CORE-002-NC-NC_007
+    kind: negative-constraint
+    traces_to: SPEC-CORE-002#NC-007
+    assertion: The personalization/learning loop may only adjust reminder timing, tone, or suggestions — it must never alter core factual data (deadlines, class times) based on inferred behavior.
+    invariant: true
+  - id: T-SPEC-CORE-002-NC-NC_008
+    kind: negative-constraint
+    traces_to: SPEC-CORE-002#NC-008
+    assertion: Deadlines, Tasks, and Notes MUST be soft-deleted (a deleted_at marker set) rather than hard-deleted, so that a confirmed-but-misheard voice deletion (or any other mistaken deletion) remains recoverable — operationalizes NC-001 given the absence of point-in-time database recovery on the v1 hosting tier.
+    invariant: true

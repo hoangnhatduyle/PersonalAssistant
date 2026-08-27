@@ -1,0 +1,48 @@
+spec_id: SPEC-API-001
+generated_at: 2026-08-27T02:21:34.322Z
+cases:
+  - id: T-SPEC-API-001-AC-AC_1
+    kind: acceptance
+    traces_to: SPEC-API-001#AC-1
+    assertion: given an authenticated request to create a Deadline with a valid payload, when the request is handled, then a row is created scoped to that user and the response follows the ApiResponse success envelope with the created entity
+    invariant: true
+  - id: T-SPEC-API-001-AC-AC_2
+    kind: acceptance
+    traces_to: SPEC-API-001#AC-2
+    assertion: given a request attempting to set a deadline's status directly to an arbitrary value, when the value does not correspond to a valid transition event, then the request is rejected with an error envelope, not silently applied
+    invariant: true
+  - id: T-SPEC-API-001-AC-AC_3
+    kind: acceptance
+    traces_to: SPEC-API-001#AC-3
+    assertion: given a voice-intake request whose resolved intent is mutating and no prior confirmation exists, when the endpoint processes it, then it returns an AwaitingConfirmation response rather than performing the mutation
+    invariant: true
+  - id: T-SPEC-API-001-AC-AC_4
+    kind: acceptance
+    traces_to: SPEC-API-001#AC-4
+    assertion: given a request from user A addressing a resource id owned by user B, when the route handler runs, then it returns not-found/forbidden rather than another user's data, independent of RLS
+    invariant: true
+  - id: T-SPEC-API-001-AC-AC_5
+    kind: acceptance
+    traces_to: SPEC-API-001#AC-5
+    assertion: given a reminder-acknowledgment request targeting a reminder not in the Delivered state, when the request is handled, then it is rejected as an invalid transition per SPEC-CORE-001's reminder state machine
+    invariant: true
+  - id: T-SPEC-API-001-NC-NC_API_001
+    kind: negative-constraint
+    traces_to: SPEC-API-001#NC-API-001
+    assertion: Every route MUST verify the authenticated Supabase user and scope all reads/writes to that user's own rows — never rely on RLS alone at the API layer.
+    invariant: true
+  - id: T-SPEC-API-001-NC-NC_API_002
+    kind: negative-constraint
+    traces_to: SPEC-API-001#NC-API-002
+    assertion: State fields (deadlines.status, tasks.status, reminders.acknowledgment_state) MUST NOT be settable to an arbitrary value via a generic update; they may only change through an explicit transition action validated against SPEC-CORE-001's allowed transitions.
+    invariant: true
+  - id: T-SPEC-API-001-NC-NC_API_003
+    kind: negative-constraint
+    traces_to: SPEC-API-001#NC-API-003
+    assertion: The voice intake endpoint MUST NOT execute a mutating intent without the AwaitingConfirmation → user_confirms round trip defined in SPEC-VOICE-001.
+    invariant: true
+  - id: T-SPEC-API-001-NC-NC_API_004
+    kind: negative-constraint
+    traces_to: SPEC-API-001#NC-API-004
+    assertion: Error responses MUST NOT leak internal details (stack traces, raw database errors) to the client.
+    invariant: true

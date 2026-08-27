@@ -1,0 +1,182 @@
+# SUPERSEDED by SPEC-DATA-004 (2nd architect-review pass found: tasks lacked
+# reminders_enabled, courses had no soft-delete / deadlines.course_id had no ON DELETE
+# behavior, voice_sessions.state was unguarded free text with no expiry, no read-time
+# soft-delete exclusion rule, and no owner for the Delivered->Expired sweep). Kept for
+# historical audit-trail purposes only.
+id: SPEC-DATA-002
+version: 0.1.0
+kind: data
+title: Personal Assistant Postgres schema
+status: deprecated
+context_and_scope:
+  in_scope:
+    - Postgres schema for courses, deadlines, tasks, notes, reminders, and voice_sessions, plus the profiles table backing SPEC-CORE-002's Account entity
+    - Enum types backing the deadline_assignment, task_lifecycle, and reminder state machines from SPEC-CORE-002
+    - A voice_sessions table backing SPEC-VOICE-001's VoiceSession entity, so the AwaitingConfirmation → Executing round trip can persist across two separate HTTP requests
+    - Row Level Security policies scoping every table to the authenticated user (auth.uid())
+    - Soft-delete columns on Deadlines/Tasks/Notes (SPEC-CORE-002 NC-008) instead of hard DELETE
+    - Timestamp/typing conventions for due dates, reminder trigger/snooze/delivery times
+  out_of_scope:
+    - Feedback/personalization storage schema (deferred until implementation time, per the recorded retention-policy decision)
+    - pg_cron job definition and Edge Function dispatch logic (belongs to the infra spec and the reminder-engine implementation item)
+    - Supabase Auth provider configuration itself (assumed present, not modeled here)
+  external_dependencies:
+    - Supabase Postgres
+    - Supabase Auth auth.users table (referenced by profiles.id)
+  shared_schemas:
+    - profiles { id uuid PK references auth.users(id), email text, created_at timestamptz }
+    - courses { id uuid PK, user_id uuid FK profiles(id), code text, name text, term text, meeting_pattern text, location text, instructor text, reminders_enabled boolean DEFAULT true, reminder_lead_minutes int DEFAULT 60, created_at timestamptz, updated_at timestamptz }
+    - deadlines { id uuid PK, user_id uuid FK profiles(id), course_id uuid FK courses(id), title text, due_at timestamptz, status deadline_status, priority text, deleted_at timestamptz NULL, created_at timestamptz, updated_at timestamptz }
+    - tasks { id uuid PK, user_id uuid FK profiles(id), title text, due_at timestamptz NULL, status task_status, tags text[], reminder_lead_minutes int DEFAULT 60, deleted_at timestamptz NULL, created_at timestamptz, updated_at timestamptz }
+    - notes { id uuid PK, user_id uuid FK profiles(id), body text, linked_course_id uuid FK courses(id) ON DELETE SET NULL NULL, linked_task_id uuid FK tasks(id) ON DELETE SET NULL NULL, linked_date date NULL, deleted_at timestamptz NULL, created_at timestamptz }
+    - reminders { id uuid PK, user_id uuid FK profiles(id), target_type text CHECK IN ('deadline','task'), target_id uuid, trigger_at timestamptz, snooze_until timestamptz NULL, delivered_at timestamptz NULL, channel text, acknowledgment_state reminder_status, created_at timestamptz }
+    - voice_sessions { id uuid PK, user_id uuid FK profiles(id), state text, transcript text NULL, resolved_intent text NULL, confidence_score numeric NULL, pending_mutation jsonb NULL, started_at timestamptz, ended_at timestamptz NULL }
+state_machines:
+  - name: deadline_status
+    states:
+      - Not Started
+      - In Progress
+      - Submitted
+      - Overdue
+      - Completed
+      - Cancelled
+    initial: Not Started
+    transitions:
+      - from: Not Started
+        event: user_marks_in_progress
+        to: In Progress
+      - from: In Progress
+        event: user_marks_submitted
+        to: Submitted
+      - from: Not Started
+        event: due_date_passed_incomplete
+        to: Overdue
+      - from: In Progress
+        event: due_date_passed_incomplete
+        to: Overdue
+      - from: Overdue
+        event: user_marks_submitted
+        to: Submitted
+      - from: Submitted
+        event: user_confirms_done
+        to: Completed
+      - from: Not Started
+        event: user_cancels
+        to: Cancelled
+      - from: In Progress
+        event: user_cancels
+        to: Cancelled
+    forbidden:
+      - from: Completed
+        to: Not Started
+        reason: completed work must not silently reopen; mirrors SPEC-CORE-002 deadline_assignment
+      - from: Cancelled
+        to: In Progress
+        reason: cancelled items are terminal; mirrors SPEC-CORE-002 deadline_assignment
+      - from: Overdue
+        to: Not Started
+        reason: an overdue transition cannot be un-happened; mirrors SPEC-CORE-002 deadline_assignment
+  - name: task_status
+    states:
+      - Open
+      - Done
+      - Cancelled
+    initial: Open
+    transitions:
+      - from: Open
+        event: user_marks_done
+        to: Done
+      - from: Open
+        event: user_cancels
+        to: Cancelled
+    forbidden:
+      - from: Done
+        to: Open
+        reason: "mirrors SPEC-CORE-002 task_lifecycle: a done task must not silently reopen"
+      - from: Cancelled
+        to: Open
+        reason: "mirrors SPEC-CORE-002 task_lifecycle: cancelled tasks are terminal"
+  - name: reminder_status
+    states:
+      - Scheduled
+      - Delivered
+      - Acknowledged
+      - Dismissed
+      - Snoozed
+      - Expired
+    initial: Scheduled
+    transitions:
+      - from: Scheduled
+        event: trigger_time_reached
+        to: Delivered
+      - from: Delivered
+        event: user_acknowledges
+        to: Acknowledged
+      - from: Delivered
+        event: user_dismisses
+        to: Dismissed
+      - from: Delivered
+        event: user_snoozes
+        to: Snoozed
+      - from: Snoozed
+        event: snooze_time_reached
+        to: Delivered
+      - from: Delivered
+        event: no_response_timeout
+        to: Expired
+    forbidden:
+      - from: Acknowledged
+        to: Scheduled
+        reason: an acknowledged reminder occurrence is terminal; mirrors SPEC-CORE-002 reminder
+      - from: Expired
+        to: Delivered
+        reason: expired reminders must not silently re-fire; mirrors SPEC-CORE-002 reminder
+negative_constraints:
+  - id: NC-DATA-001
+    message: Every table holding user data MUST have a user_id column enforced via Row Level Security restricting rows to auth.uid() = user_id; no such table may be queried with RLS disabled.
+    severity: critical
+  - id: NC-DATA-002
+    message: Status/state columns (deadlines.status, tasks.status, reminders.acknowledgment_state) MUST use the Postgres enum types defined in this spec, never free-text, so invalid states are rejected at the schema level.
+    severity: high
+  - id: NC-DATA-003
+    message: The forbidden transitions declared in SPEC-CORE-002's deadline_assignment, task_lifecycle, and reminder state machines MUST be enforced by a transition-guard trigger on UPDATE, not left to application code alone.
+    severity: high
+  - id: NC-DATA-004
+    message: All due-date, trigger, snooze, and delivery timestamp columns MUST use timestamptz, never text or naive timestamp, since reminder scheduling correctness depends on unambiguous timezone handling.
+    severity: high
+  - id: NC-DATA-005
+    message: Deadlines, Tasks, and Notes rows MUST be soft-deleted (deleted_at set) rather than removed via SQL DELETE; application code MUST NOT issue a hard DELETE against these tables. Operationalizes SPEC-CORE-002's NC-008.
+    severity: critical
+  - id: NC-DATA-006
+    message: notes.linked_course_id and notes.linked_task_id MUST use ON DELETE SET NULL, so soft-deleting or removing a linked Course/Task never cascade-deletes an unrelated Note.
+    severity: high
+acceptance_criteria:
+  - id: AC-1
+    given: a deadline or task row in a non-terminal or Overdue/Open state
+    when: an UPDATE attempts a forbidden transition (e.g. deadline Completed to Not Started, or task Done to Open)
+    then: the transaction is rejected by the database trigger, not merely by application-layer logic
+    invariant: true
+  - id: AC-2
+    given: two different authenticated users, each with their own rows across courses/deadlines/tasks/notes/reminders/voice_sessions
+    when: user A queries any of these tables
+    then: no row belonging to user B is ever returned, enforced by RLS rather than by query-time filtering alone
+    invariant: true
+  - id: AC-3
+    given: a reminder row that is either (a) acknowledgment_state Scheduled with trigger_at in the past, or (b) acknowledgment_state Snoozed with snooze_until in the past
+    when: the reminder-dispatch query runs
+    then: the row is selected for delivery, its acknowledgment_state transitions to Delivered, and delivered_at is set to the current time
+    invariant: true
+  - id: AC-4
+    given: a voice_sessions row in state AwaitingConfirmation with a pending_mutation payload, created by one HTTP request
+    when: a subsequent, separate HTTP request reads that row by its id
+    then: the same pending_mutation payload is available to execute or discard — confirmation state survives across stateless request boundaries
+    invariant: true
+  - id: AC-5
+    given: a user requests deletion of a deadline, task, or note
+    when: the deletion is processed
+    then: the row's deleted_at is set and the row remains queryable/recoverable; it is never removed from the table
+    invariant: true
+depends_on:
+  - SPEC-CORE-002
+constitution_rules:
+  - NC-SQL-CONCAT

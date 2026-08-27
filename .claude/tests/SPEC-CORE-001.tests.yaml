@@ -1,0 +1,83 @@
+spec_id: SPEC-CORE-001
+generated_at: 2026-08-27T02:11:00.593Z
+cases:
+  - id: T-SPEC-CORE-001-AC-AC_001
+    kind: acceptance
+    traces_to: SPEC-CORE-001#AC-001
+    assertion: given a class schedule has been entered for the current term, when a class session falls within the configured reminder lead time, then a reminder is delivered via the user's chosen channel, and no class-session reminder is ever skipped unless the user has explicitly disabled reminders for that course
+    invariant: true
+  - id: T-SPEC-CORE-001-AC-AC_002
+    kind: acceptance
+    traces_to: SPEC-CORE-001#AC-002
+    assertion: given an assignment has a due date, when the due date/time passes while status is not Submitted, Completed, or Cancelled, then the assignment transitions to Overdue and an overdue notification is generated; an assignment must never remain Not Started or In Progress past its due date without being marked Overdue
+    invariant: true
+  - id: T-SPEC-CORE-001-AC-AC_003
+    kind: acceptance
+    traces_to: SPEC-CORE-001#AC-003
+    assertion: given the user issues a spoken command to add a task or deadline, when speech-to-text successfully resolves an intent and its entities, then the corresponding Task/Deadline is created exactly once and the system confirms back to the user, by voice and/or text, within an agreed latency budget — never zero creations, never duplicates
+    invariant: true
+  - id: T-SPEC-CORE-001-AC-AC_004
+    kind: acceptance
+    traces_to: SPEC-CORE-001#AC-004
+    assertion: given the user gives feedback (positive/negative or a correction) on a suggestion or reminder, when the feedback is submitted, then it is stored and associated with that specific suggestion/reminder instance for future personalization; feedback must never be discarded silently — if it cannot be stored, the user is notified
+    invariant: true
+  - id: T-SPEC-CORE-001-AC-AC_005
+    kind: acceptance
+    traces_to: SPEC-CORE-001#AC-005
+    assertion: given the user authenticates from a new or different device, when authentication succeeds, then the same up-to-date schedule, tasks, deadlines, and notes are visible as on any other authenticated device; no client-local-only store may be the sole source of truth for account data
+    invariant: true
+  - id: T-SPEC-CORE-001-FORBID-deadline_assignment_Completed_Not_Started
+    kind: forbidden-transition
+    traces_to: SPEC-CORE-001#deadline_assignment:Completed->Not Started
+    assertion: "[deadline_assignment] transition Completed -> Not Started MUST be rejected (completed work must not silently reopen; a reopen must be its own explicit action, not an automatic transition)"
+    invariant: true
+  - id: T-SPEC-CORE-001-FORBID-deadline_assignment_Cancelled_In_Progress
+    kind: forbidden-transition
+    traces_to: SPEC-CORE-001#deadline_assignment:Cancelled->In Progress
+    assertion: "[deadline_assignment] transition Cancelled -> In Progress MUST be rejected (cancelled items are terminal; the user creates a new item rather than resurrecting one)"
+    invariant: true
+  - id: T-SPEC-CORE-001-FORBID-deadline_assignment_Overdue_Not_Started
+    kind: forbidden-transition
+    traces_to: SPEC-CORE-001#deadline_assignment:Overdue->Not Started
+    assertion: "[deadline_assignment] transition Overdue -> Not Started MUST be rejected (an overdue transition cannot be un-happened; only forward progress (Submitted) or Cancelled is valid from here)"
+    invariant: true
+  - id: T-SPEC-CORE-001-FORBID-reminder_Acknowledged_Scheduled
+    kind: forbidden-transition
+    traces_to: SPEC-CORE-001#reminder:Acknowledged->Scheduled
+    assertion: "[reminder] transition Acknowledged -> Scheduled MUST be rejected (an acknowledged reminder occurrence is terminal; a new occurrence must be scheduled fresh, not rewound)"
+    invariant: true
+  - id: T-SPEC-CORE-001-FORBID-reminder_Expired_Delivered
+    kind: forbidden-transition
+    traces_to: SPEC-CORE-001#reminder:Expired->Delivered
+    assertion: "[reminder] transition Expired -> Delivered MUST be rejected (expired reminders must not silently re-fire without a new scheduling decision — protects the reminder-trust success metric)"
+    invariant: true
+  - id: T-SPEC-CORE-001-NC-NC_001
+    kind: negative-constraint
+    traces_to: SPEC-CORE-001#NC-001
+    assertion: Never delete or silently overwrite a user's deadline, task, or note without an explicit, confirmed user action.
+    invariant: true
+  - id: T-SPEC-CORE-001-NC-NC_002
+    kind: negative-constraint
+    traces_to: SPEC-CORE-001#NC-002
+    assertion: Never take an action with external-world effects (submitting, emailing, registering, purchasing) on the user's behalf without explicit per-action confirmation.
+    invariant: true
+  - id: T-SPEC-CORE-001-NC-NC_003
+    kind: negative-constraint
+    traces_to: SPEC-CORE-001#NC-003
+    assertion: Never transmit or store voice or text data unencrypted, at rest or in transit.
+    invariant: true
+  - id: T-SPEC-CORE-001-NC-NC_004
+    kind: negative-constraint
+    traces_to: SPEC-CORE-001#NC-004
+    assertion: Never present an inferred or guessed value (e.g., a class time or deadline) as a confirmed fact; inferred data must be visibly labeled as such.
+    invariant: true
+  - id: T-SPEC-CORE-001-NC-NC_005
+    kind: negative-constraint
+    traces_to: SPEC-CORE-001#NC-005
+    assertion: Never share user data with a third party beyond the minimum required to deliver an explicitly-requested feature (e.g., a chosen speech provider).
+    invariant: true
+  - id: T-SPEC-CORE-001-NC-NC_007
+    kind: negative-constraint
+    traces_to: SPEC-CORE-001#NC-007
+    assertion: The personalization/learning loop may only adjust reminder timing, tone, or suggestions — it must never alter core factual data (deadlines, class times) based on inferred behavior.
+    invariant: true

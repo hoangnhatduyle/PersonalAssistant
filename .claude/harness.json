@@ -1,0 +1,20 @@
+{
+  "project": "PersonalAssistant",
+  "stack": [
+    "next",
+    "react",
+    "react-dom",
+    "typescript",
+    "tailwindcss",
+    "eslint",
+    "@supabase/supabase-js",
+    "@supabase/ssr",
+    "@deepgram/sdk",
+    "@elevenlabs/elevenlabs-js",
+    "zod"
+  ],
+  "risk_floor": "critical",
+  "constitution_version": "0.1.0",
+  "harness_version": "0.4.0",
+  "created_at": "2026-08-27T01:27:27.175Z"
+}

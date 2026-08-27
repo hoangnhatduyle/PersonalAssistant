@@ -1,0 +1,63 @@
+spec_id: SPEC-DATA-001
+generated_at: 2026-08-27T02:21:31.588Z
+cases:
+  - id: T-SPEC-DATA-001-AC-AC_1
+    kind: acceptance
+    traces_to: SPEC-DATA-001#AC-1
+    assertion: given a deadline row in a non-terminal or Overdue state, when an UPDATE attempts a forbidden transition (e.g. Completed to Not Started), then the transaction is rejected by the database trigger, not merely by application-layer logic
+    invariant: true
+  - id: T-SPEC-DATA-001-AC-AC_2
+    kind: acceptance
+    traces_to: SPEC-DATA-001#AC-2
+    assertion: given two different authenticated users, each with their own rows across courses/deadlines/tasks/notes/reminders, when user A queries any of these tables, then no row belonging to user B is ever returned, enforced by RLS rather than by query-time filtering alone
+    invariant: true
+  - id: T-SPEC-DATA-001-AC-AC_3
+    kind: acceptance
+    traces_to: SPEC-DATA-001#AC-3
+    assertion: given a reminder row with acknowledgment_state Scheduled and trigger_at in the past, when the reminder-dispatch query runs, then the row is selected for delivery and its acknowledgment_state transitions to Delivered
+    invariant: true
+  - id: T-SPEC-DATA-001-FORBID-deadline_status_Completed_Not_Started
+    kind: forbidden-transition
+    traces_to: SPEC-DATA-001#deadline_status:Completed->Not Started
+    assertion: "[deadline_status] transition Completed -> Not Started MUST be rejected (completed work must not silently reopen; mirrors SPEC-CORE-001 deadline_assignment)"
+    invariant: true
+  - id: T-SPEC-DATA-001-FORBID-deadline_status_Cancelled_In_Progress
+    kind: forbidden-transition
+    traces_to: SPEC-DATA-001#deadline_status:Cancelled->In Progress
+    assertion: "[deadline_status] transition Cancelled -> In Progress MUST be rejected (cancelled items are terminal; mirrors SPEC-CORE-001 deadline_assignment)"
+    invariant: true
+  - id: T-SPEC-DATA-001-FORBID-deadline_status_Overdue_Not_Started
+    kind: forbidden-transition
+    traces_to: SPEC-DATA-001#deadline_status:Overdue->Not Started
+    assertion: "[deadline_status] transition Overdue -> Not Started MUST be rejected (an overdue transition cannot be un-happened; mirrors SPEC-CORE-001 deadline_assignment)"
+    invariant: true
+  - id: T-SPEC-DATA-001-FORBID-reminder_status_Acknowledged_Scheduled
+    kind: forbidden-transition
+    traces_to: SPEC-DATA-001#reminder_status:Acknowledged->Scheduled
+    assertion: "[reminder_status] transition Acknowledged -> Scheduled MUST be rejected (an acknowledged reminder occurrence is terminal; mirrors SPEC-CORE-001 reminder)"
+    invariant: true
+  - id: T-SPEC-DATA-001-FORBID-reminder_status_Expired_Delivered
+    kind: forbidden-transition
+    traces_to: SPEC-DATA-001#reminder_status:Expired->Delivered
+    assertion: "[reminder_status] transition Expired -> Delivered MUST be rejected (expired reminders must not silently re-fire; mirrors SPEC-CORE-001 reminder)"
+    invariant: true
+  - id: T-SPEC-DATA-001-NC-NC_DATA_001
+    kind: negative-constraint
+    traces_to: SPEC-DATA-001#NC-DATA-001
+    assertion: Every table holding user data MUST have a user_id column enforced via Row Level Security restricting rows to auth.uid() = user_id; no such table may be queried with RLS disabled.
+    invariant: true
+  - id: T-SPEC-DATA-001-NC-NC_DATA_002
+    kind: negative-constraint
+    traces_to: SPEC-DATA-001#NC-DATA-002
+    assertion: Status/state columns (deadlines.status, tasks.status, reminders.acknowledgment_state) MUST use the Postgres enum types defined in this spec, never free-text, so invalid states are rejected at the schema level.
+    invariant: true
+  - id: T-SPEC-DATA-001-NC-NC_DATA_003
+    kind: negative-constraint
+    traces_to: SPEC-DATA-001#NC-DATA-003
+    assertion: The forbidden transitions declared in SPEC-CORE-001's state machines MUST be enforced by a transition-guard trigger on UPDATE, not left to application code alone.
+    invariant: true
+  - id: T-SPEC-DATA-001-NC-NC_DATA_004
+    kind: negative-constraint
+    traces_to: SPEC-DATA-001#NC-DATA-004
+    assertion: All due-date and trigger-time columns MUST use timestamptz, never text or naive timestamp, since reminder scheduling correctness depends on unambiguous timezone handling.
+    invariant: true
