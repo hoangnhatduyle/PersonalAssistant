@@ -1,8 +1,14 @@
+# SUPERSEDED by SPEC-VOICE-005 (Tracked debt closure, Item 5 half: no AC
+# required the AwaitingConfirmation prompt for a Course-delete intent to
+# disclose its cascade scope before the user confirms — SPEC-API-004 AC-6
+# only guaranteed the confirmed mutation executes exactly as shown, which is
+# satisfied even by an under-disclosed prompt). Kept for historical
+# audit-trail purposes only.
 id: SPEC-VOICE-004
 version: 0.1.0
 kind: domain
 title: Voice interaction session lifecycle
-status: draft
+status: deprecated
 context_and_scope:
   in_scope:
     - "Voice session state machine: capture, transcription, intent resolution, confirmation, execution, spoken response"

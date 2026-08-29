@@ -1,0 +1,63 @@
+spec_id: SPEC-INFRA-003
+generated_at: 2026-08-27T19:35:12.591Z
+cases:
+  - id: T-SPEC-INFRA-003-AC-AC_1
+    kind: acceptance
+    traces_to: SPEC-INFRA-003#AC-1
+    assertion: given a freshly built deployment, when promotion to LIVE is attempted directly from BUILDING, then it is blocked (forbidden BUILDING->LIVE)
+    invariant: true
+  - id: T-SPEC-INFRA-003-AC-AC_2
+    kind: acceptance
+    traces_to: SPEC-INFRA-003#AC-2
+    assertion: given the reminder-dispatch cron job invoking SPEC-DATA-006's dispatch_due_reminders() RPC, when a tick fires and the RPC call succeeds, then the job transitions Running to Succeeded, due Scheduled/Snoozed reminders are moved to Delivered, and stale Delivered reminders past the 60-minute window are swept to Expired in the same pass, per SPEC-CORE-005 AC-011 / SPEC-DATA-006 AC-8
+    invariant: true
+  - id: T-SPEC-INFRA-003-AC-AC_3
+    kind: acceptance
+    traces_to: SPEC-INFRA-003#AC-3
+    assertion: given the reminder-dispatch cron job, when a tick fires and the RPC call errors, then the job transitions Running to Failed, the failure is logged and visible, and the next scheduled tick still fires
+    invariant: true
+  - id: T-SPEC-INFRA-003-AC-AC_4
+    kind: acceptance
+    traces_to: SPEC-INFRA-003#AC-4
+    assertion: given the app booting with a required env var missing from the ENV contract, when startup runs, then it fails fast with a clear error rather than starting in a broken state
+    invariant: true
+  - id: T-SPEC-INFRA-003-AC-AC_5
+    kind: acceptance
+    traces_to: SPEC-INFRA-003#AC-5
+    assertion: given a build artifact or client-side bundle, when it is inspected for embedded secrets, then SUPABASE_SERVICE_ROLE_KEY and the voice-vendor API keys are absent -- only the two NEXT_PUBLIC_ values may appear client-side
+    invariant: true
+  - id: T-SPEC-INFRA-003-FORBID-rollout_BUILDING_LIVE
+    kind: forbidden-transition
+    traces_to: SPEC-INFRA-003#rollout:BUILDING->LIVE
+    assertion: "[rollout] transition BUILDING -> LIVE MUST be rejected (must pass through STAGED and a passing health check before receiving live traffic)"
+    invariant: true
+  - id: T-SPEC-INFRA-003-FORBID-reminder_cron_job_Failed_Succeeded
+    kind: forbidden-transition
+    traces_to: SPEC-INFRA-003#reminder_cron_job:Failed->Succeeded
+    assertion: "[reminder_cron_job] transition Failed -> Succeeded MUST be rejected (a failed dispatch run must not be silently marked successful; it must actually complete a dispatch pass first -- protects SPEC-CORE-005's NC-006)"
+    invariant: true
+  - id: T-SPEC-INFRA-003-NC-NC_INF_001
+    kind: negative-constraint
+    traces_to: SPEC-INFRA-003#NC-INF-001
+    assertion: Secrets (Supabase service role key, Deepgram/ElevenLabs/OpenAI API keys) MUST NOT be committed to the repo or baked into any build artifact; inject at runtime via Vercel/Supabase environment configuration only.
+    invariant: true
+  - id: T-SPEC-INFRA-003-NC-NC_INF_002
+    kind: negative-constraint
+    traces_to: SPEC-INFRA-003#NC-INF-002
+    assertion: The reminder-dispatch job MUST NOT be promoted to LIVE without a passing health check confirming it can reach Postgres and the notification channel.
+    invariant: true
+  - id: T-SPEC-INFRA-003-NC-NC_INF_003
+    kind: negative-constraint
+    traces_to: SPEC-INFRA-003#NC-INF-003
+    assertion: A Failed reminder-dispatch run MUST NOT be silently marked Succeeded; it must retry on the next scheduled tick and remain visible/queryable while failing.
+    invariant: true
+  - id: T-SPEC-INFRA-003-NC-NC_INF_004
+    kind: negative-constraint
+    traces_to: SPEC-INFRA-003#NC-INF-004
+    assertion: The service MUST NOT serve LIVE production traffic without TLS termination.
+    invariant: true
+  - id: T-SPEC-INFRA-003-NC-NC_INF_005
+    kind: negative-constraint
+    traces_to: SPEC-INFRA-003#NC-INF-005
+    assertion: SUPABASE_SERVICE_ROLE_KEY usage MUST be confined to Edge Functions (supabase/functions/**) and server-only route handlers; it MUST NEVER be imported into client-bundled code or given a NEXT_PUBLIC_ prefix -- doing so would bypass RLS (NC-DATA-001) for every browser session.
+    invariant: true

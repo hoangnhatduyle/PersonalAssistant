@@ -1,0 +1,143 @@
+spec_id: SPEC-DATA-007
+generated_at: 2026-08-27T23:26:03.537Z
+cases:
+  - id: T-SPEC-DATA-007-AC-AC_1
+    kind: acceptance
+    traces_to: SPEC-DATA-007#AC-1
+    assertion: given a deadline, task, reminder, or voice_session row, when an INSERT specifies a status/state other than that table's declared initial state, or an UPDATE attempts a forbidden transition, then the transaction is rejected by the database trigger, not merely by application-layer logic
+    invariant: true
+  - id: T-SPEC-DATA-007-AC-AC_2
+    kind: acceptance
+    traces_to: SPEC-DATA-007#AC-2
+    assertion: given two different authenticated users, each with their own rows across courses/deadlines/tasks/notes/reminders/voice_sessions, when user A queries any of these tables, then no row belonging to user B is ever returned, enforced by RLS rather than by query-time filtering alone
+    invariant: true
+  - id: T-SPEC-DATA-007-AC-AC_3
+    kind: acceptance
+    traces_to: SPEC-DATA-007#AC-3
+    assertion: given a reminder row that is either (a) Scheduled with trigger_at in the past, or (b) Snoozed with snooze_until in the past, and whose target Deadline/Task is not soft-deleted, when the reminder-dispatch query runs, then the row is selected for delivery, transitions to Delivered, and delivered_at is set
+    invariant: true
+  - id: T-SPEC-DATA-007-AC-AC_4
+    kind: acceptance
+    traces_to: SPEC-DATA-007#AC-4
+    assertion: given a voice_sessions row in AwaitingConfirmation with a pending_mutation payload and a non-null expires_at in the future, when a subsequent, separate HTTP request reads that row by its id before expires_at, then the same pending_mutation payload is available to execute or discard
+    invariant: true
+  - id: T-SPEC-DATA-007-AC-AC_5
+    kind: acceptance
+    traces_to: SPEC-DATA-007#AC-5
+    assertion: given a user requests deletion of a course, deadline, task, or note, when the deletion is processed, then the row's deleted_at is set and it remains queryable only via an explicit include-deleted query; never removed from the table
+    invariant: true
+  - id: T-SPEC-DATA-007-AC-AC_6
+    kind: acceptance
+    traces_to: SPEC-DATA-007#AC-6
+    assertion: given an ordinary (non-include-deleted) list or get query against courses, deadlines, tasks, or notes, when the query executes, then no row with deleted_at set is returned
+    invariant: true
+  - id: T-SPEC-DATA-007-AC-AC_7
+    kind: acceptance
+    traces_to: SPEC-DATA-007#AC-7
+    assertion: given a Scheduled or Snoozed reminder whose target Deadline or Task is soft-deleted, when the target's deleted_at is set, then the reminder transitions to Dismissed, and the dispatch query's deleted_at IS NULL filter independently ensures it is never delivered even if the cascade were missed
+    invariant: true
+  - id: T-SPEC-DATA-007-AC-AC_8
+    kind: acceptance
+    traces_to: SPEC-DATA-007#AC-8
+    assertion: given a Delivered reminder with delivered_at more than 60 minutes in the past and acknowledgment_state still Delivered, when the dispatch sweep runs, then it transitions to Expired
+    invariant: true
+  - id: T-SPEC-DATA-007-AC-AC_9
+    kind: acceptance
+    traces_to: SPEC-DATA-007#AC-9
+    assertion: given a voice_sessions row whose ended_at (or, for a row that never reached a terminal state, started_at) is more than 24 hours in the past, when the retention-sweep function runs, then the row is hard-deleted in full (transcript, resolved_intent, confidence_score, and pending_mutation all removed) rather than soft-deleted or retained for browsing
+    invariant: true
+  - id: T-SPEC-DATA-007-FORBID-deadline_status_Completed_Not_Started
+    kind: forbidden-transition
+    traces_to: SPEC-DATA-007#deadline_status:Completed->Not Started
+    assertion: "[deadline_status] transition Completed -> Not Started MUST be rejected (mirrors SPEC-CORE-005 deadline_assignment)"
+    invariant: true
+  - id: T-SPEC-DATA-007-FORBID-deadline_status_Cancelled_In_Progress
+    kind: forbidden-transition
+    traces_to: SPEC-DATA-007#deadline_status:Cancelled->In Progress
+    assertion: "[deadline_status] transition Cancelled -> In Progress MUST be rejected (mirrors SPEC-CORE-005 deadline_assignment)"
+    invariant: true
+  - id: T-SPEC-DATA-007-FORBID-deadline_status_Overdue_Not_Started
+    kind: forbidden-transition
+    traces_to: SPEC-DATA-007#deadline_status:Overdue->Not Started
+    assertion: "[deadline_status] transition Overdue -> Not Started MUST be rejected (mirrors SPEC-CORE-005 deadline_assignment)"
+    invariant: true
+  - id: T-SPEC-DATA-007-FORBID-task_status_Done_Open
+    kind: forbidden-transition
+    traces_to: SPEC-DATA-007#task_status:Done->Open
+    assertion: "[task_status] transition Done -> Open MUST be rejected (mirrors SPEC-CORE-005 task_lifecycle)"
+    invariant: true
+  - id: T-SPEC-DATA-007-FORBID-task_status_Cancelled_Open
+    kind: forbidden-transition
+    traces_to: SPEC-DATA-007#task_status:Cancelled->Open
+    assertion: "[task_status] transition Cancelled -> Open MUST be rejected (mirrors SPEC-CORE-005 task_lifecycle)"
+    invariant: true
+  - id: T-SPEC-DATA-007-FORBID-reminder_status_Acknowledged_Scheduled
+    kind: forbidden-transition
+    traces_to: SPEC-DATA-007#reminder_status:Acknowledged->Scheduled
+    assertion: "[reminder_status] transition Acknowledged -> Scheduled MUST be rejected (mirrors SPEC-CORE-005 reminder)"
+    invariant: true
+  - id: T-SPEC-DATA-007-FORBID-reminder_status_Expired_Delivered
+    kind: forbidden-transition
+    traces_to: SPEC-DATA-007#reminder_status:Expired->Delivered
+    assertion: "[reminder_status] transition Expired -> Delivered MUST be rejected (mirrors SPEC-CORE-005 reminder)"
+    invariant: true
+  - id: T-SPEC-DATA-007-FORBID-voice_session_state_Executing_Idle
+    kind: forbidden-transition
+    traces_to: SPEC-DATA-007#voice_session_state:Executing->Idle
+    assertion: "[voice_session_state] transition Executing -> Idle MUST be rejected (mirrors SPEC-VOICE-004 voice_session)"
+    invariant: true
+  - id: T-SPEC-DATA-007-FORBID-voice_session_state_Transcribing_Executing
+    kind: forbidden-transition
+    traces_to: SPEC-DATA-007#voice_session_state:Transcribing->Executing
+    assertion: "[voice_session_state] transition Transcribing -> Executing MUST be rejected (mirrors SPEC-VOICE-004 voice_session)"
+    invariant: true
+  - id: T-SPEC-DATA-007-FORBID-voice_session_state_Idle_Executing
+    kind: forbidden-transition
+    traces_to: SPEC-DATA-007#voice_session_state:Idle->Executing
+    assertion: "[voice_session_state] transition Idle -> Executing MUST be rejected (mirrors SPEC-VOICE-004 voice_session)"
+    invariant: true
+  - id: T-SPEC-DATA-007-NC-NC_DATA_001
+    kind: negative-constraint
+    traces_to: SPEC-DATA-007#NC-DATA-001
+    assertion: Every table holding user data MUST have a user_id column enforced via Row Level Security restricting rows to auth.uid() = user_id; no such table may be queried with RLS disabled.
+    invariant: true
+  - id: T-SPEC-DATA-007-NC-NC_DATA_002
+    kind: negative-constraint
+    traces_to: SPEC-DATA-007#NC-DATA-002
+    assertion: Status/state columns (deadlines.status, tasks.status, reminders.acknowledgment_state, voice_sessions.state) MUST use the Postgres enum types defined in this spec, never free-text.
+    invariant: true
+  - id: T-SPEC-DATA-007-NC-NC_DATA_003
+    kind: negative-constraint
+    traces_to: SPEC-DATA-007#NC-DATA-003
+    assertion: "The transition-guard trigger MUST fire on both INSERT (rejecting any row whose status/state is not that table's declared initial state: Not Started for deadlines, Open for tasks, Scheduled for reminders, Idle for voice_sessions) and UPDATE (rejecting any forbidden transition declared in SPEC-CORE-005's deadline_assignment/task_lifecycle/reminder machines or SPEC-VOICE-004's voice_session machine) — not left to application code alone."
+    invariant: true
+  - id: T-SPEC-DATA-007-NC-NC_DATA_004
+    kind: negative-constraint
+    traces_to: SPEC-DATA-007#NC-DATA-004
+    assertion: All due-date, trigger, snooze, delivery, and session expiry timestamp columns MUST use timestamptz, never text or naive timestamp.
+    invariant: true
+  - id: T-SPEC-DATA-007-NC-NC_DATA_005
+    kind: negative-constraint
+    traces_to: SPEC-DATA-007#NC-DATA-005
+    assertion: Courses, Deadlines, Tasks, and Notes rows MUST be soft-deleted (deleted_at set) rather than removed via SQL DELETE; application code MUST NOT issue a hard DELETE against these tables. Operationalizes SPEC-CORE-005's NC-008.
+    invariant: true
+  - id: T-SPEC-DATA-007-NC-NC_DATA_006
+    kind: negative-constraint
+    traces_to: SPEC-DATA-007#NC-DATA-006
+    assertion: notes.linked_course_id and notes.linked_task_id MUST use ON DELETE SET NULL as a defensive backstop, even though the primary unlink path is the SPEC-API-004 soft-delete cascade (NC-DATA-005 means a real DELETE, and thus this FK action, should never actually fire in normal operation).
+    invariant: true
+  - id: T-SPEC-DATA-007-NC-NC_DATA_007
+    kind: negative-constraint
+    traces_to: SPEC-DATA-007#NC-DATA-007
+    assertion: List/get queries against courses, deadlines, tasks, and notes MUST filter deleted_at IS NULL by default. Operationalizes SPEC-CORE-005 AC-010.
+    invariant: true
+  - id: T-SPEC-DATA-007-NC-NC_DATA_008
+    kind: negative-constraint
+    traces_to: SPEC-DATA-007#NC-DATA-008
+    assertion: The reminder-dispatch query MUST exclude any reminder whose target Deadline or Task has deleted_at set, as a backstop to the target_soft_deleted cascade. Operationalizes SPEC-CORE-005's NC-009.
+    invariant: true
+  - id: T-SPEC-DATA-007-NC-NC_DATA_009
+    kind: negative-constraint
+    traces_to: SPEC-DATA-007#NC-DATA-009
+    assertion: voice_sessions rows MUST NOT be retained past 24 hours from ended_at (or from started_at, for a session that never reaches a terminal state); the retention-sweep function MUST perform a hard DELETE, not a soft-delete — this table holds no historical-record requirement distinguishing it from Courses/Deadlines/Tasks/Notes, and is the one unbounded PII-accumulation path in the schema.
+    invariant: true

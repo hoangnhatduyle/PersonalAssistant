@@ -4,6 +4,9 @@ import {
   createAuthenticatedUser,
   createCourse,
   createDeadline,
+  createFeedback,
+  createKnowledgeChunk,
+  createKnowledgeSource,
   createReminder,
   createTask,
   createVoiceSession,
@@ -21,6 +24,9 @@ describe("Row Level Security", () => {
   let noteAId: string;
   let reminderAId: string;
   let voiceSessionAId: string;
+  let feedbackAId: string;
+  let knowledgeSourceAId: string;
+  let knowledgeChunkAId: string;
 
   beforeAll(async () => {
     userA = await createAuthenticatedUser();
@@ -31,6 +37,7 @@ describe("Row Level Security", () => {
     taskAId = await createTask(admin, userA.userId);
     reminderAId = await createReminder(admin, userA.userId, "deadline", deadlineAId);
     voiceSessionAId = await createVoiceSession(admin, userA.userId);
+    feedbackAId = await createFeedback(admin, userA.userId, "deadline", deadlineAId);
 
     const { data: note, error } = await admin
       .from("notes")
@@ -39,6 +46,9 @@ describe("Row Level Security", () => {
       .single();
     if (error) throw new Error(error.message);
     noteAId = note.id as string;
+
+    knowledgeSourceAId = await createKnowledgeSource(admin, userA.userId);
+    knowledgeChunkAId = await createKnowledgeChunk(admin, knowledgeSourceAId, userA.userId);
   });
 
   it("hides user A's course from user B", async () => {
@@ -76,6 +86,30 @@ describe("Row Level Security", () => {
       .from("voice_sessions")
       .select("id")
       .eq("id", voiceSessionAId);
+    expect(error).toBeNull();
+    expect(data ?? []).toHaveLength(0);
+  });
+
+  it("hides user A's feedback from user B", async () => {
+    const { data, error } = await userB.client.from("feedback").select("id").eq("id", feedbackAId);
+    expect(error).toBeNull();
+    expect(data ?? []).toHaveLength(0);
+  });
+
+  it("hides user A's knowledge_source from user B", async () => {
+    const { data, error } = await userB.client
+      .from("knowledge_sources")
+      .select("id")
+      .eq("id", knowledgeSourceAId);
+    expect(error).toBeNull();
+    expect(data ?? []).toHaveLength(0);
+  });
+
+  it("hides user A's knowledge_chunk from user B", async () => {
+    const { data, error } = await userB.client
+      .from("knowledge_chunks")
+      .select("id")
+      .eq("id", knowledgeChunkAId);
     expect(error).toBeNull();
     expect(data ?? []).toHaveLength(0);
   });

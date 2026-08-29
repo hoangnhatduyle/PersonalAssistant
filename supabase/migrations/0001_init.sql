@@ -518,7 +518,7 @@ revoke insert, update, delete on public.active_notes from anon, authenticated;
 -- ---------------------------------------------------------------------------
 -- Reminder dispatch query (AC-3, AC-8, NC-DATA-008)
 -- Defines what the dispatch query selects/updates; how it is scheduled
--- (pg_cron) is Item 4 / SPEC-INFRA-002 scope.
+-- (pg_cron) is Item 4 / SPEC-INFRA-004 scope.
 -- ---------------------------------------------------------------------------
 
 -- Returns the rows it touched (via RETURNING) rather than void, so the Item 4
@@ -580,8 +580,11 @@ $$;
 --  - handle_new_user / dismiss_reminders_for_soft_deleted_target are trigger
 --    functions Postgres won't invoke via direct RPC, so this is defense in
 --    depth against a future refactor accidentally making them callable.
--- Only the service role (used by the Item 4 dispatch Edge Function per
--- SPEC-INFRA-002 NC-INF-005) may invoke dispatch_due_reminders.
+-- Only the service role may invoke dispatch_due_reminders via the exposed
+-- RPC/PostgREST surface (SPEC-INFRA-004 NC-INF-005) -- this REVOKE has no
+-- bearing on the Item 4 pg_cron job itself, which calls the function
+-- in-process as the migration-owning role (see
+-- supabase/migrations/0003_pg_cron_reminders.sql), not over the API.
 -- ---------------------------------------------------------------------------
 
 revoke execute on function public.handle_new_user() from public, anon, authenticated;

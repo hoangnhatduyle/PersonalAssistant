@@ -1,0 +1,173 @@
+id: SPEC-CORE-008
+version: 0.3.0
+kind: domain
+title: Knowledge Reference domain model
+status: draft
+context_and_scope:
+  in_scope:
+    - Importing a reference source (URL-fetch, pasted text, or uploaded file) into a personal per-user knowledge base
+    - Async import lifecycle tracking (Pending/Processing/Ready/Failed) surfaced to the client
+    - Chunking and embedding imported content for semantic retrieval
+    - A read-only assistant intent (knowledge_lookup) that retrieves and always cites source(s)
+    - User-initiated deletion of a knowledge source (permanent; see NC-026)
+  out_of_scope:
+    - Multi-user or shared knowledge bases
+    - Automatic re-crawl/refresh of an existing source's content
+    - A dedicated knowledge browsing/search UI outside the assistant Q&A flow
+    - Multi-page crawling from a single URL (only the given page/content is fetched)
+    - Editing imported content after creation (delete-and-reimport only)
+    - Import and delete are not voice/text-intent-reachable in v1; those are REST-only actions. Only knowledge_lookup (query) is exposed through the assistant intent pipeline.
+    - Multi-turn conversational memory of prior assistant turns (each intent resolution is stateless today; see NC-024 for the boundary this must preserve if that changes later)
+  external_dependencies: []
+  shared_schemas: []
+state_machines:
+  - name: knowledge_import_status
+    states:
+      - Pending
+      - Processing
+      - Ready
+      - Failed
+    initial: Pending
+    transitions:
+      - from: Pending
+        event: processing_started
+        to: Processing
+      - from: Processing
+        event: extraction_succeeded
+        to: Ready
+      - from: Processing
+        event: extraction_failed
+        to: Failed
+      - from: Processing
+        event: processing_timed_out
+        to: Failed
+      - from: Pending
+        event: processing_timed_out
+        to: Failed
+      - from: Failed
+        event: user_retries
+        to: Processing
+    forbidden:
+      - from: Ready
+        to: Pending
+        reason: A completed import must not silently reset to Pending.
+      - from: Ready
+        to: Processing
+        reason: No content-refresh feature exists in v1; a Ready source is terminal aside from delete.
+      - from: Ready
+        to: Failed
+        reason: A completed import cannot retroactively fail; only an in-flight Processing pass can fail.
+      - from: Failed
+        to: Ready
+        reason: Must pass back through Processing on retry, never silently marked done.
+      - from: Pending
+        to: Ready
+        reason: Cannot skip Processing.
+negative_constraints:
+  - id: NC-013
+    message: Knowledge source retention is indefinite; a source is deleted only by explicit user action. No automated retention sweep applies (unlike voice_sessions' 24h purge or feedback's 180-day rollup) — the reaper described in NC-021 only changes status on stuck rows, it never deletes data, so it does not constitute a retention sweep.
+    severity: medium
+  - id: NC-014
+    message: A knowledge_lookup answer must never be returned without citing the source(s) it was derived from when retrieved chunks informed the answer.
+    severity: high
+  - id: NC-015
+    message: Every KnowledgeSource and KnowledgeChunk row must carry an account/user reference, scoping all reads/writes (extends NC-011).
+    severity: critical
+  - id: NC-016
+    message: Raw imported content (pasted text, fetched page text, OCR/transcript output) must be encrypted at rest and in transit (extends NC-003). This is satisfied by Supabase's platform-level disk encryption plus TLS in transit, consistent with how NC-003 is already interpreted for voice_sessions/feedback — no column-level (e.g. pgcrypto) encryption is required, since that would break full-text and vector search.
+    severity: high
+  - id: NC-017
+    message: A user-supplied URL must never be fetched by an unguarded server-side request. The fetch path must reject, before any network call, URLs resolving to private/internal/link-local/loopback addresses, cloud metadata endpoints, or non-http(s) schemes (SSRF defense). This validation must check every A/AAAA record a hostname resolves to, not just the first. The connection itself must be made to the specific validated IP address (pinned), never left to the HTTP client's own independent DNS resolution at connect time — otherwise DNS-rebinding defeats a validate-then-fetch(url) pattern even when the validation logic is correct. Every redirect hop must be re-validated and re-pinned the same way, up to a hard cap on redirect chain length. The fetch must also enforce a maximum response size and a maximum duration.
+    severity: critical
+  - id: NC-018
+    message: knowledge_lookup is a read-only intent; it must never itself execute or be usable to smuggle a mutating action. The answer-composition LLM call must use a response schema that is structurally incapable of emitting a mutation-shaped payload (a distinct schema, not the existing mutation-capable schema with the field ignored by application code).
+    severity: high
+  - id: NC-019
+    message: Import status (Pending/Processing/Ready/Failed) and error_message are system-driven only; neither is settable via a generic client update (mirrors NC-API-002), and this must be enforced structurally (RLS/grants), not merely by omission from the API surface — see SPEC-DATA-011's RLS/grant design.
+    severity: medium
+  - id: NC-020
+    message: A Failed or partial import must never leave orphaned chunks/embeddings behind; chunk persistence is all-or-nothing per successful processing pass. Because the ingestion worker makes multiple sequential writes with no cross-call transaction primitive available, this must be enforced via a single atomic completion RPC (analogous to syncReminderForTarget's chokepoint role) that replaces any prior chunk set and flips status to Ready in one transaction — never by the worker performing chunk inserts and the status flip as separate calls.
+    severity: high
+  - id: NC-021
+    message: A Processing or Pending row whose worker invocation never reports back (crash, deploy, timeout) must not strand indefinitely. A reaper transitions such rows to Failed with a timeout error_message after a bounded window, via the processing_timed_out event. This reaper is a pure-SQL, synchronous, in-process pg_cron job (no external HTTP call), consistent with SPEC-INFRA-006's existing cron-job pattern.
+    severity: high
+  - id: NC-022
+    message: Retry attempts are capped at KNOWLEDGE_MAX_RETRY_ATTEMPTS = 3 (attempt_count); once exhausted, a source stays Failed permanently and can only be recovered by deleting and re-importing it. This bounds repeated spend against a poison input (each retry re-runs paid OCR/transcription/embedding calls).
+    severity: medium
+  - id: NC-027
+    message: A knowledge_lookup query treats a retrieved chunk as sufficiently relevant only when its cosine similarity to the query embedding is >= KNOWLEDGE_RELEVANCE_THRESHOLD = 0.75, and considers at most KNOWLEDGE_TOP_K = 8 chunks. AC-006's "no relevant chunks found" and AC-005's citation invariant are only testable against a pinned cutoff — this mirrors how VOICE_CONFIDENCE_BAR (0.95) is pinned as a named constant in src/lib/voice/transitions.ts rather than left as an implied threshold. The exact values are tunable in implementation, but a concrete default must exist from the start, not be decided ad hoc when the retrieval code is written.
+    severity: high
+  - id: NC-023
+    message: OCR- or transcription-derived KnowledgeChunk content, and any knowledge_lookup answer built from it, must be labeled as machine-extracted and potentially inaccurate (extends NC-004). This labeling is distinct from and additional to the source citation required by NC-014 — a citation says where an answer came from, this labeling says the extraction itself may contain recognition errors.
+    severity: high
+  - id: NC-024
+    message: Content retrieved from knowledge_chunks must never be persisted into, or read back as, conversational context for any subsequent mutating-intent resolution call. No such path exists today (each intent resolution is stateless), but this boundary must hold if multi-turn conversational memory is added later — a knowledge chunk is untrusted third-party content and must never gain a channel into a mutation-capable prompt.
+    severity: high
+  - id: NC-025
+    message: The knowledge_lookup answer-composition prompt must treat retrieved chunk text as untrusted data, not instructions — retrieved content must be wrapped with an explicit boundary/system instruction telling the model to quote or summarize it, never to treat text inside it as a command directed at the assistant.
+    severity: high
+  - id: NC-026
+    message: Deletion of a KnowledgeSource is permanent (hard delete, cascading to its KnowledgeChunks) with no restore capability, distinct from the soft-delete pattern used for Course/Deadline/Task/Note. This is a deliberate departure from NC-008's uniform-soft-delete rule, justified because chunk content is unconditionally purged regardless (see SPEC-DATA-011), so a tombstoned source row would offer no real recoverability, and because imported reference material is closer to voice_sessions/feedback (bounded, non-authored data) than to the four core authored entities NC-008 governs.
+    severity: medium
+acceptance_criteria:
+  - id: AC-001
+    given: a new source import request
+    when: the source is created
+    then: a KnowledgeSource row is inserted in Pending state with zero KnowledgeChunk rows
+    invariant: false
+  - id: AC-002
+    given: a Pending source begins processing
+    when: extraction, chunking, and embedding all succeed
+    then: the source transitions to Ready and its KnowledgeChunk rows exist with populated embeddings
+    invariant: false
+  - id: AC-003
+    given: a Pending source begins processing
+    when: extraction, OCR/transcription, or embedding fails for any reason
+    then: the source transitions to Failed with a stored error_message, and zero partial KnowledgeChunk rows persist
+    invariant: false
+  - id: AC-004
+    given: a Failed source with attempts remaining
+    when: the user retries it
+    then: it transitions to Processing and its error_message is cleared immediately (not retained) — a row back in Processing carrying a stale failure message would be confusing, and a fresh error_message is written if this attempt fails too
+    invariant: false
+  - id: AC-004b
+    given: a Failed source that has exhausted its retry cap (NC-022)
+    when: the user attempts to retry it
+    then: the retry is rejected; the source stays Failed and can only be recovered by delete-and-reimport
+    invariant: false
+  - id: AC-004c
+    given: a source in Pending or Processing whose worker invocation never reports back
+    when: the reaper's bounded window elapses
+    then: it transitions to Failed via processing_timed_out with a timeout error_message, never stranding indefinitely
+    invariant: false
+  - id: AC-005
+    when: a knowledge_lookup answer is composed from retrieved chunks
+    then: the response always names/links the source(s) those chunks came from
+    invariant: true
+  - id: AC-006
+    given: a knowledge_lookup query with no relevant chunks found
+    when: the assistant responds
+    then: it returns a clarification / no-knowledge-found response, never a fabricated cited answer
+    invariant: false
+  - id: AC-007
+    when: a KnowledgeSource is deleted
+    then: it and its KnowledgeChunks are permanently removed (hard delete) and are no longer retrievable by any subsequent knowledge_lookup query or list/get request
+    invariant: true
+  - id: AC-008
+    given: a user-supplied URL for URL-fetch import
+    when: the URL (or any A/AAAA record it resolves to) is a private/internal/link-local address, a cloud metadata endpoint, or the scheme is non-http(s)
+    then: the fetch is rejected before any network call is made
+    invariant: false
+  - id: AC-008b
+    given: a URL-fetch import proceeds past initial validation
+    when: the connection is actually established
+    then: it connects to the specific pre-validated IP address directly; the HTTP client performs no independent DNS resolution at connect time, and this re-validate-and-pin step repeats on every redirect hop up to the hard cap
+    invariant: true
+  - id: AC-009
+    when: a knowledge_lookup answer is composed from OCR- or transcription-derived chunk content
+    then: the answer is labeled as machine-extracted/potentially inaccurate, distinct from and in addition to its source citation
+    invariant: true
+depends_on:
+  - SPEC-CORE-007
+constitution_rules:
+  - NC-PLANMODE-PATHS

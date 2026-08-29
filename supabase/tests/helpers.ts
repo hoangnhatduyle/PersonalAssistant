@@ -143,6 +143,68 @@ export async function createVoiceSession(
   return data.id as string;
 }
 
+export async function createFeedback(
+  admin: SupabaseClient,
+  userId: string,
+  targetType: "deadline" | "task" | "reminder",
+  targetId: string,
+  overrides: Record<string, unknown> = {},
+): Promise<string> {
+  const { data, error } = await admin
+    .from("feedback")
+    .insert({ user_id: userId, target_type: targetType, target_id: targetId, rating: 4, ...overrides })
+    .select("id")
+    .single();
+  if (error) throw new Error(`failed to create feedback: ${error.message}`, { cause: error });
+  return data.id as string;
+}
+
+export async function createKnowledgeSource(
+  admin: SupabaseClient,
+  userId: string,
+  overrides: Record<string, unknown> = {},
+): Promise<string> {
+  const { data, error } = await admin
+    .from("knowledge_sources")
+    .insert({
+      user_id: userId,
+      source_type: "pasted_text",
+      title: "Test Knowledge Source",
+      ...overrides,
+    })
+    .select("id")
+    .single();
+  if (error) throw new Error(`failed to create knowledge_source: ${error.message}`, { cause: error });
+  return data.id as string;
+}
+
+/** A valid, cheaply-constructed 1536-dim vector literal for pgvector columns. */
+export function fakeEmbedding(seed = 0): string {
+  return `[${Array.from({ length: 1536 }, (_, i) => ((i + seed) % 7) / 7).join(",")}]`;
+}
+
+export async function createKnowledgeChunk(
+  admin: SupabaseClient,
+  sourceId: string,
+  userId: string,
+  overrides: Record<string, unknown> = {},
+): Promise<string> {
+  const { data, error } = await admin
+    .from("knowledge_chunks")
+    .insert({
+      source_id: sourceId,
+      user_id: userId,
+      chunk_index: 0,
+      chunk_text: "Test chunk text",
+      embedding: fakeEmbedding(),
+      ...overrides,
+    })
+    .select("id")
+    .single();
+  if (error) throw new Error(`failed to create knowledge_chunk: ${error.message}`, { cause: error });
+  return data.id as string;
+}
+
 /** Applies a sequence of legal state transitions via sequential UPDATEs. */
 export async function walkTransitions(
   admin: SupabaseClient,

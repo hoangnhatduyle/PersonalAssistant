@@ -1,8 +1,12 @@
+# SUPERSEDED by SPEC-INFRA-003 (Item 4 tracked debt: depends_on pointed at
+# deprecated SPEC-DATA-002 instead of SPEC-DATA-006, and AC-2 didn't mention
+# the Delivered->Expired sweep SPEC-CORE-005 AC-011 added). Kept for
+# historical audit-trail purposes only.
 id: SPEC-INFRA-002
 version: 0.1.0
 kind: infra
 title: Deploy target and runtime contract
-status: draft
+status: deprecated
 context_and_scope:
   in_scope:
     - Vercel deploy target for the Next.js app

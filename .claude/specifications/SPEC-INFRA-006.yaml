@@ -1,0 +1,133 @@
+id: SPEC-INFRA-006
+version: 0.1.1
+kind: infra
+title: Deploy target and runtime contract
+status: draft
+context_and_scope:
+  in_scope:
+    - Vercel deploy target for the Next.js app
+    - Environment variable contract, explicit about which values are browser-safe (NEXT_PUBLIC_-prefixed) versus server-only
+    - A startup environment validator that fails fast when a required variable is missing, rather than starting in a broken state
+    - A health-check endpoint that the rollout state machine's promotion step actually calls before allowing STAGED -> LIVE
+    - "pg_cron reminder-dispatch job definition and its runtime lifecycle (required because Vercel Hobby Cron cannot run more than once/day, per the recorded stack decision): pg_cron invokes SPEC-DATA-010's dispatch_due_reminders() RPC directly and synchronously within the scheduled job's own transaction, so pg_cron's native job-run status (starting/running/succeeded/failed) is a truthful, queryable record of the dispatch outcome"
+    - "pg_cron voice_sessions retention-sweep job: invokes SPEC-DATA-010's delete_expired_voice_sessions() directly and synchronously in-process, same shape as the reminder-dispatch job (established in Item 4/5, not repeated as a design decision here)"
+    - "pg_cron feedback retention-sweep job: invokes SPEC-DATA-010's sweep_expired_feedback() (AC-11/NC-DATA-010) directly and synchronously in-process from cron.schedule's own command — the same in-process pattern as the other two sweeps, and non-negotiable here specifically because NC-DATA-010 requires the aggregate-then-delete to be atomic; a pg_net/Edge-Function hop would additionally split that atomicity across two transactions on top of the job_run_details truthfulness problem Item 4 already found"
+  out_of_scope:
+    - "A fourth pg_cron job, reap_stuck_knowledge_imports — owned by SPEC-INFRA-007, added alongside the three jobs this spec defines. This spec's three jobs remain the complete set as of this version; SPEC-INFRA-007 is the place a reader looking for the full list of scheduled jobs should also check."
+    - CI pipeline definition
+    - The dispatch_due_reminders() RPC's own dispatch-query internals, the voice_sessions sweep's own predicate, and sweep_expired_feedback()'s own aggregate/delete logic (owned by SPEC-DATA-010) — this spec only defines how and how often each is invoked
+    - An HTTP hop through a Supabase Edge Function for any of the three sweep/dispatch jobs — rejected during Item 4's architect-review round for the reminder-dispatch job (net.http_post()/pg_net enqueues a request and returns immediately, so a downstream failure would never surface as a Failed job run) and reaffirmed for the feedback sweep in Item 6's own review round, where it would additionally break SPEC-DATA-010 NC-DATA-010's cross-transaction atomicity requirement. Revisit only once a real external notification channel (push/email vendor still undecided per SPEC-CORE-007) actually needs a non-Postgres runtime to call out to
+  external_dependencies:
+    - Vercel
+    - Supabase (Postgres, pg_cron)
+  shared_schemas:
+    - ENV { NEXT_PUBLIC_SUPABASE_URL (browser-safe), NEXT_PUBLIC_SUPABASE_ANON_KEY (browser-safe), SUPABASE_SERVICE_ROLE_KEY (server-only, never NEXT_PUBLIC_-prefixed), DEEPGRAM_API_KEY (server-only), ELEVENLABS_API_KEY (server-only), OPENAI_API_KEY (server-only) }
+state_machines:
+  - name: rollout
+    states:
+      - BUILDING
+      - STAGED
+      - LIVE
+      - ROLLED_BACK
+    initial: BUILDING
+    transitions:
+      - from: BUILDING
+        event: stage
+        to: STAGED
+      - from: STAGED
+        event: promote
+        to: LIVE
+      - from: LIVE
+        event: rollback
+        to: ROLLED_BACK
+    forbidden:
+      - from: BUILDING
+        to: LIVE
+        reason: must pass through STAGED and a passing health check before receiving live traffic
+  - name: reminder_cron_job
+    states:
+      - Scheduled
+      - Running
+      - Succeeded
+      - Failed
+    initial: Scheduled
+    transitions:
+      - from: Scheduled
+        event: tick
+        to: Running
+      - from: Running
+        event: dispatch_completed
+        to: Succeeded
+      - from: Running
+        event: dispatch_errored
+        to: Failed
+      - from: Failed
+        event: retry_next_tick
+        to: Scheduled
+      - from: Succeeded
+        event: next_tick
+        to: Scheduled
+    forbidden:
+      - from: Failed
+        to: Succeeded
+        reason: a failed dispatch run must not be silently marked successful; it must actually complete a dispatch pass first -- protects SPEC-CORE-007's NC-006. Directly maps to pg_cron's own job_run_details.status, which is why the dispatch call must be synchronous/in-process rather than an async HTTP enqueue. The same forbidden transition and rationale apply to the voice_sessions and feedback sweep jobs (AC-6/AC-7), reusing this one state-machine shape rather than declaring two near-duplicates
+negative_constraints:
+  - id: NC-INF-001
+    message: Secrets (Supabase service role key, Deepgram/ElevenLabs/OpenAI API keys) MUST NOT be committed to the repo or baked into any build artifact; inject at runtime via Vercel/Supabase environment configuration only.
+    severity: critical
+  - id: NC-INF-002
+    message: The reminder-dispatch job MUST NOT be promoted to LIVE without a passing health check confirming it can reach Postgres and the notification channel.
+    severity: high
+  - id: NC-INF-003
+    message: A Failed reminder-dispatch run MUST NOT be silently marked Succeeded; it must retry on the next scheduled tick and remain visible/queryable while failing. The voice_sessions and feedback sweep jobs share this same guarantee (AC-6/AC-7).
+    severity: high
+  - id: NC-INF-004
+    message: The service MUST NOT serve LIVE production traffic without TLS termination.
+    severity: critical
+  - id: NC-INF-005
+    message: "SUPABASE_SERVICE_ROLE_KEY usage MUST be confined to server-only route handlers; it MUST NEVER be imported into client-bundled code or given a NEXT_PUBLIC_ prefix -- doing so would bypass RLS (NC-DATA-001) for every browser session. None of the three cron jobs (reminder-dispatch, voice_sessions sweep, feedback sweep) need a service-role key at all: each runs its function in-process as the migration-owning role, never over HTTP."
+    severity: critical
+  - id: NC-INF-006
+    message: The feedback retention sweep specifically MUST be invoked as a single direct, synchronous, in-process call (select public.sweep_expired_feedback();) from cron.schedule's own command — never via pg_net/Edge Function — because SPEC-DATA-010 NC-DATA-010 requires the aggregate-then-delete to be one atomic statement; an HTTP hop would put the aggregation and the deletion in different transactions/processes entirely, not merely delay observability of a failure the way it did for reminder-dispatch.
+    severity: critical
+acceptance_criteria:
+  - id: AC-1
+    given: a freshly built deployment
+    when: promotion to LIVE is attempted directly from BUILDING
+    then: it is blocked (forbidden BUILDING->LIVE)
+    invariant: true
+  - id: AC-2
+    given: the reminder-dispatch cron job, whose scheduled command directly invokes SPEC-DATA-010's dispatch_due_reminders() RPC in-process
+    when: a tick fires and the RPC call succeeds
+    then: the job transitions Running to Succeeded (reflected truthfully in pg_cron's own job_run_details), due Scheduled/Snoozed reminders are moved to Delivered, and stale Delivered reminders past the 60-minute window are swept to Expired in the same pass, per SPEC-CORE-007 AC-011 / SPEC-DATA-010 AC-8
+    invariant: true
+  - id: AC-3
+    given: the reminder-dispatch cron job
+    when: a tick fires and the RPC call errors
+    then: the job transitions Running to Failed -- visible and queryable directly in pg_cron's job_run_details, not merely in an application log -- and the next scheduled tick still fires
+    invariant: true
+  - id: AC-4
+    given: the app booting with a required env var missing from the ENV contract
+    when: startup runs
+    then: it fails fast with a clear error rather than starting in a broken state
+    invariant: true
+  - id: AC-5
+    given: a build artifact or client-side bundle
+    when: it is inspected for embedded secrets
+    then: SUPABASE_SERVICE_ROLE_KEY and the voice-vendor API keys are absent -- only the two NEXT_PUBLIC_ values may appear client-side
+    invariant: true
+  - id: AC-6
+    given: the voice_sessions retention-sweep cron job, whose scheduled command directly invokes SPEC-DATA-010's delete_expired_voice_sessions() in-process
+    when: a tick fires
+    then: the job's outcome (Succeeded/Failed) is reflected truthfully in pg_cron's own job_run_details, per the same reminder_cron_job shape as AC-2/AC-3
+    invariant: true
+  - id: AC-7
+    given: the feedback retention-sweep cron job, whose scheduled command directly invokes SPEC-DATA-010's sweep_expired_feedback() in-process, as a single atomic statement per NC-DATA-010
+    when: a tick fires
+    then: the job's outcome (Succeeded/Failed) is reflected truthfully in pg_cron's own job_run_details, and a Failed run leaves both the source feedback rows and any partial feedback_aggregates write rolled back together (never a partial aggregate with the source rows still present, or vice versa)
+    invariant: true
+depends_on:
+  - SPEC-DATA-010
+  - SPEC-CORE-007
+constitution_rules:
+  - NC-SECRETS

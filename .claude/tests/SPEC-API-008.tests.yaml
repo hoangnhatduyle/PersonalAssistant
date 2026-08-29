@@ -1,0 +1,88 @@
+spec_id: SPEC-API-008
+generated_at: 2026-08-29T12:43:02.448Z
+cases:
+  - id: T-SPEC-API-008-AC-AC_001
+    kind: acceptance
+    traces_to: SPEC-API-008#AC-001
+    assertion: given a caller requests another user's knowledge source by id, then the response is 404, never leaking existence or data
+    invariant: false
+  - id: T-SPEC-API-008-AC-AC_002
+    kind: acceptance
+    traces_to: SPEC-API-008#AC-002
+    assertion: given a URL-fetch import whose hostname's every resolved A/AAAA record is private/link-local/loopback, or a cloud metadata endpoint, or whose scheme is non-http(s), then the create request is rejected with 400 synchronously, before any Pending row is inserted and before any outbound network call is made
+    invariant: false
+  - id: T-SPEC-API-008-AC-AC_003
+    kind: acceptance
+    traces_to: SPEC-API-008#AC-003
+    assertion: given a URL-fetch import that passed stage-1 validation, whose worker-time connection or a later redirect hop resolves to a private/internal address, then the worker does not connect to it, and the import fails safely into Failed status with a generic error_message, never exposing the internal response body
+    invariant: false
+  - id: T-SPEC-API-008-AC-AC_003b
+    kind: acceptance
+    traces_to: SPEC-API-008#AC-003b
+    assertion: given a URL-fetch import whose worker-time connection succeeds validation, then the connection is made to the specific validated IP address directly, not re-resolved independently by the HTTP client, and this repeats on every redirect hop up to the hard chain-length cap
+    invariant: true
+  - id: T-SPEC-API-008-AC-AC_004
+    kind: acceptance
+    traces_to: SPEC-API-008#AC-004
+    assertion: given an oversized, disallowed-type, or magic-byte/declared-type-mismatched file upload, then it is rejected with 400 and no partial file/content is persisted
+    invariant: false
+  - id: T-SPEC-API-008-AC-AC_004b
+    kind: acceptance
+    traces_to: SPEC-API-008#AC-004b
+    assertion: given a file upload whose decoded content (image pixel dimensions, video duration/frame count) exceeds the bound even though its compressed byte size is within limits, then it is rejected with 400
+    invariant: false
+  - id: T-SPEC-API-008-AC-AC_005
+    kind: acceptance
+    traces_to: SPEC-API-008#AC-005
+    assertion: given a knowledge_lookup query with no sufficiently relevant chunks, then the response is a clarification / no-knowledge-found message, never a fabricated cited answer
+    invariant: false
+  - id: T-SPEC-API-008-AC-AC_006
+    kind: acceptance
+    traces_to: SPEC-API-008#AC-006
+    assertion: given a knowledge_lookup answer composed from retrieved chunks, then the response includes citation data identifying every contributing source, and labels any OCR/transcript-derived content as machine-extracted
+    invariant: false
+  - id: T-SPEC-API-008-AC-AC_007
+    kind: acceptance
+    traces_to: SPEC-API-008#AC-007
+    assertion: given a Failed source that has exhausted its retry attempt cap, then a retry request returns 400 rather than transitioning it to Processing
+    invariant: false
+  - id: T-SPEC-API-008-AC-AC_008
+    kind: acceptance
+    traces_to: SPEC-API-008#AC-008
+    assertion: given a burst of create requests from the same user exceeding the create-route's rate limit, then subsequent requests in the burst are rejected with a rate-limit response rather than each fanning out to OpenAI/Deepgram
+    invariant: false
+  - id: T-SPEC-API-008-NC-NC_API_011
+    kind: negative-constraint
+    traces_to: SPEC-API-008#NC-API-011
+    assertion: "The URL-fetch import path validates in two stages. (1) Fast-fail, synchronous, before any Pending row is inserted: reject a scheme other than http(s), or a hostname whose every resolved A/AAAA record is private/link-local/loopback or a cloud metadata endpoint. (2) At actual connection time (in the worker, per SPEC-INFRA-007): connect to the specific validated IP directly rather than letting the HTTP client re-resolve DNS independently (defending against DNS-rebinding, which survives a naive validate-then-fetch(url) pattern even when stage 1's check is correct), re-validate and re-pin on every redirect hop up to a hard cap on chain length, and enforce a maximum response size and duration."
+    invariant: true
+  - id: T-SPEC-API-008-NC-NC_API_012
+    kind: negative-constraint
+    traces_to: SPEC-API-008#NC-API-012
+    assertion: File uploads are size- and type-limited against an explicit allow-list, verified by server-side content-sniffing (magic bytes) against the declared type rather than trusting the client-supplied Content-Type or extension; oversized, disallowed, or type-mismatched uploads are rejected with 400 and never silently truncated or partially persisted. Decoded-resource bounds (image pixel dimensions, video duration/frame count) are enforced in addition to compressed byte size, since a small file can still decode to a disproportionate amount of memory/CPU work.
+    invariant: true
+  - id: T-SPEC-API-008-NC-NC_API_013
+    kind: negative-constraint
+    traces_to: SPEC-API-008#NC-API-013
+    assertion: Ownership/authentication is verified explicitly at the app layer on every route (mirrors NC-API-001), never relying on RLS alone.
+    invariant: true
+  - id: T-SPEC-API-008-NC-NC_API_014
+    kind: negative-constraint
+    traces_to: SPEC-API-008#NC-API-014
+    assertion: knowledge_lookup executes directly without a confirmation step, like upcoming_schedule, but retrieval must be strictly scoped to the caller's own knowledge_chunks. The answer-composition LLM call must use a response schema with no mutation-capable field at all (a distinct schema from the mutation-resolution one, not the same schema with a field ignored), and the composition prompt must wrap retrieved chunk text with an explicit boundary instructing the model to treat it as data to quote/summarize, never as a command (mirrors SPEC-CORE-008 NC-018/NC-025).
+    invariant: true
+  - id: T-SPEC-API-008-NC-NC_API_015
+    kind: negative-constraint
+    traces_to: SPEC-API-008#NC-API-015
+    assertion: A knowledge_lookup response must include citation data for every source that contributed to the answer, label OCR/transcript-derived content as machine-extracted (SPEC-CORE-008 NC-023), and must return a no-relevant-knowledge response rather than a fabricated answer when retrieval finds nothing sufficiently relevant.
+    invariant: true
+  - id: T-SPEC-API-008-NC-NC_API_017
+    kind: negative-constraint
+    traces_to: SPEC-API-008#NC-API-017
+    assertion: The delete route hard-deletes the source; chunk removal is automatic via SPEC-DATA-011's FK cascade in the same statement, not a separate step this API layer orchestrates. It must never be possible to observe a state where the source is gone but a chunk remains queryable.
+    invariant: true
+  - id: T-SPEC-API-008-NC-NC_API_018
+    kind: negative-constraint
+    traces_to: SPEC-API-008#NC-API-018
+    assertion: The create route is rate-limited per user, distinct from and in addition to the general per-route rate limiting NC-API-005 (SPEC-API-007) already requires — this route specifically fans out to paid OpenAI Vision/embedding and Deepgram calls per request, making it a cost-abuse vector even for a single-user product if a session token is replayed or a client is compromised.
+    invariant: true

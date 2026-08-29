@@ -151,6 +151,176 @@ export type Database = {
           },
         ]
       }
+      feedback: {
+        Row: {
+          comment: string | null
+          created_at: string
+          id: string
+          rating: number
+          target_id: string
+          target_type: string
+          user_id: string
+        }
+        Insert: {
+          comment?: string | null
+          created_at?: string
+          id?: string
+          rating: number
+          target_id: string
+          target_type: string
+          user_id: string
+        }
+        Update: {
+          comment?: string | null
+          created_at?: string
+          id?: string
+          rating?: number
+          target_id?: string
+          target_type?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "feedback_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      feedback_aggregates: {
+        Row: {
+          avg_rating: number | null
+          dimension: string
+          id: string
+          rating_sum: number
+          sample_count: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          avg_rating?: number | null
+          dimension: string
+          id?: string
+          rating_sum?: number
+          sample_count?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          avg_rating?: number | null
+          dimension?: string
+          id?: string
+          rating_sum?: number
+          sample_count?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "feedback_aggregates_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      knowledge_chunks: {
+        Row: {
+          chunk_index: number
+          chunk_text: string
+          created_at: string
+          embedding: string
+          id: string
+          source_id: string
+          user_id: string
+        }
+        Insert: {
+          chunk_index: number
+          chunk_text: string
+          created_at?: string
+          embedding: string
+          id?: string
+          source_id: string
+          user_id: string
+        }
+        Update: {
+          chunk_index?: number
+          chunk_text?: string
+          created_at?: string
+          embedding?: string
+          id?: string
+          source_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "knowledge_chunks_source_id_user_id_fkey"
+            columns: ["source_id", "user_id"]
+            isOneToOne: false
+            referencedRelation: "knowledge_sources"
+            referencedColumns: ["id", "user_id"]
+          },
+        ]
+      }
+      knowledge_sources: {
+        Row: {
+          attempt_count: number
+          created_at: string
+          error_message: string | null
+          id: string
+          origin_url: string | null
+          processing_started_at: string | null
+          raw_content: string | null
+          source_type: Database["public"]["Enums"]["knowledge_source_type"]
+          status: Database["public"]["Enums"]["knowledge_source_status"]
+          storage_object_path: string | null
+          title: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          attempt_count?: number
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          origin_url?: string | null
+          processing_started_at?: string | null
+          raw_content?: string | null
+          source_type: Database["public"]["Enums"]["knowledge_source_type"]
+          status?: Database["public"]["Enums"]["knowledge_source_status"]
+          storage_object_path?: string | null
+          title: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          attempt_count?: number
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          origin_url?: string | null
+          processing_started_at?: string | null
+          raw_content?: string | null
+          source_type?: Database["public"]["Enums"]["knowledge_source_type"]
+          status?: Database["public"]["Enums"]["knowledge_source_status"]
+          storage_object_path?: string | null
+          title?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "knowledge_sources_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       notes: {
         Row: {
           body: string
@@ -625,6 +795,31 @@ export type Database = {
       }
     }
     Functions: {
+      complete_knowledge_import: {
+        Args: { p_chunks: Json; p_raw_content: string; p_source_id: string }
+        Returns: boolean
+      }
+      delete_expired_voice_sessions: {
+        Args: never
+        Returns: {
+          confidence_score: number | null
+          ended_at: string | null
+          expires_at: string | null
+          id: string
+          pending_mutation: Json | null
+          resolved_intent: string | null
+          started_at: string
+          state: Database["public"]["Enums"]["voice_session_state"]
+          transcript: string | null
+          user_id: string
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "voice_sessions"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
       dispatch_due_reminders: {
         Args: never
         Returns: {
@@ -646,6 +841,34 @@ export type Database = {
           isSetofReturn: true
         }
       }
+      fail_knowledge_import: {
+        Args: { p_error_message: string; p_source_id: string }
+        Returns: boolean
+      }
+      reap_stuck_knowledge_imports: { Args: never; Returns: number }
+      retry_knowledge_import: {
+        Args: { p_source_id: string }
+        Returns: boolean
+      }
+      soft_delete_course_cascade: {
+        Args: { p_course_id: string }
+        Returns: {
+          deadlines_affected: number
+          notes_unlinked: number
+          reminders_dismissed: number
+        }[]
+      }
+      soft_delete_task_cascade: {
+        Args: { p_task_id: string }
+        Returns: {
+          notes_unlinked: number
+        }[]
+      }
+      start_knowledge_import: {
+        Args: { p_source_id: string }
+        Returns: boolean
+      }
+      sweep_expired_feedback: { Args: never; Returns: number }
     }
     Enums: {
       deadline_status:
@@ -655,6 +878,8 @@ export type Database = {
         | "Overdue"
         | "Completed"
         | "Cancelled"
+      knowledge_source_status: "Pending" | "Processing" | "Ready" | "Failed"
+      knowledge_source_type: "url" | "pasted_text" | "image" | "video" | "audio"
       reminder_status:
         | "Scheduled"
         | "Delivered"
@@ -810,6 +1035,8 @@ export const Constants = {
         "Completed",
         "Cancelled",
       ],
+      knowledge_source_status: ["Pending", "Processing", "Ready", "Failed"],
+      knowledge_source_type: ["url", "pasted_text", "image", "video", "audio"],
       reminder_status: [
         "Scheduled",
         "Delivered",

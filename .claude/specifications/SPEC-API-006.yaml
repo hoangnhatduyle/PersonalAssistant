@@ -1,0 +1,145 @@
+# SUPERSEDED by SPEC-API-007 (Item 6: proactively repointed depends_on and
+# prose citations from CORE-006/DATA-009 to CORE-007/DATA-010 once those
+# superseded this version's dependencies mid-item, avoiding the same class
+# of stale-pointer drift the round-2 architect review found and flagged in
+# SPEC-DATA-009). No AC/NC content changed. Kept for historical audit-trail
+# purposes only.
+id: SPEC-API-006
+version: 0.1.0
+kind: api
+title: Personal Assistant application API surface
+status: deprecated
+context_and_scope:
+  in_scope:
+    - Collection and id-addressed CRUD routes for Course, Deadline, Task, Note backed by SPEC-DATA-009's tables (list/create at the collection route, get/update/soft-delete at the id-addressed route)
+    - Reminder creation, recomputation, and cancellation as a side effect of Deadline/Task create/update/delete routes — operationalizes SPEC-CORE-006 AC-006/AC-008/AC-009
+    - "Course delete cascade: soft-deleting a Course also soft-deletes its live Deadlines (cascading further to dismiss their Reminders) and clears linked_course_id on any Note that referenced it — operationalizes SPEC-CORE-006 AC-012/AC-013"
+    - "Task delete cascade: soft-deleting a Task clears linked_task_id on any Note that referenced it — operationalizes SPEC-CORE-006 AC-013"
+    - Reminder list/read endpoint, so undelivered reminders stay visible/queryable per NC-006
+    - Reminder-acknowledgment endpoint (acknowledge/dismiss/snooze) against SPEC-CORE-006's reminder state machine
+    - Voice intake endpoint that creates or continues a SPEC-VOICE-005 session, persisted via SPEC-DATA-009's voice_sessions table
+    - Voice confirm/decline endpoints addressed by session id, honoring the session's 5-minute expires_at confirmation window
+    - Auth session handling (Supabase Auth sign-in/out, session-refresh callback)
+    - Disclosure of cascade scope (Deadlines affected, Reminders dismissed, Notes unlinked) in the response to a Course-delete request and to a voice confirm request whose executed intent was a Course delete
+    - "Feedback submit endpoint (collection POST): creates a feedback row via SPEC-DATA-009's insert path, surfacing its NC-DATA-013 ownership-guard rejection as a validation error rather than a leaked DB error — operationalizes SPEC-CORE-006 AC-004 / SPEC-DATA-009 AC-10"
+    - "Feedback list endpoint (collection GET): the user's own feedback history, paginated, per the recorded retention decision's \"user can view their feedback history anytime\" commitment"
+    - "Feedback delete endpoint (id-addressed DELETE): hard-deletes one feedback row the user owns, returning not-found/forbidden (not a leaked 500) when the row does not exist, is already gone, or belongs to another user — operationalizes SPEC-DATA-009 AC-12 / NC-DATA-011"
+  out_of_scope:
+    - Third-party productivity-tool integrations
+    - Any endpoint that produces an autonomous external-world side effect without per-action confirmation
+    - Rate limiting implementation details (NC-API-005 states the requirement; the backing store/middleware is an implementation-time decision, not modeled here)
+    - An undelete/restore endpoint
+    - A feedback update/edit endpoint — v1 feedback is submit-once, delete-if-unwanted; no PATCH is modeled
+    - The suggestion-generation logic that reads feedback_aggregates (a future personalization-engine item; this spec's feedback routes only write/read/delete raw feedback rows, never feedback_aggregates directly)
+  external_dependencies:
+    - Supabase Auth (session/JWT verification)
+    - SPEC-VOICE-005 voice_session state machine (orchestrates the voice intake/confirm/decline endpoints)
+  shared_schemas:
+    - "ApiResponse { success: boolean, data: object|null, error: string|null, meta: { total, page, limit } (paginated endpoints only) }"
+    - CoursePayload { code, name, term, meeting_pattern, location, instructor, reminders_enabled, reminder_lead_minutes }
+    - DeadlinePayload { course_id, title, due_at, priority }
+    - TaskPayload { title, due_at (optional), tags, reminders_enabled, reminder_lead_minutes }
+    - NotePayload { body, linked_course_id (optional), linked_task_id (optional), linked_date (optional) }
+    - "VoiceConfirmResponse { session_id, executed: boolean, result: object|null (includes cascade scope when the executed intent was a Course delete) }"
+    - "FeedbackPayload { target_type: deadline|task|reminder, target_id, rating (1-5), comment (optional) }"
+state_machines: []
+negative_constraints:
+  - id: NC-API-001
+    message: Every route MUST verify the authenticated Supabase user and scope all reads/writes to that user's own rows — never rely on RLS alone at the API layer.
+    severity: critical
+  - id: NC-API-002
+    message: State fields (deadlines.status, tasks.status, reminders.acknowledgment_state) MUST NOT be settable to an arbitrary value via a generic update; they may only change through an explicit transition action validated against SPEC-CORE-006's state machines. (voice_sessions.state has no generic update route at all, so no equivalent constraint applies to it here — SPEC-DATA-009's NC-DATA-002/003 already guard it at the schema level.)
+    severity: critical
+  - id: NC-API-003
+    message: The voice confirm endpoint MUST NOT execute a mutating intent except by resolving the target session's persisted pending_mutation, and only while expires_at has not passed.
+    severity: critical
+  - id: NC-API-004
+    message: Error responses MUST NOT leak internal details (stack traces, raw database errors) to the client.
+    severity: high
+  - id: NC-API-005
+    message: All state-changing endpoints MUST be rate-limited.
+    severity: medium
+  - id: NC-API-006
+    message: The Course/Deadline/Task/Note delete route MUST perform a soft delete (set deleted_at) and MUST NOT issue a hard DELETE.
+    severity: critical
+  - id: NC-API-007
+    message: List/get routes MUST NOT return soft-deleted rows unless an explicit include-deleted parameter is set.
+    severity: high
+  - id: NC-API-008
+    message: The Course delete route's cascade (to its Deadlines/Reminders) and the Note-unlink cascade (Course or Task delete) MUST be applied in the same transaction as the parent's own soft-delete — operationalizes SPEC-CORE-006's NC-010.
+    severity: high
+  - id: NC-API-009
+    message: "The feedback delete route MUST perform a hard DELETE (never soft-delete) and MUST assert rows-affected, returning not-found/forbidden on zero rather than a bare 200 — operationalizes SPEC-DATA-009 AC-12/NC-DATA-011. Unlike NC-API-006, feedback intentionally has no soft-delete/undelete story: it is bounded PII, not a recoverable core entity."
+    severity: high
+acceptance_criteria:
+  - id: AC-1
+    given: an authenticated request to create a Deadline or Task with a valid payload
+    when: the request is handled
+    then: a row is created scoped to that user, a Reminder is automatically scheduled per SPEC-CORE-006 AC-006, and the response follows the ApiResponse success envelope
+    invariant: true
+  - id: AC-2
+    given: a request attempting to set a deadline's or task's status directly to an arbitrary value
+    when: the value does not correspond to a valid transition event
+    then: the request is rejected with an error envelope, not silently applied
+    invariant: true
+  - id: AC-3
+    given: a voice-intake request whose resolved intent is mutating
+    when: the endpoint processes it
+    then: it persists the pending_mutation via the voice session and returns an AwaitingConfirmation response naming the session id
+    invariant: true
+  - id: AC-4
+    given: a request from user A addressing a resource id owned by user B
+    when: the route handler runs
+    then: it returns not-found/forbidden rather than another user's data, independent of RLS
+    invariant: true
+  - id: AC-5
+    given: a reminder-acknowledgment request targeting a reminder not in the Delivered state
+    when: the request is handled
+    then: it is rejected as an invalid transition
+    invariant: true
+  - id: AC-6
+    given: a voice confirm request naming a session id in AwaitingConfirmation with expires_at still in the future
+    when: the request is handled
+    then: the session's persisted pending_mutation is executed exactly as it was when AwaitingConfirmation began
+    invariant: true
+  - id: AC-7
+    given: a DELETE request against a Course, Deadline, Task, or Note owned by the requesting user
+    when: the request is handled
+    then: the row's deleted_at is set; if it was a Deadline or Task, any Scheduled/Snoozed Reminder targeting it is dismissed; if it was a Course, every live Deadline under it is also soft-deleted (cascading the same reminder-dismissal); if it was a Course or Task, any Note referencing it has that link cleared — all in one transaction; no SQL DELETE is issued
+    invariant: true
+  - id: AC-8
+    given: an update to a Deadline's due_at, to a Task's own due_at, or to the reminder_lead_minutes/reminders_enabled on a Course or Task
+    when: the update route processes it successfully
+    then: the affected entity's/entities' Reminder(s) are created, recomputed, or dismissed to match the new setting, per SPEC-CORE-006 AC-008
+    invariant: true
+  - id: AC-9
+    given: a voice confirm request naming a session id whose expires_at has already passed
+    when: the request is handled
+    then: it is rejected as expired and no mutation is executed
+    invariant: true
+  - id: AC-10
+    given: a DELETE request against a Course that cascades to live Deadlines/Reminders/Notes, or a voice confirm request whose pending_mutation resolves to a Course-delete intent
+    when: the response is returned to the caller
+    then: the response discloses the cascade scope (counts of Deadlines affected, Reminders dismissed, Notes unlinked) rather than silently performing an unbounded cascade
+    invariant: true
+  - id: AC-11
+    given: an authenticated POST to the feedback collection route naming a target_type/target_id the requesting user owns, and a rating 1-5
+    when: the request is handled
+    then: a feedback row is created scoped to that user (SPEC-DATA-009 AC-10) and the response follows the ApiResponse success envelope; if target_id does not belong to that user or target_type, the request is rejected with a validation error, not a leaked DB constraint message
+    invariant: true
+  - id: AC-12
+    given: an authenticated GET to the feedback collection route
+    when: the request is handled
+    then: only the requesting user's own feedback rows are returned, paginated per the ApiResponse meta shape
+    invariant: true
+  - id: AC-13
+    given: an authenticated DELETE to the feedback id-addressed route for a row the requesting user owns
+    when: the request is handled
+    then: the row is hard-deleted and the response confirms removal; if the id does not exist, was already deleted, or belongs to another user, the response is not-found/forbidden rather than a silent success or another user's data
+    invariant: true
+depends_on:
+  - SPEC-CORE-006
+  - SPEC-DATA-009
+  - SPEC-VOICE-005
+constitution_rules:
+  - NC-SQL-CONCAT

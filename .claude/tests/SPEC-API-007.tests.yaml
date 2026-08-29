@@ -1,0 +1,108 @@
+spec_id: SPEC-API-007
+generated_at: 2026-08-28T13:46:38.008Z
+cases:
+  - id: T-SPEC-API-007-AC-AC_1
+    kind: acceptance
+    traces_to: SPEC-API-007#AC-1
+    assertion: given an authenticated request to create a Deadline or Task with a valid payload, when the request is handled, then a row is created scoped to that user, a Reminder is automatically scheduled per SPEC-CORE-007 AC-006, and the response follows the ApiResponse success envelope
+    invariant: true
+  - id: T-SPEC-API-007-AC-AC_2
+    kind: acceptance
+    traces_to: SPEC-API-007#AC-2
+    assertion: given a request attempting to set a deadline's or task's status directly to an arbitrary value, when the value does not correspond to a valid transition event, then the request is rejected with an error envelope, not silently applied
+    invariant: true
+  - id: T-SPEC-API-007-AC-AC_3
+    kind: acceptance
+    traces_to: SPEC-API-007#AC-3
+    assertion: given a voice-intake request whose resolved intent is mutating, when the endpoint processes it, then it persists the pending_mutation via the voice session and returns an AwaitingConfirmation response naming the session id
+    invariant: true
+  - id: T-SPEC-API-007-AC-AC_4
+    kind: acceptance
+    traces_to: SPEC-API-007#AC-4
+    assertion: given a request from user A addressing a resource id owned by user B, when the route handler runs, then it returns not-found/forbidden rather than another user's data, independent of RLS
+    invariant: true
+  - id: T-SPEC-API-007-AC-AC_5
+    kind: acceptance
+    traces_to: SPEC-API-007#AC-5
+    assertion: given a reminder-acknowledgment request targeting a reminder not in the Delivered state, when the request is handled, then it is rejected as an invalid transition
+    invariant: true
+  - id: T-SPEC-API-007-AC-AC_6
+    kind: acceptance
+    traces_to: SPEC-API-007#AC-6
+    assertion: given a voice confirm request naming a session id in AwaitingConfirmation with expires_at still in the future, when the request is handled, then the session's persisted pending_mutation is executed exactly as it was when AwaitingConfirmation began
+    invariant: true
+  - id: T-SPEC-API-007-AC-AC_7
+    kind: acceptance
+    traces_to: SPEC-API-007#AC-7
+    assertion: given a DELETE request against a Course, Deadline, Task, or Note owned by the requesting user, when the request is handled, then the row's deleted_at is set; if it was a Deadline or Task, any Scheduled/Snoozed Reminder targeting it is dismissed; if it was a Course, every live Deadline under it is also soft-deleted (cascading the same reminder-dismissal); if it was a Course or Task, any Note referencing it has that link cleared — all in one transaction; no SQL DELETE is issued
+    invariant: true
+  - id: T-SPEC-API-007-AC-AC_8
+    kind: acceptance
+    traces_to: SPEC-API-007#AC-8
+    assertion: given an update to a Deadline's due_at, to a Task's own due_at, or to the reminder_lead_minutes/reminders_enabled on a Course or Task, when the update route processes it successfully, then the affected entity's/entities' Reminder(s) are created, recomputed, or dismissed to match the new setting, per SPEC-CORE-007 AC-008
+    invariant: true
+  - id: T-SPEC-API-007-AC-AC_9
+    kind: acceptance
+    traces_to: SPEC-API-007#AC-9
+    assertion: given a voice confirm request naming a session id whose expires_at has already passed, when the request is handled, then it is rejected as expired and no mutation is executed
+    invariant: true
+  - id: T-SPEC-API-007-AC-AC_10
+    kind: acceptance
+    traces_to: SPEC-API-007#AC-10
+    assertion: given a DELETE request against a Course that cascades to live Deadlines/Reminders/Notes, or a voice confirm request whose pending_mutation resolves to a Course-delete intent, when the response is returned to the caller, then the response discloses the cascade scope (counts of Deadlines affected, Reminders dismissed, Notes unlinked) rather than silently performing an unbounded cascade
+    invariant: true
+  - id: T-SPEC-API-007-AC-AC_11
+    kind: acceptance
+    traces_to: SPEC-API-007#AC-11
+    assertion: given an authenticated POST to the feedback collection route naming a target_type/target_id the requesting user owns, and a rating 1-5, when the request is handled, then a feedback row is created scoped to that user (SPEC-DATA-010 AC-10) and the response follows the ApiResponse success envelope; if target_id does not belong to that user or target_type, the request is rejected with a validation error, not a leaked DB constraint message
+    invariant: true
+  - id: T-SPEC-API-007-AC-AC_12
+    kind: acceptance
+    traces_to: SPEC-API-007#AC-12
+    assertion: given an authenticated GET to the feedback collection route, when the request is handled, then only the requesting user's own feedback rows are returned, paginated per the ApiResponse meta shape
+    invariant: true
+  - id: T-SPEC-API-007-AC-AC_13
+    kind: acceptance
+    traces_to: SPEC-API-007#AC-13
+    assertion: given an authenticated DELETE to the feedback id-addressed route for a row the requesting user owns, when the request is handled, then the row is hard-deleted and the response confirms removal; if the id does not exist, was already deleted, or belongs to another user, the response is not-found/forbidden rather than a silent success or another user's data
+    invariant: true
+  - id: T-SPEC-API-007-NC-NC_API_001
+    kind: negative-constraint
+    traces_to: SPEC-API-007#NC-API-001
+    assertion: Every route MUST verify the authenticated Supabase user and scope all reads/writes to that user's own rows — never rely on RLS alone at the API layer.
+    invariant: true
+  - id: T-SPEC-API-007-NC-NC_API_002
+    kind: negative-constraint
+    traces_to: SPEC-API-007#NC-API-002
+    assertion: State fields (deadlines.status, tasks.status, reminders.acknowledgment_state) MUST NOT be settable to an arbitrary value via a generic update; they may only change through an explicit transition action validated against SPEC-CORE-007's state machines. (voice_sessions.state has no generic update route at all, so no equivalent constraint applies to it here — SPEC-DATA-010's NC-DATA-002/003 already guard it at the schema level.)
+    invariant: true
+  - id: T-SPEC-API-007-NC-NC_API_003
+    kind: negative-constraint
+    traces_to: SPEC-API-007#NC-API-003
+    assertion: The voice confirm endpoint MUST NOT execute a mutating intent except by resolving the target session's persisted pending_mutation, and only while expires_at has not passed.
+    invariant: true
+  - id: T-SPEC-API-007-NC-NC_API_004
+    kind: negative-constraint
+    traces_to: SPEC-API-007#NC-API-004
+    assertion: Error responses MUST NOT leak internal details (stack traces, raw database errors) to the client.
+    invariant: true
+  - id: T-SPEC-API-007-NC-NC_API_006
+    kind: negative-constraint
+    traces_to: SPEC-API-007#NC-API-006
+    assertion: The Course/Deadline/Task/Note delete route MUST perform a soft delete (set deleted_at) and MUST NOT issue a hard DELETE.
+    invariant: true
+  - id: T-SPEC-API-007-NC-NC_API_007
+    kind: negative-constraint
+    traces_to: SPEC-API-007#NC-API-007
+    assertion: List/get routes MUST NOT return soft-deleted rows unless an explicit include-deleted parameter is set.
+    invariant: true
+  - id: T-SPEC-API-007-NC-NC_API_008
+    kind: negative-constraint
+    traces_to: SPEC-API-007#NC-API-008
+    assertion: The Course delete route's cascade (to its Deadlines/Reminders) and the Note-unlink cascade (Course or Task delete) MUST be applied in the same transaction as the parent's own soft-delete — operationalizes SPEC-CORE-007's NC-010.
+    invariant: true
+  - id: T-SPEC-API-007-NC-NC_API_009
+    kind: negative-constraint
+    traces_to: SPEC-API-007#NC-API-009
+    assertion: "The feedback delete route MUST perform a hard DELETE (never soft-delete) and MUST assert rows-affected, returning not-found/forbidden on zero rather than a bare 200 — operationalizes SPEC-DATA-010 AC-12/NC-DATA-011. Unlike NC-API-006, feedback intentionally has no soft-delete/undelete story: it is bounded PII, not a recoverable core entity."
+    invariant: true

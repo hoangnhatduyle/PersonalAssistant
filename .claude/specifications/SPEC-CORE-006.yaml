@@ -1,0 +1,259 @@
+# SUPERSEDED by SPEC-CORE-007 (Item 6 architect-review round 2: narrowed
+# AC-004's "suggestion" wording to the actual Feedback entity shape
+# (deadline|task|reminder, no Suggestion entity exists in v1); raised NC-012
+# to critical to match its NC-DATA-010 operationalization; and added the
+# aggregate-retained-by-design/erased-only-via-account-deletion clause).
+# Kept for historical audit-trail purposes only.
+id: SPEC-CORE-006
+version: 0.1.0
+kind: domain
+title: Personal Assistant core domain model
+status: deprecated
+context_and_scope:
+  in_scope:
+    - "Class schedule tracking: courses, meeting patterns, locations, instructors"
+    - "Assignment/deadline tracking: due dates, status, associated course, priority"
+    - Proactive reminder delivery ahead of deadline and task due dates, kept correct across the entity's full lifecycle (created, recomputed, or dismissed as due dates and settings change, cascaded on delete)
+    - Ad hoc task/to-do management with its own lightweight lifecycle, distinct from the deadline lifecycle
+    - Lightweight note-taking, linkable to a course, task, or date
+    - Personalization/feedback loop that improves future suggestions and reminder timing from explicit user feedback
+    - Single confidential user account, shaped so it does not preclude later multi-account support
+    - Soft-delete as the uniform deletion mechanism across all user-owned entities, with atomic cascade to dependents (a Course's Deadlines and Reminders; a Course's or Task's linked Notes) and read-time exclusion of soft-deleted rows by default
+  out_of_scope:
+    - Multi-user, shared, or household/team accounts
+    - Autonomous actions with external side effects (auto-submit, auto-email, auto-register, purchase) without explicit per-action confirmation
+    - Deep third-party productivity-tool integrations beyond minimal schedule import
+    - Public distribution, multi-tenant operation, billing, or marketplace features
+    - Replacing university systems of record (LMS, registrar)
+    - Class-session and free-standing appointment reminders — would require a recurring session/occurrence entity that does not exist in v1; only Deadline and Task due-date reminders are in scope
+    - An undelete/restore UI for soft-deleted rows — soft delete exists for safety and auditability, not as a user-facing recovery feature in v1
+    - A retention policy for voice_sessions (transcripts, resolved intents, pending_mutation payloads) — resolved by decision 2bf99ffe-e5af-4d22-af5c-04833c24a827 and operationalized in SPEC-DATA-007/009, not re-specified here
+  external_dependencies:
+    - Speech-to-text service (vendor undecided)
+    - Text-to-speech service (vendor undecided)
+    - Push/notification delivery channel (vendor undecided)
+    - University academic calendar as an informational reference input
+  shared_schemas:
+    - Course { code, name, term, meeting_pattern, location, instructor, reminders_enabled (default true), reminder_lead_minutes (default 60) } — soft-deletable; soft-delete cascades to its Deadlines and linked Notes
+    - Deadline { id, course_id, title, due_at, status, priority } — status governed by deadline_assignment; reminder lead time/enable inherited from its Course; soft-deletable, including as a cascade from its Course
+    - Task { id, title, due_at (optional), status, tags, reminders_enabled (default true), reminder_lead_minutes (default 60) } — status governed by task_lifecycle; soft-deletable
+    - Note { id, body, linked_course_id (optional), linked_task_id (optional), linked_date (optional) } — soft-deletable; its links are cleared (not the Note itself) when the linked Course/Task is soft-deleted
+    - "Reminder { id, target_type: deadline|task, target_id, trigger_at, channel, acknowledgment_state } — created when a Deadline/Task gets a due date with reminders enabled; recomputed on relevant edits; dismissed when its target, or its target's governing Course, is soft-deleted"
+    - "Account { id, email, auth_credential_ref, notification_channel (default: in-app push), created_at } — every user-owned entity above is scoped by an account reference (see NC-011), keeping the schema additive-extensible to multiple accounts later without a breaking migration"
+    - "Feedback { id, target_type: deadline|task|reminder, target_id, rating, comment (optional), created_at } — submitted by the user on a specific Deadline/Task/Reminder instance; the sole input to the personalization/feedback loop (NC-007); a raw record is retained for 180 days, then rolled into an aggregate suggestion-quality weight and purged (NC-012); the user may delete any of their own feedback records at any time, independent of that window"
+state_machines:
+  - name: deadline_assignment
+    states:
+      - Not Started
+      - In Progress
+      - Submitted
+      - Overdue
+      - Completed
+      - Cancelled
+    initial: Not Started
+    transitions:
+      - from: Not Started
+        event: user_marks_in_progress
+        to: In Progress
+      - from: In Progress
+        event: user_marks_submitted
+        to: Submitted
+      - from: Not Started
+        event: due_date_passed_incomplete
+        to: Overdue
+      - from: In Progress
+        event: due_date_passed_incomplete
+        to: Overdue
+      - from: Overdue
+        event: user_marks_submitted
+        to: Submitted
+      - from: Submitted
+        event: user_confirms_done
+        to: Completed
+      - from: Not Started
+        event: user_cancels
+        to: Cancelled
+      - from: In Progress
+        event: user_cancels
+        to: Cancelled
+    forbidden:
+      - from: Completed
+        to: Not Started
+        reason: completed work must not silently reopen
+      - from: Cancelled
+        to: In Progress
+        reason: cancelled items are terminal
+      - from: Overdue
+        to: Not Started
+        reason: an overdue transition cannot be un-happened
+  - name: task_lifecycle
+    states:
+      - Open
+      - Done
+      - Cancelled
+    initial: Open
+    transitions:
+      - from: Open
+        event: user_marks_done
+        to: Done
+      - from: Open
+        event: user_cancels
+        to: Cancelled
+    forbidden:
+      - from: Done
+        to: Open
+        reason: mirrors deadline_assignment
+      - from: Cancelled
+        to: Open
+        reason: mirrors deadline_assignment
+  - name: reminder
+    states:
+      - Scheduled
+      - Delivered
+      - Acknowledged
+      - Dismissed
+      - Snoozed
+      - Expired
+    initial: Scheduled
+    transitions:
+      - from: Scheduled
+        event: trigger_time_reached
+        to: Delivered
+      - from: Delivered
+        event: user_acknowledges
+        to: Acknowledged
+      - from: Delivered
+        event: user_dismisses
+        to: Dismissed
+      - from: Delivered
+        event: user_snoozes
+        to: Snoozed
+      - from: Snoozed
+        event: snooze_time_reached
+        to: Delivered
+      - from: Delivered
+        event: no_response_timeout
+        to: Expired
+      - from: Scheduled
+        event: target_soft_deleted
+        to: Dismissed
+      - from: Snoozed
+        event: target_soft_deleted
+        to: Dismissed
+    forbidden:
+      - from: Acknowledged
+        to: Scheduled
+        reason: an acknowledged occurrence is terminal
+      - from: Expired
+        to: Delivered
+        reason: expired reminders must not silently re-fire
+negative_constraints:
+  - id: NC-001
+    message: Never delete or silently overwrite a user's deadline, task, or note without an explicit, confirmed user action.
+    severity: critical
+  - id: NC-002
+    message: Never take an action with external-world effects (submitting, emailing, registering, purchasing) on the user's behalf without explicit per-action confirmation.
+    severity: critical
+  - id: NC-003
+    message: Never transmit or store voice or text data unencrypted, at rest or in transit.
+    severity: critical
+  - id: NC-004
+    message: Never present an inferred or guessed value as a confirmed fact; inferred data must be visibly labeled as such.
+    severity: high
+  - id: NC-005
+    message: Never share user data with a third party beyond the minimum required to deliver an explicitly-requested feature.
+    severity: critical
+  - id: NC-006
+    message: Never let a backlog of undelivered reminders suppress future reminders; undelivered reminders (including Snoozed) must remain visible and queryable, not silently dropped.
+    severity: medium
+  - id: NC-007
+    message: The personalization/learning loop may only adjust reminder timing, tone, or suggestions — never core factual data.
+    severity: high
+  - id: NC-008
+    message: Courses, Deadlines, Tasks, and Notes MUST be soft-deleted (deleted_at set) rather than hard-deleted, so a mistaken deletion remains recoverable given the absence of point-in-time recovery on the v1 hosting tier.
+    severity: critical
+  - id: NC-009
+    message: The reminder-dispatch query MUST exclude any Reminder whose target Deadline or Task has deleted_at set, as a backstop to the target_soft_deleted cascade.
+    severity: critical
+  - id: NC-010
+    message: A Course's soft-delete cascade (to its live Deadlines and their Reminders) and the Note-unlinking cascade (when a Course or Task is soft-deleted) MUST be applied atomically with the parent's own soft-delete, in the same operation — never left partially applied.
+    severity: high
+  - id: NC-011
+    message: Every user-owned entity (Course, Deadline, Task, Note, Reminder, VoiceSession, Feedback) MUST be scoped by an account/user reference; the domain model MUST NOT assume a single global account. This is what keeps later multi-account support additive rather than requiring a breaking migration.
+    severity: medium
+  - id: NC-012
+    message: "Feedback records MUST NOT be retained indefinitely: a raw Feedback record is bounded to a 180-day rolling retention window, after which it is rolled into an aggregate suggestion-quality weight and purged — never kept as an ever-growing raw log. Independent of that window, the user MAY delete any of their own Feedback records at any time; a user-initiated deletion MUST NOT itself contribute to the aggregate. Operationalized by SPEC-DATA-009's NC-DATA-010/NC-DATA-011."
+    severity: medium
+acceptance_criteria:
+  - id: AC-001
+    given: a Deadline or Task with a due date, whose governing reminder setting has reminders enabled
+    when: the current time reaches due_at minus the configured reminder_lead_minutes
+    then: a reminder is delivered via the user's chosen channel, and no such reminder is ever skipped unless reminders were explicitly disabled
+    invariant: true
+  - id: AC-002
+    given: an assignment has a due date
+    when: the due date/time passes while status is not Submitted, Completed, or Cancelled
+    then: the assignment transitions to Overdue and an overdue notification is generated
+    invariant: true
+  - id: AC-003
+    given: the user issues a spoken command to add a task or deadline
+    when: speech-to-text successfully resolves an intent and its entities
+    then: the corresponding Task/Deadline is created exactly once and the system confirms back to the user within an agreed latency budget
+    invariant: true
+  - id: AC-004
+    given: the user gives feedback on a suggestion or reminder
+    when: the feedback is submitted
+    then: it is stored and associated with that specific instance for future personalization; never discarded silently
+    invariant: true
+  - id: AC-005
+    given: the user authenticates from a new or different device
+    when: authentication succeeds
+    then: the same up-to-date schedule, tasks, deadlines, and notes are visible as on any other authenticated device
+    invariant: true
+  - id: AC-006
+    given: a Deadline or Task is created with a due date
+    when: the creation succeeds
+    then: a corresponding Reminder row is automatically scheduled at due_at minus the governing reminder_lead_minutes
+    invariant: true
+  - id: AC-007
+    given: a user requests deletion of a Course, Deadline, Task, or Note
+    when: the deletion is processed
+    then: the row is soft-deleted (deleted_at set) rather than removed from the database, and remains recoverable
+    invariant: true
+  - id: AC-008
+    given: a Deadline's or Task's due_at is set or changed, or the reminder_lead_minutes/reminders_enabled governing it changes
+    when: the change is saved
+    then: its Reminder is created (if none exists and reminders are enabled with a due date set), recomputed to the new trigger_at (if one exists and reminders remain enabled), or transitioned to Dismissed (if reminders are now disabled or due_at is cleared) — a reminder must never be missing when it should exist, stale, or firing after being disabled
+    invariant: true
+  - id: AC-009
+    given: a Deadline or Task is soft-deleted
+    when: the deletion is processed
+    then: any Scheduled or Snoozed Reminder targeting it transitions to Dismissed
+    invariant: true
+  - id: AC-010
+    given: any list or get query against Courses, Deadlines, Tasks, or Notes
+    when: the query executes
+    then: rows with deleted_at set are excluded by default
+    invariant: true
+  - id: AC-011
+    given: a Delivered reminder whose delivered_at is more than 60 minutes in the past with no Acknowledged, Dismissed, or Snoozed response
+    when: the dispatch sweep runs
+    then: it transitions to Expired
+    invariant: true
+  - id: AC-012
+    given: a Course is soft-deleted
+    when: the deletion is processed
+    then: every non-deleted Deadline under that Course is also soft-deleted in the same operation, cascading per AC-009 to dismiss their Reminders
+    invariant: true
+  - id: AC-013
+    given: a Course or Task is soft-deleted
+    when: the deletion is processed
+    then: any Note whose linked_course_id or linked_task_id references it has that link cleared to NULL in the same operation
+    invariant: true
+  - id: AC-014
+    given: the v1 single-account schema
+    when: a table or query is inspected for account scoping
+    then: every user-owned entity carries an account/user reference (no table assumes a single global account), so adding a second account later requires no destructive migration — operationalizes NC-011
+    invariant: true
+depends_on: []
+constitution_rules: []

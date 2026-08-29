@@ -1,0 +1,99 @@
+id: SPEC-API-008
+version: 0.2.0
+kind: api
+title: Knowledge Reference API surface
+status: draft
+context_and_scope:
+  in_scope:
+    - "/api/knowledge collection route: list (paginated) and create (URL-fetch, pasted text, or file upload). Create returns 201 with the source in Pending status immediately — extraction/OCR/transcription/embedding runs afterward via the worker mechanism owned by SPEC-INFRA-007, never synchronously in this request."
+    - "/api/knowledge/[id] route: get single source (with status/error_message) and delete (hard delete; chunk removal is automatic via SPEC-DATA-011's FK cascade, not orchestrated at the API layer)"
+    - "/api/knowledge/[id]/retry route: retry a Failed import, subject to the attempt cap (SPEC-CORE-008 NC-022)"
+    - Extending POST /api/voice's intent resolution with a read-only knowledge_lookup query kind, including mandatory citations and machine-extraction labeling in the response
+    - Synchronous pre-flight URL validation (scheme/DNS/IP check) in the create route itself, as a fast-fail 400 before any Pending row is even inserted — distinct from the worker's own connection-time re-validation (see NC-API-011)
+    - Rate limiting on the create route specifically, given it fans out to paid OpenAI/Deepgram calls per request
+  out_of_scope:
+    - The out-of-process worker's own execution/sandboxing mechanism, and where uploaded file bytes are stored — owned by SPEC-INFRA-007
+    - A knowledge source update/edit endpoint (delete-and-reimport only, per SPEC-CORE-008)
+    - Multi-page crawling or scheduled re-crawl of a URL source
+  external_dependencies: []
+  shared_schemas:
+    - ApiResponse
+    - "KnowledgeSourcePayload { source_type: 'url'|'pasted_text'|'image'|'video'|'audio', title: string, url?: string (source_type='url'), text?: string (source_type='pasted_text'), file?: multipart (source_type='image'|'video'|'audio') }"
+    - "KnowledgeSourceResponse { id, source_type, title, origin_url, status, error_message, attempt_count, created_at, updated_at }"
+    - "VoiceTurnResult (extended) { ..., citations?: [{ sourceId, title, originUrl? }], extractionLabel?: 'machine_extracted' }"
+state_machines: []
+negative_constraints:
+  - id: NC-API-010
+    message: knowledge_sources.status and error_message are never client-settable via a generic update (no PATCH route exists at all); creation, the dedicated retry route, and internal worker/reaper paths are the only ways status changes, matching SPEC-DATA-011's grant model (NC-DATA-025).
+    severity: medium
+  - id: NC-API-011
+    message: "The URL-fetch import path validates in two stages. (1) Fast-fail, synchronous, before any Pending row is inserted: reject a scheme other than http(s), or a hostname whose every resolved A/AAAA record is private/link-local/loopback or a cloud metadata endpoint. (2) At actual connection time (in the worker, per SPEC-INFRA-007): connect to the specific validated IP directly rather than letting the HTTP client re-resolve DNS independently (defending against DNS-rebinding, which survives a naive validate-then-fetch(url) pattern even when stage 1's check is correct), re-validate and re-pin on every redirect hop up to a hard cap on chain length, and enforce a maximum response size and duration."
+    severity: critical
+  - id: NC-API-012
+    message: File uploads are size- and type-limited against an explicit allow-list, verified by server-side content-sniffing (magic bytes) against the declared type rather than trusting the client-supplied Content-Type or extension; oversized, disallowed, or type-mismatched uploads are rejected with 400 and never silently truncated or partially persisted. Decoded-resource bounds (image pixel dimensions, video duration/frame count) are enforced in addition to compressed byte size, since a small file can still decode to a disproportionate amount of memory/CPU work.
+    severity: high
+  - id: NC-API-013
+    message: Ownership/authentication is verified explicitly at the app layer on every route (mirrors NC-API-001), never relying on RLS alone.
+    severity: critical
+  - id: NC-API-014
+    message: knowledge_lookup executes directly without a confirmation step, like upcoming_schedule, but retrieval must be strictly scoped to the caller's own knowledge_chunks. The answer-composition LLM call must use a response schema with no mutation-capable field at all (a distinct schema from the mutation-resolution one, not the same schema with a field ignored), and the composition prompt must wrap retrieved chunk text with an explicit boundary instructing the model to treat it as data to quote/summarize, never as a command (mirrors SPEC-CORE-008 NC-018/NC-025).
+    severity: critical
+  - id: NC-API-015
+    message: A knowledge_lookup response must include citation data for every source that contributed to the answer, label OCR/transcript-derived content as machine-extracted (SPEC-CORE-008 NC-023), and must return a no-relevant-knowledge response rather than a fabricated answer when retrieval finds nothing sufficiently relevant.
+    severity: high
+  - id: NC-API-016
+    message: Retry is only valid from Failed state with attempts remaining; an invalid-state retry attempt or an exhausted attempt cap returns 400, matching the existing transition-route error shape used by deadlines/tasks.
+    severity: medium
+  - id: NC-API-017
+    message: The delete route hard-deletes the source; chunk removal is automatic via SPEC-DATA-011's FK cascade in the same statement, not a separate step this API layer orchestrates. It must never be possible to observe a state where the source is gone but a chunk remains queryable.
+    severity: critical
+  - id: NC-API-018
+    message: The create route is rate-limited per user, distinct from and in addition to the general per-route rate limiting NC-API-005 (SPEC-API-007) already requires — this route specifically fans out to paid OpenAI Vision/embedding and Deepgram calls per request, making it a cost-abuse vector even for a single-user product if a session token is replayed or a client is compromised.
+    severity: high
+acceptance_criteria:
+  - id: AC-001
+    given: a caller requests another user's knowledge source by id
+    then: the response is 404, never leaking existence or data
+    invariant: false
+  - id: AC-002
+    given: a URL-fetch import whose hostname's every resolved A/AAAA record is private/link-local/loopback, or a cloud metadata endpoint, or whose scheme is non-http(s)
+    then: the create request is rejected with 400 synchronously, before any Pending row is inserted and before any outbound network call is made
+    invariant: false
+  - id: AC-003
+    given: a URL-fetch import that passed stage-1 validation, whose worker-time connection or a later redirect hop resolves to a private/internal address
+    then: the worker does not connect to it, and the import fails safely into Failed status with a generic error_message, never exposing the internal response body
+    invariant: false
+  - id: AC-003b
+    given: a URL-fetch import whose worker-time connection succeeds validation
+    then: the connection is made to the specific validated IP address directly, not re-resolved independently by the HTTP client, and this repeats on every redirect hop up to the hard chain-length cap
+    invariant: true
+  - id: AC-004
+    given: an oversized, disallowed-type, or magic-byte/declared-type-mismatched file upload
+    then: it is rejected with 400 and no partial file/content is persisted
+    invariant: false
+  - id: AC-004b
+    given: a file upload whose decoded content (image pixel dimensions, video duration/frame count) exceeds the bound even though its compressed byte size is within limits
+    then: it is rejected with 400
+    invariant: false
+  - id: AC-005
+    given: a knowledge_lookup query with no sufficiently relevant chunks
+    then: the response is a clarification / no-knowledge-found message, never a fabricated cited answer
+    invariant: false
+  - id: AC-006
+    given: a knowledge_lookup answer composed from retrieved chunks
+    then: the response includes citation data identifying every contributing source, and labels any OCR/transcript-derived content as machine-extracted
+    invariant: false
+  - id: AC-007
+    given: a Failed source that has exhausted its retry attempt cap
+    then: a retry request returns 400 rather than transitioning it to Processing
+    invariant: false
+  - id: AC-008
+    given: a burst of create requests from the same user exceeding the create-route's rate limit
+    then: subsequent requests in the burst are rejected with a rate-limit response rather than each fanning out to OpenAI/Deepgram
+    invariant: false
+depends_on:
+  - SPEC-CORE-008
+  - SPEC-DATA-011
+  - SPEC-API-007
+  - SPEC-VOICE-005
+constitution_rules: []

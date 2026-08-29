@@ -1,0 +1,9 @@
+-- No local-dev seed data currently needed. Kept present (rather than
+-- deleted) because supabase/config.toml's [db.seed].sql_paths points at this
+-- file and `supabase db reset` expects it to exist.
+--
+-- Previously seeded two Vault secrets for a pg_cron -> pg_net -> Edge
+-- Function dispatch path; that design was rejected during Item 4's
+-- architect-review round in favor of a direct in-process RPC call (see
+-- supabase/migrations/0003_pg_cron_reminders.sql), which needs no secrets at
+-- all.

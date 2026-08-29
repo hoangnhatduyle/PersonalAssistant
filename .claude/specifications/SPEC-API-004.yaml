@@ -1,8 +1,16 @@
+# SUPERSEDED by SPEC-API-005 (Tracked debt closure: AC-8's `given` clause
+# only spelled out a Deadline's due_at and Course/Task's reminder settings,
+# dropping a Task's own due_at changing independently — the fourth time that
+# branch got dropped from a Deadline/Task pair; and no AC required a
+# Course-delete confirmation/response to disclose its cascade scope, so a
+# technically-faithful execution of an under-disclosed prompt would still
+# violate SPEC-CORE-005 NC-010's spirit). Kept for historical audit-trail
+# purposes only.
 id: SPEC-API-004
 version: 0.1.0
 kind: api
 title: Personal Assistant application API surface
-status: draft
+status: deprecated
 context_and_scope:
   in_scope:
     - Collection and id-addressed CRUD routes for Course, Deadline, Task, Note backed by SPEC-DATA-005's tables (list/create at the collection route, get/update/soft-delete at the id-addressed route)

@@ -1,0 +1,61 @@
+id: SPEC-INFRA-007
+version: 0.2.0
+kind: infra
+title: Knowledge Reference ingestion runtime and storage
+status: draft
+context_and_scope:
+  in_scope:
+    - "Runtime contract for the create-route's after()-driven processing: route-segment maxDuration = 300 seconds (5 minutes), and the guarantee that ingestion runs inside the creating request's own invocation lifetime, not a separate self-addressed HTTP hop"
+    - A fourth pg_cron job registering reap_stuck_knowledge_imports() (function body owned by SPEC-DATA-011; this spec owns only its cron.schedule cadence/registration, mirroring how SPEC-INFRA-006 owns the other three jobs' schedules while SPEC-DATA-010 owns their bodies)
+    - A private Supabase Storage bucket for uploaded file bytes (image/video/audio), RLS/path-scoped to the owning user, never publicly readable
+    - "Fault-containment and resource-bounding for the media-extraction step processing untrusted uploaded bytes, achieved via Node's worker_threads with an explicit resourceLimits (maxOldGenerationSizeMb / maxYoungGenerationSizeMb) and a wall-clock timeout that terminates the thread — not OS-level process/container isolation, which Vercel's serverless Node runtime does not expose. See NC-INF-010 for what this mechanism does and does not guarantee."
+    - Confirming no new secrets are required beyond SPEC-INFRA-006's existing OPENAI_API_KEY/DEEPGRAM_API_KEY
+  out_of_scope:
+    - The reap_stuck_knowledge_imports() function body — owned by SPEC-DATA-011
+    - The /api/knowledge route contracts — owned by SPEC-API-008
+    - Choice of specific OCR/transcription library internals beyond the already-decided OpenAI vision / Deepgram stack
+  external_dependencies: []
+  shared_schemas: []
+state_machines: []
+negative_constraints:
+  - id: NC-INF-007
+    message: The create route's after()-driven processing runs within a bounded maxDuration = 300 seconds; a run that would exceed it must be caught by SPEC-DATA-011's reaper (NC-DATA-027, whose 10-minute window is deliberately longer than this value so it never reaps still-legitimately-running work), never silently truncated with no recorded failure.
+    severity: high
+  - id: NC-INF-008
+    message: The fourth pg_cron job (reap_stuck_knowledge_imports) is invoked directly and synchronously in-process from cron.schedule, per the same rule NC-INF-006 established for the feedback sweep — no pg_net/Edge-Function hop, since it is pure SQL with no external API call.
+    severity: high
+  - id: NC-INF-009
+    message: Uploaded file bytes are stored in a private Supabase Storage bucket, never publicly readable; access is scoped to the owning user only (RLS on storage.objects and/or signed URLs), mirroring NC-DATA-001's rule for table rows.
+    severity: critical
+  - id: NC-INF-010
+    message: "Media parsing/extraction (audio extraction from video, any native/binary parsing of uploaded bytes) runs inside a dedicated Node worker_threads instance, not on the main request-handling thread — this is fault-containment (a crashed or runaway parsing job cannot take down the request handler or other concurrent work in the same invocation) plus an enforced resource bound (worker_threads resourceLimits caps heap size; a wall-clock timeout terminates the thread if parsing hangs), not multi-tenant OS-level process isolation, which is not available inside Vercel's serverless Node runtime for a single invocation. It additionally validates the actual file container/format against the declared allow-list before invoking any parser — never trusting client-declared MIME type/extension alone (extends NC-API-012's request-time check with a worker-time defense against untrusted-input parsing risk)."
+    severity: critical
+  - id: NC-INF-011
+    message: No new secrets are required for this feature; OPENAI_API_KEY and DEEPGRAM_API_KEY from SPEC-INFRA-006's existing contract cover embeddings, vision OCR, and transcription.
+    severity: low
+  - id: NC-INF-012
+    message: SUPABASE_SERVICE_ROLE_KEY usage by the worker (to call complete_knowledge_import) stays confined to the server-only route/worker module, never client-bundled, per NC-INF-005.
+    severity: critical
+acceptance_criteria:
+  - id: AC-001
+    given: the create route's after() callback throws or the process is killed mid-processing
+    then: the row is left in Processing or Pending and is later reaped to Failed by SPEC-DATA-011's cron job, never stranded forever
+    invariant: true
+  - id: AC-002
+    given: an upload whose actual container/format doesn't match its declared type
+    then: the worker rejects it before invoking any parser, distinct from and in addition to SPEC-API-008's request-time magic-byte check
+    invariant: false
+  - id: AC-003
+    given: a crafted media file designed to consume excessive memory/CPU during extraction
+    then: the hard timeout/resource bound terminates the job and it surfaces as a Failed import with a generic error, not an unbounded resource-consumption event
+    invariant: false
+  - id: AC-004
+    given: the feature is deployed
+    then: no new environment variable beyond SPEC-INFRA-006's existing contract is required
+    invariant: false
+depends_on:
+  - SPEC-INFRA-006
+  - SPEC-CORE-008
+  - SPEC-DATA-011
+  - SPEC-API-008
+constitution_rules: []

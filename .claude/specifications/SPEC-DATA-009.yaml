@@ -1,0 +1,320 @@
+# SUPERSEDED by SPEC-DATA-010 (Item 6 architect-review round 2: NC-DATA-012's
+# SECURITY DEFINER sweep had no EXECUTE lockdown and no non-row-returning
+# signature requirement -- an unlocked cross-user PII-disclosure surface,
+# the same class of gap found in round 1 for feedback_aggregates' write
+# authority, just one layer deeper. Also repointed stale VOICE-004/DATA-007
+# citations, fixed the frozen updated_at, named the sweep function, and
+# folded in the round-2 MEDIUM/LOW cleanups). Kept for historical
+# audit-trail purposes only.
+id: SPEC-DATA-009
+version: 0.1.0
+kind: data
+title: Personal Assistant Postgres schema
+status: deprecated
+context_and_scope:
+  in_scope:
+    - Postgres schema for courses, deadlines, tasks, notes, reminders, and voice_sessions, plus the profiles table backing SPEC-CORE-006's Account entity
+    - Enum types backing the deadline_assignment, task_lifecycle, reminder, and voice_session state machines (the last mirroring SPEC-VOICE-004's public contract)
+    - A voice_sessions table backing SPEC-VOICE-004's VoiceSession entity, including a bounded expires_at confirmation window (null until the session reaches AwaitingConfirmation)
+    - Row Level Security policies scoping every table to the authenticated user (auth.uid())
+    - Soft-delete columns on Courses/Deadlines/Tasks/Notes (SPEC-CORE-006 NC-008) instead of hard DELETE, with a uniform rule that reads exclude soft-deleted rows by default
+    - "Reminder lifecycle correctness across entity edits and deletes: recomputing trigger_at on relevant changes, dismissing reminders whose target is soft-deleted, and sweeping stale Delivered reminders to Expired"
+    - A transition-guard trigger that validates both the initial state on INSERT and every transition on UPDATE, so a row can never be created directly into a non-initial state
+    - Timestamp/typing conventions for due dates, reminder trigger/snooze/delivery times
+    - A 24-hour hard-delete retention sweep for voice_sessions (transcript, resolved_intent, confidence_score, pending_mutation), measured from ended_at or, for a session that never reaches a terminal state, from started_at — no soft-delete, no view/browse retention, per the recorded PII-retention decision
+    - "A feedback table backing SPEC-CORE-006's Feedback entity (AC-004, NC-007): one row per explicit user feedback submission on a Deadline/Task/Reminder instance, scoped by user_id + RLS, with a BEFORE INSERT/UPDATE ownership-guard trigger validating target_id against target_type (mirrors the existing reminders.target_id guard)"
+    - A feedback_aggregates table holding the rolled-up suggestion-quality weight per user per dimension, where v1's dimension is target_type-coarse (deadline|task|reminder) — finer axes (timing vs. tone vs. suggestion-copy, per NC-007) are deferred to the personalization-engine implementation item, not this schema. feedback_aggregates is SELECT-only to authenticated/anon; every write comes from the retention-sweep function
+    - "A 180-day rolling retention sweep for feedback: rows older than 180 days (from created_at) are aggregated into feedback_aggregates and hard-deleted, as a single atomic data-modifying-CTE statement (DELETE...RETURNING feeding a grouped upsert, so row locks make double-counting across overlapping sweep runs impossible) — plus an explicit user-initiated hard-delete path for one feedback row at any time, which MUST NOT itself feed the aggregate"
+    - created_at/user_id indexes on feedback to keep the 180-day sweep and per-user reads from a full-table scan, mirroring the index migration 0004 added for the voice_sessions sweep
+  out_of_scope:
+    - "Scheduling for either sweep (voice_sessions 24h, feedback 180d): owned by the infra spec, which requires both to be invoked directly and synchronously in-process from cron.schedule's own command — the pg_net/Edge-Function hop was rejected in Item 4's own architect-review round because it makes cron.job_run_details lie about downstream failures, and would additionally break this spec's own NC-DATA-010 atomicity requirement by splitting the aggregate-then-delete across two transactions"
+    - Supabase Auth provider configuration itself (assumed present, not modeled here)
+    - The Course-soft-delete-cascade and Note-unlink-cascade application logic (owned at the API layer per SPEC-API-006; this spec only guarantees the columns/backstops those cascades rely on)
+    - The suggestion-generation logic that reads feedback_aggregates to influence future reminder timing/tone/suggestion copy (a future personalization-engine implementation item; this spec only guarantees the storage/rollup shape it will read from, per NC-007's own limit that the loop may only adjust timing/tone/suggestions, never core factual data)
+    - The feedback submit/list/delete HTTP routes themselves (owned by SPEC-API-006; this spec guarantees the table/RLS/guard-trigger/sweep those routes call into, and that a rows-affected-checked delete is possible, not the route handlers)
+    - A dedicated feedback-history browsing UI (a future client concern, not this schema spec)
+  external_dependencies:
+    - Supabase Postgres
+    - Supabase Auth auth.users table (referenced by profiles.id)
+  shared_schemas:
+    - profiles { id uuid PK references auth.users(id), email text, notification_channel text DEFAULT 'in_app_push', created_at timestamptz }
+    - courses { id uuid PK, user_id uuid FK profiles(id), code text, name text, term text, meeting_pattern text, location text, instructor text, reminders_enabled boolean DEFAULT true, reminder_lead_minutes int DEFAULT 60, deleted_at timestamptz NULL, created_at timestamptz, updated_at timestamptz }
+    - deadlines { id uuid PK, user_id uuid FK profiles(id), course_id uuid FK courses(id) ON DELETE RESTRICT, title text, due_at timestamptz, status deadline_status, priority text, deleted_at timestamptz NULL, created_at timestamptz, updated_at timestamptz }
+    - tasks { id uuid PK, user_id uuid FK profiles(id), title text, due_at timestamptz NULL, status task_status, tags text[], reminders_enabled boolean DEFAULT true, reminder_lead_minutes int DEFAULT 60, deleted_at timestamptz NULL, created_at timestamptz, updated_at timestamptz }
+    - notes { id uuid PK, user_id uuid FK profiles(id), body text, linked_course_id uuid FK courses(id) ON DELETE SET NULL NULL, linked_task_id uuid FK tasks(id) ON DELETE SET NULL NULL, linked_date date NULL, deleted_at timestamptz NULL, created_at timestamptz }
+    - reminders { id uuid PK, user_id uuid FK profiles(id), target_type text CHECK IN ('deadline','task'), target_id uuid, trigger_at timestamptz, snooze_until timestamptz NULL, delivered_at timestamptz NULL, channel text, acknowledgment_state reminder_status, created_at timestamptz }
+    - voice_sessions { id uuid PK, user_id uuid FK profiles(id), state voice_session_state, transcript text NULL, resolved_intent text NULL, confidence_score numeric NULL, pending_mutation jsonb NULL, started_at timestamptz, expires_at timestamptz NULL, ended_at timestamptz NULL }
+    - feedback { id uuid PK DEFAULT gen_random_uuid(), user_id uuid FK profiles(id) ON DELETE CASCADE, target_type text NOT NULL CHECK IN ('deadline','task','reminder'), target_id uuid NOT NULL, rating smallint NOT NULL CHECK BETWEEN 1 AND 5, comment text NULL, created_at timestamptz NOT NULL DEFAULT now() }
+    - feedback_aggregates { id uuid PK DEFAULT gen_random_uuid(), user_id uuid FK profiles(id) ON DELETE CASCADE, dimension text NOT NULL CHECK IN ('deadline','task','reminder'), sample_count int NOT NULL DEFAULT 0, rating_sum bigint NOT NULL DEFAULT 0, avg_rating numeric GENERATED ALWAYS AS (CASE WHEN sample_count = 0 THEN 0 ELSE rating_sum::numeric / sample_count END) STORED, updated_at timestamptz NOT NULL DEFAULT now(), UNIQUE(user_id, dimension) }
+state_machines:
+  - name: deadline_status
+    states:
+      - Not Started
+      - In Progress
+      - Submitted
+      - Overdue
+      - Completed
+      - Cancelled
+    initial: Not Started
+    transitions:
+      - from: Not Started
+        event: user_marks_in_progress
+        to: In Progress
+      - from: In Progress
+        event: user_marks_submitted
+        to: Submitted
+      - from: Not Started
+        event: due_date_passed_incomplete
+        to: Overdue
+      - from: In Progress
+        event: due_date_passed_incomplete
+        to: Overdue
+      - from: Overdue
+        event: user_marks_submitted
+        to: Submitted
+      - from: Submitted
+        event: user_confirms_done
+        to: Completed
+      - from: Not Started
+        event: user_cancels
+        to: Cancelled
+      - from: In Progress
+        event: user_cancels
+        to: Cancelled
+    forbidden:
+      - from: Completed
+        to: Not Started
+        reason: mirrors SPEC-CORE-006 deadline_assignment
+      - from: Cancelled
+        to: In Progress
+        reason: mirrors SPEC-CORE-006 deadline_assignment
+      - from: Overdue
+        to: Not Started
+        reason: mirrors SPEC-CORE-006 deadline_assignment
+  - name: task_status
+    states:
+      - Open
+      - Done
+      - Cancelled
+    initial: Open
+    transitions:
+      - from: Open
+        event: user_marks_done
+        to: Done
+      - from: Open
+        event: user_cancels
+        to: Cancelled
+    forbidden:
+      - from: Done
+        to: Open
+        reason: mirrors SPEC-CORE-006 task_lifecycle
+      - from: Cancelled
+        to: Open
+        reason: mirrors SPEC-CORE-006 task_lifecycle
+  - name: reminder_status
+    states:
+      - Scheduled
+      - Delivered
+      - Acknowledged
+      - Dismissed
+      - Snoozed
+      - Expired
+    initial: Scheduled
+    transitions:
+      - from: Scheduled
+        event: trigger_time_reached
+        to: Delivered
+      - from: Delivered
+        event: user_acknowledges
+        to: Acknowledged
+      - from: Delivered
+        event: user_dismisses
+        to: Dismissed
+      - from: Delivered
+        event: user_snoozes
+        to: Snoozed
+      - from: Snoozed
+        event: snooze_time_reached
+        to: Delivered
+      - from: Delivered
+        event: no_response_timeout
+        to: Expired
+      - from: Scheduled
+        event: target_soft_deleted
+        to: Dismissed
+      - from: Snoozed
+        event: target_soft_deleted
+        to: Dismissed
+    forbidden:
+      - from: Acknowledged
+        to: Scheduled
+        reason: mirrors SPEC-CORE-006 reminder
+      - from: Expired
+        to: Delivered
+        reason: mirrors SPEC-CORE-006 reminder
+  - name: voice_session_state
+    states:
+      - Idle
+      - Listening
+      - Transcribing
+      - IntentResolved
+      - IntentAmbiguous
+      - AwaitingConfirmation
+      - Executing
+      - Responding
+    initial: Idle
+    transitions:
+      - from: Idle
+        event: user_initiates_capture
+        to: Listening
+      - from: Listening
+        event: capture_ends
+        to: Transcribing
+      - from: Transcribing
+        event: intent_resolved_high_confidence
+        to: IntentResolved
+      - from: Transcribing
+        event: intent_ambiguous_or_low_confidence
+        to: IntentAmbiguous
+      - from: IntentAmbiguous
+        event: clarification_requested
+        to: Responding
+      - from: IntentResolved
+        event: read_only_query_resolved
+        to: Executing
+      - from: IntentResolved
+        event: mutating_action_resolved
+        to: AwaitingConfirmation
+      - from: AwaitingConfirmation
+        event: user_confirms
+        to: Executing
+      - from: AwaitingConfirmation
+        event: user_declines
+        to: Responding
+      - from: AwaitingConfirmation
+        event: confirmation_window_expired
+        to: Responding
+      - from: Executing
+        event: execution_completed
+        to: Responding
+      - from: Executing
+        event: execution_failed
+        to: Responding
+      - from: Responding
+        event: response_delivered
+        to: Idle
+    forbidden:
+      - from: Executing
+        to: Idle
+        reason: mirrors SPEC-VOICE-004 voice_session
+      - from: Transcribing
+        to: Executing
+        reason: mirrors SPEC-VOICE-004 voice_session
+      - from: Idle
+        to: Executing
+        reason: mirrors SPEC-VOICE-004 voice_session
+negative_constraints:
+  - id: NC-DATA-001
+    message: Every table holding user data MUST have a user_id column enforced via Row Level Security restricting rows to auth.uid() = user_id; no such table may be queried with RLS disabled.
+    severity: critical
+  - id: NC-DATA-002
+    message: Status/state columns (deadlines.status, tasks.status, reminders.acknowledgment_state, voice_sessions.state) MUST use the Postgres enum types defined in this spec, never free-text.
+    severity: high
+  - id: NC-DATA-003
+    message: "The transition-guard trigger MUST fire on both INSERT (rejecting any row whose status/state is not that table's declared initial state: Not Started for deadlines, Open for tasks, Scheduled for reminders, Idle for voice_sessions) and UPDATE (rejecting any forbidden transition declared in SPEC-CORE-006's deadline_assignment/task_lifecycle/reminder machines or SPEC-VOICE-004's voice_session machine) — not left to application code alone."
+    severity: high
+  - id: NC-DATA-004
+    message: All due-date, trigger, snooze, delivery, and session expiry timestamp columns MUST use timestamptz, never text or naive timestamp.
+    severity: high
+  - id: NC-DATA-005
+    message: Courses, Deadlines, Tasks, and Notes rows MUST be soft-deleted (deleted_at set) rather than removed via SQL DELETE; application code MUST NOT issue a hard DELETE against these tables. Operationalizes SPEC-CORE-006's NC-008.
+    severity: critical
+  - id: NC-DATA-006
+    message: notes.linked_course_id and notes.linked_task_id MUST use ON DELETE SET NULL as a defensive backstop, even though the primary unlink path is the SPEC-API-006 soft-delete cascade (NC-DATA-005 means a real DELETE, and thus this FK action, should never actually fire in normal operation).
+    severity: high
+  - id: NC-DATA-007
+    message: List/get queries against courses, deadlines, tasks, and notes MUST filter deleted_at IS NULL by default. Operationalizes SPEC-CORE-006 AC-010.
+    severity: high
+  - id: NC-DATA-008
+    message: The reminder-dispatch query MUST exclude any reminder whose target Deadline or Task has deleted_at set, as a backstop to the target_soft_deleted cascade. Operationalizes SPEC-CORE-006's NC-009.
+    severity: critical
+  - id: NC-DATA-009
+    message: voice_sessions rows MUST NOT be retained past 24 hours from ended_at (or from started_at, for a session that never reaches a terminal state); the retention-sweep function MUST perform a hard DELETE, not a soft-delete — this table holds no historical-record requirement distinguishing it from Courses/Deadlines/Tasks/Notes, and is the one unbounded PII-accumulation path in the schema.
+    severity: critical
+  - id: NC-DATA-010
+    message: "The feedback retention-sweep function specifically (and only the sweep — never a user-initiated delete, see NC-DATA-011) MUST NOT retain a feedback row past 180 days from created_at. It MUST perform the aggregate-then-purge as a single atomic statement: a data-modifying CTE whose DELETE...RETURNING (predicated on created_at older than 180 days) is grouped by (user_id, target_type) and fed into one INSERT...ON CONFLICT (user_id, dimension) DO UPDATE per group, incrementing feedback_aggregates.sample_count and rating_sum — never a separate SELECT-then-INSERT-then-DELETE sequence, which would let two overlapping sweep runs double-count the same rows."
+    severity: critical
+  - id: NC-DATA-011
+    message: A user-initiated feedback deletion MUST be a hard DELETE executed immediately against the specific row (not queued for the 180-day sweep, not soft-deleted), scoped to that user via RLS like every other user-owned table, and MUST NOT write anything to feedback_aggregates — a user erasing their own feedback must not have it folded into a permanent aggregate as a side effect of that same request.
+    severity: high
+  - id: NC-DATA-012
+    message: feedback_aggregates MUST be SELECT-only for the authenticated/anon roles (an RLS SELECT policy scoped to auth.uid() = user_id, and no INSERT/UPDATE/DELETE policy at all); every write to it MUST come solely from the SECURITY DEFINER retention-sweep function, exactly as SPEC-DATA-007's migration 0005 locked down voice_sessions.pending_mutation/expires_at after that column pair was found writable via direct PostgREST access.
+    severity: critical
+  - id: NC-DATA-013
+    message: A BEFORE INSERT OR UPDATE trigger on feedback MUST verify that target_id references an existing row of the declared target_type (deadline/task/reminder) owned by feedback.user_id, rejecting the write otherwise — mirrors the existing trg_guard_reminder_target_ownership trigger that guards reminders.target_id/target_type against the same polymorphic-reference-with-no-real-FK shape.
+    severity: high
+acceptance_criteria:
+  - id: AC-1
+    given: a deadline, task, reminder, or voice_session row
+    when: an INSERT specifies a status/state other than that table's declared initial state, or an UPDATE attempts a forbidden transition
+    then: the transaction is rejected by the database trigger, not merely by application-layer logic
+    invariant: true
+  - id: AC-2
+    given: two different authenticated users, each with their own rows across courses/deadlines/tasks/notes/reminders/voice_sessions/feedback/feedback_aggregates
+    when: user A queries any of these tables
+    then: no row belonging to user B is ever returned, enforced by RLS rather than by query-time filtering alone
+    invariant: true
+  - id: AC-3
+    given: a reminder row that is either (a) Scheduled with trigger_at in the past, or (b) Snoozed with snooze_until in the past, and whose target Deadline/Task is not soft-deleted
+    when: the reminder-dispatch query runs
+    then: the row is selected for delivery, transitions to Delivered, and delivered_at is set
+    invariant: true
+  - id: AC-4
+    given: a voice_sessions row in AwaitingConfirmation with a pending_mutation payload and a non-null expires_at in the future
+    when: a subsequent, separate HTTP request reads that row by its id before expires_at
+    then: the same pending_mutation payload is available to execute or discard
+    invariant: true
+  - id: AC-5
+    given: a user requests deletion of a course, deadline, task, or note
+    when: the deletion is processed
+    then: the row's deleted_at is set and it remains queryable only via an explicit include-deleted query; never removed from the table
+    invariant: true
+  - id: AC-6
+    given: an ordinary (non-include-deleted) list or get query against courses, deadlines, tasks, or notes
+    when: the query executes
+    then: no row with deleted_at set is returned
+    invariant: true
+  - id: AC-7
+    given: a Scheduled or Snoozed reminder whose target Deadline or Task is soft-deleted
+    when: the target's deleted_at is set
+    then: the reminder transitions to Dismissed, and the dispatch query's deleted_at IS NULL filter independently ensures it is never delivered even if the cascade were missed
+    invariant: true
+  - id: AC-8
+    given: a Delivered reminder with delivered_at more than 60 minutes in the past and acknowledgment_state still Delivered
+    when: the dispatch sweep runs
+    then: it transitions to Expired
+    invariant: true
+  - id: AC-9
+    given: a voice_sessions row whose ended_at (or, for a row that never reached a terminal state, started_at) is more than 24 hours in the past
+    when: the retention-sweep function runs
+    then: the row is hard-deleted in full (transcript, resolved_intent, confidence_score, and pending_mutation all removed) rather than soft-deleted or retained for browsing
+    invariant: true
+  - id: AC-10
+    given: a user submits feedback on a Deadline, Task, or Reminder instance they own
+    when: the submission is processed
+    then: a feedback row is inserted carrying target_type/target_id/rating/created_at, scoped to the submitting user; the database rejects the insert if target_id does not reference an existing row of target_type owned by that same user (NC-DATA-013); and the submission is never silently dropped — operationalizes SPEC-CORE-006 AC-004
+    invariant: true
+  - id: AC-11
+    given: one or more feedback rows whose created_at is more than 180 days in the past
+    when: the retention-sweep function runs
+    then: each (user_id, target_type) group's rows are deleted and their count/rating contribution upserted into the matching feedback_aggregates row (sample_count and rating_sum incremented) in one atomic statement, per NC-DATA-010
+    invariant: true
+  - id: AC-12
+    given: a user requests deletion of one of their own feedback rows before its 180-day window elapses
+    when: the deletion is processed
+    then: the row is hard-deleted immediately if it exists and is owned by that user (the delete asserts rows-affected and surfaces not-found/forbidden on zero, mirroring SPEC-API-005 AC-4), is excluded from any future aggregation, and never contributes to feedback_aggregates per NC-DATA-011
+    invariant: true
+depends_on:
+  - SPEC-CORE-006
+constitution_rules:
+  - NC-SQL-CONCAT

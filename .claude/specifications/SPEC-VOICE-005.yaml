@@ -1,0 +1,161 @@
+id: SPEC-VOICE-005
+version: 0.2.0
+kind: domain
+title: Voice interaction session lifecycle
+status: draft
+context_and_scope:
+  in_scope:
+    - "Voice session state machine: capture, transcription, intent resolution, confirmation, execution, spoken response"
+    - Persisting session state (transcript, resolved intent, confidence, and any pending mutating action) in SPEC-DATA-010's voice_sessions table, so the AwaitingConfirmation → Executing round trip survives across two separate, stateless HTTP requests
+    - "A bounded confirmation window: expires_at is set to 5 minutes from the moment the session enters AwaitingConfirmation (not from session start, so slow transcription/intent-resolution earlier in the session never eats into the user's confirmation time) — a session past expires_at can no longer be confirmed"
+    - Routing a resolved intent to the corresponding SPEC-CORE-007 entity operation (create/update Deadline, Task, Note; query schedule; acknowledge Reminder), or, for a read-only knowledge_lookup intent, to SPEC-CORE-008's knowledge-base retrieval (see NC-VOICE-007)
+    - Ambiguous/low-confidence intent handling that asks for clarification rather than guessing (NC-004)
+    - Applying the recorded latency (p50 ≤1.2s / p95 ≤2.5s end-to-end) and intent-accuracy (≥95% first-try) bar as enforceable acceptance criteria
+    - Discarding raw captured audio once transcription completes, per the recorded retention decision
+    - "For a Course-delete mutating intent, disclosing the cascade scope (live Deadlines/Reminders that will also be affected) in the AwaitingConfirmation prompt itself, before the user confirms — Tracked-debt closure: SPEC-API-004 AC-6 only guarantees the confirmed mutation executes exactly as shown, so an under-disclosed prompt would technically satisfy every constraint while leaving the user's confirmation uninformed"
+  out_of_scope:
+    - STT/TTS vendor integration code itself (Deepgram/ElevenLabs client wiring is an implementation concern, not modeled here)
+    - Extended multi-turn open-ended conversation or general chit-chat beyond a single clarification round-trip — v1 supports task-directed commands only
+    - Wake-word or always-listening background capture — v1 assumes explicit user-initiated capture (press-to-talk)
+    - Class-session and appointment intents (no backing entity exists per SPEC-CORE-007's narrowed scope)
+  external_dependencies:
+    - Deepgram (speech-to-text, per the recorded stack decision)
+    - ElevenLabs Flash v2.5 with OpenAI TTS fallback (text-to-speech, per the recorded stack decision)
+    - An LLM for intent parsing/NLU (vendor not yet decided — flagged as a separate open decision, tracked outside this remediation pass)
+  shared_schemas:
+    - VoiceSession { id, user_id, state, transcript, resolved_intent, confidence_score, pending_mutation (the parsed target entity type/id, operation, and payload awaiting confirmation), started_at, ended_at, expires_at (set to +5 minutes when the session enters AwaitingConfirmation; null/irrelevant before then) } — persisted via SPEC-DATA-010's voice_sessions table, not held in server memory
+state_machines:
+  - name: voice_session
+    states:
+      - Idle
+      - Listening
+      - Transcribing
+      - IntentResolved
+      - IntentAmbiguous
+      - AwaitingConfirmation
+      - Executing
+      - Responding
+    initial: Idle
+    transitions:
+      - from: Idle
+        event: user_initiates_capture
+        to: Listening
+      - from: Listening
+        event: capture_ends
+        to: Transcribing
+      - from: Transcribing
+        event: intent_resolved_high_confidence
+        to: IntentResolved
+      - from: Transcribing
+        event: intent_ambiguous_or_low_confidence
+        to: IntentAmbiguous
+      - from: IntentAmbiguous
+        event: clarification_requested
+        to: Responding
+      - from: IntentResolved
+        event: read_only_query_resolved
+        to: Executing
+      - from: IntentResolved
+        event: mutating_action_resolved
+        to: AwaitingConfirmation
+      - from: AwaitingConfirmation
+        event: user_confirms
+        to: Executing
+      - from: AwaitingConfirmation
+        event: user_declines
+        to: Responding
+      - from: AwaitingConfirmation
+        event: confirmation_window_expired
+        to: Responding
+      - from: Executing
+        event: execution_completed
+        to: Responding
+      - from: Executing
+        event: execution_failed
+        to: Responding
+      - from: Responding
+        event: response_delivered
+        to: Idle
+    forbidden:
+      - from: Executing
+        to: Idle
+        reason: execution must never complete silently; it must always pass through Responding
+      - from: Transcribing
+        to: Executing
+        reason: no intent may execute before resolution and, if mutating, confirmation
+      - from: Idle
+        to: Executing
+        reason: nothing may execute outside an active session
+negative_constraints:
+  - id: NC-VOICE-001
+    message: An intent with external-world or data-mutating effects MUST NOT execute without first passing through AwaitingConfirmation and receiving user_confirms, resolved against the session's persisted pending_mutation.
+    severity: critical
+  - id: NC-VOICE-002
+    message: A session MUST NOT proceed on a resolved intent whose confidence score is below the recorded ≥95% first-try accuracy bar; below threshold it MUST route to IntentAmbiguous.
+    severity: high
+  - id: NC-VOICE-003
+    message: Raw voice audio captured during Listening MUST NOT be persisted past the Transcribing step.
+    severity: critical
+  - id: NC-VOICE-004
+    message: The Responding step MUST begin within the recorded p95 latency budget (≤2.5s from the end of Listening).
+    severity: medium
+  - id: NC-VOICE-005
+    message: A voice session whose expires_at has passed MUST NOT be confirmed; an AwaitingConfirmation session past its 5-minute expiry is treated as expired (confirmation_window_expired), and its pending_mutation MUST NOT be executed, no matter how a confirm request arrives.
+    severity: high
+  - id: NC-VOICE-006
+    message: An AwaitingConfirmation prompt for a mutating intent that cascades to other entities (a Course-delete affecting its live Deadlines/Reminders) MUST disclose that cascade's scope before the user can confirm — a technically-faithful execution of an under-disclosed prompt still violates this constraint.
+    severity: high
+  - id: NC-VOICE-007
+    message: A knowledge_lookup intent follows the same read_only_query_resolved path as upcoming_schedule (directly to Executing, no confirmation) — but its answer-composition LLM call must use a response schema structurally incapable of emitting a mutation-shaped payload, must treat retrieved chunk content as untrusted data rather than instructions, and its retrieved content must never be persisted into or read back as context for a later mutating-intent resolution call. These mirror SPEC-CORE-008's NC-018/NC-024/NC-025 and are restated here because this spec owns the intent-routing/session layer they execute inside.
+    severity: critical
+acceptance_criteria:
+  - id: AC-1
+    given: a resolved intent with confidence at or above the accuracy bar for a read-only query
+    when: read_only_query_resolved fires
+    then: the session moves directly to Executing without requiring confirmation, and Responding begins within the p95 2.5s budget
+    invariant: true
+  - id: AC-2
+    given: a resolved intent that is mutating (create/update/delete a Deadline, Task, or Note)
+    when: mutating_action_resolved fires
+    then: the session's pending_mutation is persisted, expires_at is set to 5 minutes out, and the session moves to AwaitingConfirmation
+    invariant: true
+  - id: AC-3
+    given: a transcript whose resolved-intent confidence is below the accuracy bar
+    when: intent_ambiguous_or_low_confidence fires
+    then: the session asks a clarifying question via Responding rather than guessing, and the underlying entity is left unmodified
+    invariant: true
+  - id: AC-4
+    given: the Listening step has completed and Transcribing has produced a transcript
+    when: the session proceeds past Transcribing
+    then: the raw audio captured during Listening is discarded and only the transcript and derived intent persist
+    invariant: true
+  - id: AC-5
+    given: a session in AwaitingConfirmation
+    when: user_declines fires
+    then: no entity is created or modified, the session's pending_mutation is cleared, and the session responds with an acknowledgment of the cancellation
+    invariant: true
+  - id: AC-6
+    given: a session in AwaitingConfirmation created by one HTTP request, identified by its session id
+    when: a separate, later HTTP request delivers user_confirms for that same session id before expires_at
+    then: the originally persisted pending_mutation is executed, not a freshly re-parsed one
+    invariant: true
+  - id: AC-7
+    given: a session in AwaitingConfirmation whose expires_at (5 minutes after entering AwaitingConfirmation) has already passed
+    when: a confirm request arrives for that session id
+    then: the request is rejected as expired, the pending_mutation is not executed, and no entity is created or modified
+    invariant: true
+  - id: AC-8
+    given: a resolved intent that is a Course-delete mutating action
+    when: mutating_action_resolved fires and the AwaitingConfirmation response is returned
+    then: the response's confirmation prompt states the cascade scope (the count of live Deadlines, and their Reminders, that deleting the Course will also affect), so user_confirms reflects an informed decision, not just the bare intent to delete the Course
+    invariant: true
+  - id: AC-9
+    given: a resolved intent that is knowledge_lookup with confidence at or above the accuracy bar
+    when: read_only_query_resolved fires
+    then: the session moves directly to Executing without requiring confirmation, and the response includes citation data per SPEC-CORE-008 NC-014, never a fabricated answer when no relevant chunks were found
+    invariant: true
+depends_on:
+  - SPEC-CORE-007
+  - SPEC-DATA-010
+  - SPEC-CORE-008
+constitution_rules: []

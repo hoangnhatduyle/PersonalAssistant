@@ -1,8 +1,13 @@
+# SUPERSEDED by SPEC-DATA-007 (Item 5 precondition, mirroring Item 4's own
+# pattern: folds the recorded 24-hour voice_sessions hard-delete retention
+# decision into a versioned spec — AC-9/NC-DATA-009 — before the retention
+# sweep is built against unversioned intent). Kept for historical
+# audit-trail purposes only.
 id: SPEC-DATA-006
 version: 0.1.0
 kind: data
 title: Personal Assistant Postgres schema
-status: draft
+status: deprecated
 context_and_scope:
   in_scope:
     - Postgres schema for courses, deadlines, tasks, notes, reminders, and voice_sessions, plus the profiles table backing SPEC-CORE-005's Account entity

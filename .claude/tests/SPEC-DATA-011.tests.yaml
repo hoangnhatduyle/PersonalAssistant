@@ -1,0 +1,133 @@
+spec_id: SPEC-DATA-011
+generated_at: 2026-08-29T12:29:09.711Z
+cases:
+  - id: T-SPEC-DATA-011-AC-AC_001
+    kind: acceptance
+    traces_to: SPEC-DATA-011#AC-001
+    assertion: given the migration has run, then the pgvector extension is enabled and knowledge_sources/knowledge_chunks exist with RLS enabled on both
+    invariant: false
+  - id: T-SPEC-DATA-011-AC-AC_002
+    kind: acceptance
+    traces_to: SPEC-DATA-011#AC-002
+    assertion: when a user queries either table, then RLS prevents any row belonging to a different user_id from being returned, independent of any app-layer check
+    invariant: true
+  - id: T-SPEC-DATA-011-AC-AC_003
+    kind: acceptance
+    traces_to: SPEC-DATA-011#AC-003
+    assertion: when an INSERT into knowledge_sources specifies any status other than Pending, then the enforcement trigger rejects it
+    invariant: true
+  - id: T-SPEC-DATA-011-AC-AC_003b
+    kind: acceptance
+    traces_to: SPEC-DATA-011#AC-003b
+    assertion: when an authenticated user attempts any UPDATE on knowledge_sources (including one that only touches error_message, not status), then it is rejected — there is no UPDATE grant for authenticated, and status-touching writes are only reachable through the five named functions (start_knowledge_import, complete_knowledge_import, fail_knowledge_import, retry_knowledge_import, reap_stuck_knowledge_imports)
+    invariant: true
+  - id: T-SPEC-DATA-011-AC-AC_003c
+    kind: acceptance
+    traces_to: SPEC-DATA-011#AC-003c
+    assertion: when an authenticated user attempts any INSERT/UPDATE/DELETE on knowledge_chunks directly (not via complete_knowledge_import or the source-cascade delete), then it is rejected — knowledge_chunks is SELECT-only for authenticated
+    invariant: true
+  - id: T-SPEC-DATA-011-AC-AC_004
+    kind: acceptance
+    traces_to: SPEC-DATA-011#AC-004
+    assertion: given a knowledge_source is deleted, then its knowledge_chunks are removed in the same statement via ON DELETE CASCADE, zero remaining
+    invariant: false
+  - id: T-SPEC-DATA-011-AC-AC_004b
+    kind: acceptance
+    traces_to: SPEC-DATA-011#AC-004b
+    assertion: given a chunk insert attempt for a source_id/user_id pair that doesn't match an existing knowledge_sources row exactly, then the composite foreign key rejects it
+    invariant: true
+  - id: T-SPEC-DATA-011-AC-AC_005
+    kind: acceptance
+    traces_to: SPEC-DATA-011#AC-005
+    assertion: given a similarity search query against knowledge_chunks.embedding using the <=> operator, then it is plan-eligible for the HNSW index (verified via EXPLAIN with enable_seqscan off in tests, since planner choice at small row counts is not itself a reliable signal)
+    invariant: false
+  - id: T-SPEC-DATA-011-AC-AC_006
+    kind: acceptance
+    traces_to: SPEC-DATA-011#AC-006
+    assertion: given a knowledge_source stuck in Pending or Processing past the timeout window, when reap_stuck_knowledge_imports() runs, then it transitions to Failed with a timeout error_message, and no external HTTP/API call occurs during the sweep
+    invariant: false
+  - id: T-SPEC-DATA-011-AC-AC_007
+    kind: acceptance
+    traces_to: SPEC-DATA-011#AC-007
+    assertion: given knowledge_chunks has no DELETE grant/policy for authenticated (NC-DATA-024), when an authenticated user deletes their own knowledge_sources row, then the FK's ON DELETE CASCADE still removes all of that source's knowledge_chunks rows — Postgres FK referential-integrity actions execute independent of the referencing table's own grants/RLS for the deleting role, and this must be verified with an explicit test rather than assumed
+    invariant: true
+  - id: T-SPEC-DATA-011-AC-AC_008
+    kind: acceptance
+    traces_to: SPEC-DATA-011#AC-008
+    assertion: given complete_knowledge_import, start_knowledge_import, or fail_knowledge_import is invoked against a row whose status no longer matches that function's required CAS precondition (e.g. the reaper already moved it to Failed), then the function's guarded UPDATE affects zero rows and the caller observes a normal not-applicable outcome, never overwriting a transition another writer already made
+    invariant: true
+  - id: T-SPEC-DATA-011-FORBID-knowledge_source_status_Ready_Pending
+    kind: forbidden-transition
+    traces_to: SPEC-DATA-011#knowledge_source_status:Ready->Pending
+    assertion: "[knowledge_source_status] transition Ready -> Pending MUST be rejected (A completed import must not silently reset.)"
+    invariant: true
+  - id: T-SPEC-DATA-011-FORBID-knowledge_source_status_Ready_Processing
+    kind: forbidden-transition
+    traces_to: SPEC-DATA-011#knowledge_source_status:Ready->Processing
+    assertion: "[knowledge_source_status] transition Ready -> Processing MUST be rejected (No content-refresh feature in v1; Ready is terminal aside from delete.)"
+    invariant: true
+  - id: T-SPEC-DATA-011-FORBID-knowledge_source_status_Ready_Failed
+    kind: forbidden-transition
+    traces_to: SPEC-DATA-011#knowledge_source_status:Ready->Failed
+    assertion: "[knowledge_source_status] transition Ready -> Failed MUST be rejected (A completed import cannot retroactively fail.)"
+    invariant: true
+  - id: T-SPEC-DATA-011-FORBID-knowledge_source_status_Failed_Ready
+    kind: forbidden-transition
+    traces_to: SPEC-DATA-011#knowledge_source_status:Failed->Ready
+    assertion: "[knowledge_source_status] transition Failed -> Ready MUST be rejected (Must pass back through Processing on retry.)"
+    invariant: true
+  - id: T-SPEC-DATA-011-FORBID-knowledge_source_status_Pending_Ready
+    kind: forbidden-transition
+    traces_to: SPEC-DATA-011#knowledge_source_status:Pending->Ready
+    assertion: "[knowledge_source_status] transition Pending -> Ready MUST be rejected (Cannot skip Processing.)"
+    invariant: true
+  - id: T-SPEC-DATA-011-NC-NC_DATA_014
+    kind: negative-constraint
+    traces_to: SPEC-DATA-011#NC-DATA-014
+    assertion: RLS on auth.uid() = user_id applies to both tables. knowledge_chunks.user_id is not a bare duplicated column but is structurally tied to its parent via a composite foreign key — FOREIGN KEY (source_id, user_id) REFERENCES knowledge_sources (id, user_id), backed by a UNIQUE (id, user_id) constraint on knowledge_sources — so a chunk's user_id can never drift from its source's, enforced declaratively rather than by trigger or app-layer discipline.
+    invariant: true
+  - id: T-SPEC-DATA-011-NC-NC_DATA_016
+    kind: negative-constraint
+    traces_to: SPEC-DATA-011#NC-DATA-016
+    assertion: A BEFORE INSERT OR UPDATE OF status, error_message trigger enforces initial status = Pending on insert and only the transitions allowed by SPEC-CORE-008's knowledge_import_status state machine on update. The trigger must fire on error_message changes too, not status alone — a column-list trigger scoped to status only would let an UPDATE that never touches status silently rewrite error_message, exactly the gap SPEC-DATA-010's voice_sessions column-lockdown migration (0005) had to close after the fact for pending_mutation/expires_at. This trigger is defense-in-depth for the RPC bodies' own correctness; the primary defense is NC-DATA-025's removal of the UPDATE grant, which stops an authenticated client from reaching an UPDATE on this table at all — PostgREST checks the table-level grant before RLS or any trigger is even consulted.
+    invariant: true
+  - id: T-SPEC-DATA-011-NC-NC_DATA_019
+    kind: negative-constraint
+    traces_to: SPEC-DATA-011#NC-DATA-019
+    assertion: Deleting a knowledge_source is a single RLS-scoped DELETE by its owner; its knowledge_chunks are removed automatically via the composite FK's ON DELETE CASCADE (NC-DATA-014) in the same statement. No separate purge step or RPC is required — chunk removal is inherent to the FK relationship, not a cascade to orchestrate.
+    invariant: true
+  - id: T-SPEC-DATA-011-NC-NC_DATA_021
+    kind: negative-constraint
+    traces_to: SPEC-DATA-011#NC-DATA-021
+    assertion: The pgvector extension is enabled via CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA extensions (not the public schema), matching this project's existing convention for pgcrypto and its extra_search_path config. It must be enabled before either table is created.
+    invariant: true
+  - id: T-SPEC-DATA-011-NC-NC_DATA_023
+    kind: negative-constraint
+    traces_to: SPEC-DATA-011#NC-DATA-023
+    assertion: Chunk writes (insert of a new chunk set, the raw_content write, and the accompanying status flip to Ready) happen only through complete_knowledge_import(), a single SECURITY DEFINER transaction that deletes any pre-existing chunks for the source before inserting the new set — never as separate worker-issued statements — because supabase-js has no cross-call transaction primitive (the same fact this project's own soft-delete-cascade migration comments already document), so NC-020's all-or-nothing guarantee is unenforceable any other way. Its own UPDATE of knowledge_sources is CAS-guarded (WHERE id = p_source_id AND status = 'Processing'), so it cannot succeed against a row the reaper has already timed out from under it — this closes the three-way race between complete_knowledge_import, reap_stuck_knowledge_imports, and retry_knowledge_import, none of which may silently overwrite a transition another of them already made. EXECUTE on this function is revoked from public/anon/authenticated and granted only to service_role.
+    invariant: true
+  - id: T-SPEC-DATA-011-NC-NC_DATA_030
+    kind: negative-constraint
+    traces_to: SPEC-DATA-011#NC-DATA-030
+    assertion: start_knowledge_import() and fail_knowledge_import() are each a single CAS-guarded UPDATE — start_knowledge_import's WHERE clause requires status = 'Pending' (rejecting a stale/duplicate worker invocation), fail_knowledge_import's requires status = 'Processing' (an extraction failure can only be recorded against a row still being processed, never a Ready or already-Failed one) — for the same race-protection reason as NC-DATA-023. Both are revoked from public/anon/authenticated and granted only to service_role.
+    invariant: true
+  - id: T-SPEC-DATA-011-NC-NC_DATA_024
+    kind: negative-constraint
+    traces_to: SPEC-DATA-011#NC-DATA-024
+    assertion: knowledge_chunks grants no INSERT/UPDATE/DELETE to authenticated or anon (SELECT-only, mirroring feedback_aggregates' lockdown in SPEC-DATA-010) — the only writer is complete_knowledge_import() and the cascade delete in NC-DATA-019. This prevents a user from hand-crafting a fake embedding or rewriting chunk_text so the assistant would cite a source for content that source never actually contained.
+    invariant: true
+  - id: T-SPEC-DATA-011-NC-NC_DATA_025
+    kind: negative-constraint
+    traces_to: SPEC-DATA-011#NC-DATA-025
+    assertion: knowledge_sources grants SELECT, INSERT, and DELETE to authenticated (all auth.uid() = user_id scoped) but no UPDATE policy at all. Every status-touching write is owned by exactly one of the five named functions in this spec's in_scope (start_knowledge_import, complete_knowledge_import, fail_knowledge_import, retry_knowledge_import, reap_stuck_knowledge_imports) — never a generic client-issued UPDATE. This closes NC-019/NC-DATA-016's intent structurally rather than relying on the API surface simply not exposing a PATCH route.
+    invariant: true
+  - id: T-SPEC-DATA-011-NC-NC_DATA_026
+    kind: negative-constraint
+    traces_to: SPEC-DATA-011#NC-DATA-026
+    assertion: retry_knowledge_import() is SECURITY DEFINER and performs its transition as a single CAS-guarded statement — UPDATE knowledge_sources SET status = 'Processing', attempt_count = attempt_count + 1, processing_started_at = now(), error_message = NULL WHERE id = p_source_id AND user_id = auth.uid() AND status = 'Failed' AND attempt_count < KNOWLEDGE_MAX_RETRY_ATTEMPTS — not a SELECT-then-conditional-UPDATE, which would reopen the exact double-retry/reaper race this pattern exists to close. Zero rows affected means the request is rejected (already retried, wrong owner, or cap exhausted), not silently treated as success. Granted EXECUTE only to authenticated (auth.uid() inside a SECURITY DEFINER function still resolves from the caller's JWT, not the function owner, so per-caller ownership checking works correctly here).
+    invariant: true
+  - id: T-SPEC-DATA-011-NC-NC_DATA_027
+    kind: negative-constraint
+    traces_to: SPEC-DATA-011#NC-DATA-027
+    assertion: reap_stuck_knowledge_imports() is pure SQL with no external HTTP/API call, invoked directly and synchronously from cron.schedule (mirrors dispatch_due_reminders/sweep_expired_feedback in SPEC-DATA-010 and preserves SPEC-INFRA-006's existing job_run_details-truthfulness rule) — it transitions Pending or Processing rows whose processing_started_at (or created_at, for rows that never left Pending) is older than KNOWLEDGE_IMPORT_TIMEOUT_MINUTES = 10 to Failed via processing_timed_out, with a generic timeout error_message. This window MUST be strictly longer than SPEC-INFRA-007's maxDuration (5 minutes) — if the reaper's window were shorter than or equal to maxDuration, it could time out and mark Failed a row that is still legitimately being processed within its own allowed duration, causing complete_knowledge_import's later CAS-guarded write (NC-DATA-023) to simply lose the race silently rather than the work being duplicated. EXECUTE is revoked from public/anon/authenticated and granted only to the cron-invoking role.
+    invariant: true

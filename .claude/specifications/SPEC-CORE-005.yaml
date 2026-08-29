@@ -1,8 +1,14 @@
+# SUPERSEDED by SPEC-CORE-006 (Item 6 architect-review round 1: added the
+# Feedback entity to shared_schemas, added Feedback to NC-011's
+# account-scoping enumeration, and added NC-012 carrying the 180-day
+# feedback-retention + user-deletion promise at the domain level, which
+# SPEC-DATA-009's NC-DATA-010/011 then operationalize). Kept for historical
+# audit-trail purposes only.
 id: SPEC-CORE-005
 version: 0.1.0
 kind: domain
 title: Personal Assistant core domain model
-status: draft
+status: deprecated
 context_and_scope:
   in_scope:
     - "Class schedule tracking: courses, meeting patterns, locations, instructors"

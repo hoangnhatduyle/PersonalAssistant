@@ -1,0 +1,48 @@
+spec_id: SPEC-INFRA-007
+generated_at: 2026-08-29T12:43:02.724Z
+cases:
+  - id: T-SPEC-INFRA-007-AC-AC_001
+    kind: acceptance
+    traces_to: SPEC-INFRA-007#AC-001
+    assertion: given the create route's after() callback throws or the process is killed mid-processing, then the row is left in Processing or Pending and is later reaped to Failed by SPEC-DATA-011's cron job, never stranded forever
+    invariant: true
+  - id: T-SPEC-INFRA-007-AC-AC_002
+    kind: acceptance
+    traces_to: SPEC-INFRA-007#AC-002
+    assertion: given an upload whose actual container/format doesn't match its declared type, then the worker rejects it before invoking any parser, distinct from and in addition to SPEC-API-008's request-time magic-byte check
+    invariant: false
+  - id: T-SPEC-INFRA-007-AC-AC_003
+    kind: acceptance
+    traces_to: SPEC-INFRA-007#AC-003
+    assertion: given a crafted media file designed to consume excessive memory/CPU during extraction, then the hard timeout/resource bound terminates the job and it surfaces as a Failed import with a generic error, not an unbounded resource-consumption event
+    invariant: false
+  - id: T-SPEC-INFRA-007-AC-AC_004
+    kind: acceptance
+    traces_to: SPEC-INFRA-007#AC-004
+    assertion: given the feature is deployed, then no new environment variable beyond SPEC-INFRA-006's existing contract is required
+    invariant: false
+  - id: T-SPEC-INFRA-007-NC-NC_INF_007
+    kind: negative-constraint
+    traces_to: SPEC-INFRA-007#NC-INF-007
+    assertion: The create route's after()-driven processing runs within a bounded maxDuration = 300 seconds; a run that would exceed it must be caught by SPEC-DATA-011's reaper (NC-DATA-027, whose 10-minute window is deliberately longer than this value so it never reaps still-legitimately-running work), never silently truncated with no recorded failure.
+    invariant: true
+  - id: T-SPEC-INFRA-007-NC-NC_INF_008
+    kind: negative-constraint
+    traces_to: SPEC-INFRA-007#NC-INF-008
+    assertion: The fourth pg_cron job (reap_stuck_knowledge_imports) is invoked directly and synchronously in-process from cron.schedule, per the same rule NC-INF-006 established for the feedback sweep — no pg_net/Edge-Function hop, since it is pure SQL with no external API call.
+    invariant: true
+  - id: T-SPEC-INFRA-007-NC-NC_INF_009
+    kind: negative-constraint
+    traces_to: SPEC-INFRA-007#NC-INF-009
+    assertion: Uploaded file bytes are stored in a private Supabase Storage bucket, never publicly readable; access is scoped to the owning user only (RLS on storage.objects and/or signed URLs), mirroring NC-DATA-001's rule for table rows.
+    invariant: true
+  - id: T-SPEC-INFRA-007-NC-NC_INF_010
+    kind: negative-constraint
+    traces_to: SPEC-INFRA-007#NC-INF-010
+    assertion: Media parsing/extraction (audio extraction from video, any native/binary parsing of uploaded bytes) runs inside a dedicated Node worker_threads instance, not on the main request-handling thread — this is fault-containment (a crashed or runaway parsing job cannot take down the request handler or other concurrent work in the same invocation) plus an enforced resource bound (worker_threads resourceLimits caps heap size; a wall-clock timeout terminates the thread if parsing hangs), not multi-tenant OS-level process isolation, which is not available inside Vercel's serverless Node runtime for a single invocation. It additionally validates the actual file container/format against the declared allow-list before invoking any parser — never trusting client-declared MIME type/extension alone (extends NC-API-012's request-time check with a worker-time defense against untrusted-input parsing risk).
+    invariant: true
+  - id: T-SPEC-INFRA-007-NC-NC_INF_012
+    kind: negative-constraint
+    traces_to: SPEC-INFRA-007#NC-INF-012
+    assertion: SUPABASE_SERVICE_ROLE_KEY usage by the worker (to call complete_knowledge_import) stays confined to the server-only route/worker module, never client-bundled, per NC-INF-005.
+    invariant: true

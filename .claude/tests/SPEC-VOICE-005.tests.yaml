@@ -1,0 +1,83 @@
+spec_id: SPEC-VOICE-005
+generated_at: 2026-08-27T23:26:03.279Z
+cases:
+  - id: T-SPEC-VOICE-005-AC-AC_1
+    kind: acceptance
+    traces_to: SPEC-VOICE-005#AC-1
+    assertion: given a resolved intent with confidence at or above the accuracy bar for a read-only query, when read_only_query_resolved fires, then the session moves directly to Executing without requiring confirmation, and Responding begins within the p95 2.5s budget
+    invariant: true
+  - id: T-SPEC-VOICE-005-AC-AC_2
+    kind: acceptance
+    traces_to: SPEC-VOICE-005#AC-2
+    assertion: given a resolved intent that is mutating (create/update/delete a Deadline, Task, or Note), when mutating_action_resolved fires, then the session's pending_mutation is persisted, expires_at is set to 5 minutes out, and the session moves to AwaitingConfirmation
+    invariant: true
+  - id: T-SPEC-VOICE-005-AC-AC_3
+    kind: acceptance
+    traces_to: SPEC-VOICE-005#AC-3
+    assertion: given a transcript whose resolved-intent confidence is below the accuracy bar, when intent_ambiguous_or_low_confidence fires, then the session asks a clarifying question via Responding rather than guessing, and the underlying entity is left unmodified
+    invariant: true
+  - id: T-SPEC-VOICE-005-AC-AC_4
+    kind: acceptance
+    traces_to: SPEC-VOICE-005#AC-4
+    assertion: given the Listening step has completed and Transcribing has produced a transcript, when the session proceeds past Transcribing, then the raw audio captured during Listening is discarded and only the transcript and derived intent persist
+    invariant: true
+  - id: T-SPEC-VOICE-005-AC-AC_5
+    kind: acceptance
+    traces_to: SPEC-VOICE-005#AC-5
+    assertion: given a session in AwaitingConfirmation, when user_declines fires, then no entity is created or modified, the session's pending_mutation is cleared, and the session responds with an acknowledgment of the cancellation
+    invariant: true
+  - id: T-SPEC-VOICE-005-AC-AC_6
+    kind: acceptance
+    traces_to: SPEC-VOICE-005#AC-6
+    assertion: given a session in AwaitingConfirmation created by one HTTP request, identified by its session id, when a separate, later HTTP request delivers user_confirms for that same session id before expires_at, then the originally persisted pending_mutation is executed, not a freshly re-parsed one
+    invariant: true
+  - id: T-SPEC-VOICE-005-AC-AC_7
+    kind: acceptance
+    traces_to: SPEC-VOICE-005#AC-7
+    assertion: given a session in AwaitingConfirmation whose expires_at (5 minutes after entering AwaitingConfirmation) has already passed, when a confirm request arrives for that session id, then the request is rejected as expired, the pending_mutation is not executed, and no entity is created or modified
+    invariant: true
+  - id: T-SPEC-VOICE-005-AC-AC_8
+    kind: acceptance
+    traces_to: SPEC-VOICE-005#AC-8
+    assertion: given a resolved intent that is a Course-delete mutating action, when mutating_action_resolved fires and the AwaitingConfirmation response is returned, then the response's confirmation prompt states the cascade scope (the count of live Deadlines, and their Reminders, that deleting the Course will also affect), so user_confirms reflects an informed decision, not just the bare intent to delete the Course
+    invariant: true
+  - id: T-SPEC-VOICE-005-FORBID-voice_session_Executing_Idle
+    kind: forbidden-transition
+    traces_to: SPEC-VOICE-005#voice_session:Executing->Idle
+    assertion: "[voice_session] transition Executing -> Idle MUST be rejected (execution must never complete silently; it must always pass through Responding)"
+    invariant: true
+  - id: T-SPEC-VOICE-005-FORBID-voice_session_Transcribing_Executing
+    kind: forbidden-transition
+    traces_to: SPEC-VOICE-005#voice_session:Transcribing->Executing
+    assertion: "[voice_session] transition Transcribing -> Executing MUST be rejected (no intent may execute before resolution and, if mutating, confirmation)"
+    invariant: true
+  - id: T-SPEC-VOICE-005-FORBID-voice_session_Idle_Executing
+    kind: forbidden-transition
+    traces_to: SPEC-VOICE-005#voice_session:Idle->Executing
+    assertion: "[voice_session] transition Idle -> Executing MUST be rejected (nothing may execute outside an active session)"
+    invariant: true
+  - id: T-SPEC-VOICE-005-NC-NC_VOICE_001
+    kind: negative-constraint
+    traces_to: SPEC-VOICE-005#NC-VOICE-001
+    assertion: An intent with external-world or data-mutating effects MUST NOT execute without first passing through AwaitingConfirmation and receiving user_confirms, resolved against the session's persisted pending_mutation.
+    invariant: true
+  - id: T-SPEC-VOICE-005-NC-NC_VOICE_002
+    kind: negative-constraint
+    traces_to: SPEC-VOICE-005#NC-VOICE-002
+    assertion: A session MUST NOT proceed on a resolved intent whose confidence score is below the recorded ≥95% first-try accuracy bar; below threshold it MUST route to IntentAmbiguous.
+    invariant: true
+  - id: T-SPEC-VOICE-005-NC-NC_VOICE_003
+    kind: negative-constraint
+    traces_to: SPEC-VOICE-005#NC-VOICE-003
+    assertion: Raw voice audio captured during Listening MUST NOT be persisted past the Transcribing step.
+    invariant: true
+  - id: T-SPEC-VOICE-005-NC-NC_VOICE_005
+    kind: negative-constraint
+    traces_to: SPEC-VOICE-005#NC-VOICE-005
+    assertion: A voice session whose expires_at has passed MUST NOT be confirmed; an AwaitingConfirmation session past its 5-minute expiry is treated as expired (confirmation_window_expired), and its pending_mutation MUST NOT be executed, no matter how a confirm request arrives.
+    invariant: true
+  - id: T-SPEC-VOICE-005-NC-NC_VOICE_006
+    kind: negative-constraint
+    traces_to: SPEC-VOICE-005#NC-VOICE-006
+    assertion: An AwaitingConfirmation prompt for a mutating intent that cascades to other entities (a Course-delete affecting its live Deadlines/Reminders) MUST disclose that cascade's scope before the user can confirm — a technically-faithful execution of an under-disclosed prompt still violates this constraint.
+    invariant: true
