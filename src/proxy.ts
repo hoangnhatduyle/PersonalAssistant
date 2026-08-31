@@ -3,6 +3,10 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { publicEnv } from "@/lib/env";
 
+// Phase 4 auth guard (added alongside the pre-existing session refresh
+// above): routes that render without a signed-in user.
+const PUBLIC_PATHS = ["/sign-in", "/sign-up"];
+
 /**
  * Refreshes the Supabase session cookie on every request. Server Components
  * can only read cookies, never write them, so if a token refresh only ever
@@ -30,9 +34,55 @@ export async function proxy(request: NextRequest) {
 
   // Revalidates against Supabase Auth (not just the cookie payload) and
   // writes back a refreshed session via setAll above if the token expired.
-  await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  const { pathname } = request.nextUrl;
+
+  // API routes self-enforce auth via requireAuthenticatedContext() and must
+  // keep returning JSON 401s, never a redirect. /auth/* is the OAuth/PKCE
+  // callback, which by definition runs before a session exists yet. Segment
+  // boundary (not a bare startsWith prefix) so a future route like
+  // /api-status or /authors can never silently fall through this guard.
+  if (isPathOrUnderSegment(pathname, "/api") || isPathOrUnderSegment(pathname, "/auth")) {
+    return response;
+  }
+
+  const isPublicPath = PUBLIC_PATHS.includes(pathname);
+
+  if (!user && !isPublicPath) {
+    return redirectWithRefreshedCookies(new URL("/sign-in", request.url), response);
+  }
+
+  if (user && isPublicPath) {
+    return redirectWithRefreshedCookies(new URL("/", request.url), response);
+  }
 
   return response;
+}
+
+/**
+ * NextResponse.redirect() builds a brand-new response carrying only a
+ * Location header — any Set-Cookie/Cache-Control written onto `refreshed`
+ * by the token-refresh block above would otherwise be silently dropped.
+ * Without this, a user whose access token got rotated mid-request (e.g.
+ * visiting /sign-in right as their token expires) would have the redirect
+ * ship the OLD, now-invalidated refresh token, causing a spurious forced
+ * logout on their very next request.
+ */
+function isPathOrUnderSegment(pathname: string, segment: string): boolean {
+  return pathname === segment || pathname.startsWith(`${segment}/`);
+}
+
+function redirectWithRefreshedCookies(url: URL, refreshed: NextResponse): NextResponse {
+  const redirectResponse = NextResponse.redirect(url);
+  for (const cookie of refreshed.cookies.getAll()) {
+    redirectResponse.cookies.set(cookie);
+  }
+  const cacheControl = refreshed.headers.get("Cache-Control");
+  if (cacheControl) redirectResponse.headers.set("Cache-Control", cacheControl);
+  return redirectResponse;
 }
 
 export const config = {

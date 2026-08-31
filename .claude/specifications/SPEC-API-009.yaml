@@ -1,0 +1,68 @@
+id: SPEC-API-009
+version: 0.2.0
+kind: api
+title: Settings API surface
+status: draft
+context_and_scope:
+  in_scope:
+    - "GET /api/settings: returns the caller's user_preferences row, or column-default values (with updated_at: null) if no row has ever been saved — a read never creates a row"
+    - "PATCH /api/settings: validates a partial payload (any subset of default_reminder_lead_minutes, quiet_hours_start, quiet_hours_end, timezone, voice_capture_enabled) and upserts the caller's single row by user_id, creating it on first save"
+    - "timezone validation: PATCH rejects a value Intl.DateTimeFormat cannot resolve as a real IANA time zone name — v0.2.0 addition, see SPEC-DATA-012 v0.2.0"
+  out_of_scope:
+    - Any other route reading these preferences to change its own behavior (reminder dispatch timing, voice capture gating) — out of scope per SPEC-DATA-012
+    - A collection/list route or an id-addressed route — this is a singleton-per-caller resource, addressed implicitly by the authenticated user
+  external_dependencies: []
+  shared_schemas:
+    - "UserPreferencesResponse { default_reminder_lead_minutes: number, quiet_hours_start: string|null, quiet_hours_end: string|null, timezone: string, voice_capture_enabled: boolean, updated_at: string|null }"
+state_machines: []
+negative_constraints:
+  - id: NC-API-USERPREFS-001
+    message: PATCH /api/settings MUST reject a payload where quiet_hours_start/quiet_hours_end are provided independently of each other (one present, one absent) — the pair must be validated together at the API layer before it ever reaches the DB CHECK constraint, so the caller gets a clear 400 instead of a generic constraint-violation 500.
+    severity: high
+  - id: NC-API-USERPREFS-002
+    message: PATCH /api/settings MUST reject an empty/all-unrecognized-fields payload with a validation error, never silently no-op or send an empty upsert.
+    severity: medium
+  - id: NC-API-USERPREFS-003
+    message: GET /api/settings MUST NOT write a row as a side effect of reading — defaults are computed and returned in-memory when no row exists.
+    severity: medium
+  - id: NC-API-USERPREFS-004
+    message: Every response MUST use the project's standard ApiResponseBody envelope ({success, data, error}), identical to every other route.
+    severity: high
+  - id: NC-API-USERPREFS-005
+    message: PATCH /api/settings MUST reject a timezone value that is not a resolvable IANA time zone name, before it reaches the database.
+    severity: medium
+acceptance_criteria:
+  - id: AC-1
+    given: an authenticated caller with no saved preferences
+    when: GET /api/settings
+    then: "the response is 200 with the column-default values and updated_at: null, and no row is created"
+    invariant: false
+  - id: AC-2
+    given: an authenticated caller PATCHes only voice_capture_enabled
+    when: the request completes
+    then: the response reflects the new voice_capture_enabled value alongside unchanged (or default, if first save) values for the other fields
+    invariant: false
+  - id: AC-3
+    given: a PATCH payload with quiet_hours_start set and quiet_hours_end omitted
+    when: the request is validated
+    then: it is rejected with a 400 validation error, not forwarded to the database
+    invariant: true
+  - id: AC-4
+    given: a PATCH payload that is an empty object or contains only unrecognized keys
+    when: the request is validated
+    then: it is rejected with a 400 validation error
+    invariant: true
+  - id: AC-5
+    given: an unauthenticated request
+    when: GET or PATCH /api/settings is called
+    then: the response is 401, matching every other route's requireAuthenticatedContext() enforcement
+    invariant: true
+  - id: AC-6
+    given: a PATCH payload with timezone set to "Not/A/Real/Zone"
+    when: the request is validated
+    then: it is rejected with a 400 validation error, not forwarded to the database
+    invariant: true
+depends_on:
+  - SPEC-DATA-012
+constitution_rules:
+  - NC-SQL-CONCAT

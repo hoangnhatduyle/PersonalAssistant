@@ -10,7 +10,7 @@ export interface ResolvedIntent {
   readOnly: boolean;
   /** Short human-readable description of the resolved action, spoken/shown back to the user. */
   summary: string;
-  queryKind?: "upcoming_schedule";
+  queryKind?: "upcoming_schedule" | "knowledge_lookup";
   mutation?: PendingMutation;
 }
 
@@ -96,7 +96,7 @@ export const llmResponseSchema = z
     confidence: z.number().min(0).max(1),
     read_only: z.boolean(),
     summary: z.string(),
-    query_kind: z.literal("upcoming_schedule").nullable(),
+    query_kind: z.enum(["upcoming_schedule", "knowledge_lookup"]).nullable(),
     mutation: mutationSchema.nullable(),
   })
   .superRefine((value, ctx) => {
@@ -117,7 +117,7 @@ supported operation and respond with ONLY a JSON object matching this shape:
   "confidence": number,        // 0-1, your genuine confidence this is the right resolution
   "read_only": boolean,
   "summary": string,           // one sentence describing the action, for the user
-  "query_kind": "upcoming_schedule" | null,   // set when read_only and the user asked what's due/upcoming
+  "query_kind": "upcoming_schedule" | "knowledge_lookup" | null,   // set when read_only
   "mutation": {                // set when !read_only, else null
     "target_type": "course" | "deadline" | "task" | "note" | "reminder",
     "operation": "create" | "update" | "delete" | "acknowledge",
@@ -128,7 +128,11 @@ supported operation and respond with ONLY a JSON object matching this shape:
 
 Supported operations: create/update/delete a Deadline, Task, or Note;
 delete a Course; acknowledge/dismiss/snooze a Reminder; query the upcoming
-schedule (read-only). Nothing else is supported.
+schedule (read-only); look up tips/advice/background info from the user's
+personal knowledge base of imported reference material (read-only,
+query_kind "knowledge_lookup" — use this whenever the request is a factual
+or advice question rather than a request about the user's own Courses/
+Deadlines/Tasks). Nothing else is supported.
 
 If the request doesn't map confidently to one of these, or names an entity
 not in the provided context list, set confidence below 0.95 rather than

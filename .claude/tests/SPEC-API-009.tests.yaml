@@ -1,0 +1,38 @@
+spec_id: SPEC-API-009
+generated_at: 2026-08-31T15:50:48.055Z
+cases:
+  - id: T-SPEC-API-009-AC-AC_1
+    kind: acceptance
+    traces_to: SPEC-API-009#AC-1
+    assertion: "given an authenticated caller with no saved preferences, when GET /api/settings, then the response is 200 with the column-default values and updated_at: null, and no row is created"
+    invariant: false
+  - id: T-SPEC-API-009-AC-AC_2
+    kind: acceptance
+    traces_to: SPEC-API-009#AC-2
+    assertion: given an authenticated caller PATCHes only voice_capture_enabled, when the request completes, then the response reflects the new voice_capture_enabled value alongside unchanged (or default, if first save) values for the other fields
+    invariant: false
+  - id: T-SPEC-API-009-AC-AC_3
+    kind: acceptance
+    traces_to: SPEC-API-009#AC-3
+    assertion: given a PATCH payload with quiet_hours_start set and quiet_hours_end omitted, when the request is validated, then it is rejected with a 400 validation error, not forwarded to the database
+    invariant: true
+  - id: T-SPEC-API-009-AC-AC_4
+    kind: acceptance
+    traces_to: SPEC-API-009#AC-4
+    assertion: given a PATCH payload that is an empty object or contains only unrecognized keys, when the request is validated, then it is rejected with a 400 validation error
+    invariant: true
+  - id: T-SPEC-API-009-AC-AC_5
+    kind: acceptance
+    traces_to: SPEC-API-009#AC-5
+    assertion: given an unauthenticated request, when GET or PATCH /api/settings is called, then the response is 401, matching every other route's requireAuthenticatedContext() enforcement
+    invariant: true
+  - id: T-SPEC-API-009-NC-NC_API_USERPREFS_001
+    kind: negative-constraint
+    traces_to: SPEC-API-009#NC-API-USERPREFS-001
+    assertion: PATCH /api/settings MUST reject a payload where quiet_hours_start/quiet_hours_end are provided independently of each other (one present, one absent) — the pair must be validated together at the API layer before it ever reaches the DB CHECK constraint, so the caller gets a clear 400 instead of a generic constraint-violation 500.
+    invariant: true
+  - id: T-SPEC-API-009-NC-NC_API_USERPREFS_004
+    kind: negative-constraint
+    traces_to: SPEC-API-009#NC-API-USERPREFS-004
+    assertion: Every response MUST use the project's standard ApiResponseBody envelope ({success, data, error}), identical to every other route.
+    invariant: true

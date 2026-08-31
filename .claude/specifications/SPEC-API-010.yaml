@@ -1,0 +1,85 @@
+id: SPEC-API-010
+version: 0.2.0
+kind: api
+title: Voice response speech synthesis endpoint
+status: draft
+context_and_scope:
+  in_scope:
+    - "POST /api/voice/speak: authenticated (requireAuthenticatedContext), validates { text: string } via a new voiceSpeakSchema (trimmed, min 1, max MAX_SPEAK_TEXT_CHARS), rate-limited per caller, calls the already-speced synthesizeSpeech() (SPEC-VOICE-005, ElevenLabs Flash v2.5 with OpenAI tts-1 fallback), and responds { audio: base64 string, mimetype: \"audio/mpeg\" } through the project's standard ApiResponseBody envelope"
+    - "Client decides, per turn, whether to call this endpoint at all: a microphone-originated turn (including its AwaitingConfirmation prompt and the Confirm/Decline outcome that follows it) calls it; a typed turn never does. This origin flag is a client-only concept, not modeled server-side."
+    - "A new per-caller rate limit (checkSpeakRateLimit) scoped to this route. v0.2.0 revision: security/architect-review both independently found the original design (counting the caller's recent voice_sessions rows, SPEC-DATA-010) left the limit entirely decoupled from calls to this route -- POST /api/voice/speak never writes to voice_sessions, so it could be called an unbounded number of times as long as the caller had made at least one real voice turn recently. checkSpeakRateLimit now counts (and itself inserts into) a new, dedicated SPEC-DATA-013 voice_speak_requests table -- restoring the same self-referential property SPEC-API-008's checkCreateRateLimit has for knowledge_sources, where the very route being limited is what advances its own counter"
+  out_of_scope:
+    - The existing POST /api/voice, POST /api/voice/[sessionId]/confirm, and POST /api/voice/[sessionId]/decline routes, and src/lib/voice/session.ts — none of them are modified; they don't need to know whether a turn was voice- or text-originated
+    - Streaming or low-latency incremental audio delivery — v1 returns the full synthesized clip as one base64 payload in one response
+    - Persisting synthesized audio, or any record of a speak request/response, anywhere
+  external_dependencies:
+    - ElevenLabs Flash v2.5 (already an external dependency of SPEC-VOICE-005; this spec adds the first real caller of synthesizeSpeech())
+    - OpenAI tts-1 (fallback, same as SPEC-VOICE-005)
+  shared_schemas:
+    - 'VoiceSpeakResponse { audio: string (base64-encoded audio/mpeg), mimetype: "audio/mpeg" }'
+state_machines: []
+negative_constraints:
+  - id: NC-API-SPEAK-001
+    message: POST /api/voice/speak MUST require an authenticated caller (requireAuthenticatedContext) and return 401 otherwise, matching every other route.
+    severity: high
+  - id: NC-API-SPEAK-002
+    message: POST /api/voice/speak MUST reject empty or over-max-length text via voiceSpeakSchema before ever calling synthesizeSpeech() — an invalid request must never reach the paid TTS provider.
+    severity: high
+  - id: NC-API-SPEAK-003
+    message: POST /api/voice/speak MUST enforce a per-caller rate limit; a caller over the cap gets 429 and synthesizeSpeech() is never invoked for that request.
+    severity: high
+  - id: NC-API-SPEAK-004
+    message: A synthesizeSpeech() failure (missing/invalid provider keys, network error) MUST be caught and returned via the standard serverErrorResponse envelope — it must never crash the route or leak internal error details to the client.
+    severity: high
+  - id: NC-API-SPEAK-005
+    message: Every response MUST use the project's standard ApiResponseBody envelope ({success, data, error}), identical to every other route.
+    severity: medium
+  - id: NC-API-SPEAK-006
+    message: This route and its client callers MUST NOT modify voice_sessions state or alter the behavior of POST /api/voice or its confirm/decline routes.
+    severity: high
+  - id: NC-API-SPEAK-007
+    message: The client MUST NOT call POST /api/voice/speak for a text-originated turn (typed input) — only for a microphone-originated turn's response, its AwaitingConfirmation prompt, and that prompt's Confirm/Decline outcome.
+    severity: medium
+acceptance_criteria:
+  - id: AC-1
+    given: an authenticated caller under the rate limit, POSTing valid non-empty text at or under MAX_SPEAK_TEXT_CHARS
+    when: POST /api/voice/speak completes
+    then: 'the response is 200 with { audio: <base64 string>, mimetype: "audio/mpeg" }'
+    invariant: false
+  - id: AC-2
+    given: an unauthenticated request
+    when: POST /api/voice/speak is called
+    then: the response is 401
+    invariant: true
+  - id: AC-3
+    given: a request body with an empty string, or text longer than MAX_SPEAK_TEXT_CHARS
+    when: the request is validated
+    then: it is rejected with a 400 validation error, and synthesizeSpeech() is never called
+    invariant: true
+  - id: AC-4
+    given: a caller whose voice_speak_requests row count within the rate-limit window is at or over SPEAK_RATE_LIMIT_MAX
+    when: POST /api/voice/speak is called
+    then: the response is 429 and synthesizeSpeech() is never called
+    invariant: true
+  - id: AC-5
+    given: synthesizeSpeech() throws (provider failure)
+    when: POST /api/voice/speak handles the request
+    then: the response is 500 via the standard serverErrorResponse envelope, with no internal error detail leaked to the client
+    invariant: true
+  - id: AC-6
+    given: a text-fallback (typed) turn's response is rendered client-side, including any resulting confirmation prompt and its Confirm/Decline outcome
+    when: the client processes it
+    then: no request is ever made to POST /api/voice/speak
+    invariant: true
+  - id: AC-7
+    given: a microphone-originated turn's response, including an AwaitingConfirmation prompt it produced and that prompt's Confirm/Decline outcome
+    when: the client processes each of those messages
+    then: POST /api/voice/speak is called for each one and the returned audio is played back
+    invariant: false
+depends_on:
+  - SPEC-VOICE-005
+  - SPEC-API-005
+  - SPEC-DATA-013
+constitution_rules:
+  - NC-003
+  - NC-005

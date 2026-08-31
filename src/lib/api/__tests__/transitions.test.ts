@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  getValidDeadlineEvents,
+  getValidReminderEvents,
+  getValidTaskEvents,
   isDeadlineTransitionEvent,
   isReminderTransitionEvent,
   isTaskTransitionEvent,
@@ -87,5 +90,39 @@ describe("isReminderTransitionEvent", () => {
     expect(isReminderTransitionEvent("snooze_time_reached")).toBe(false);
     expect(isReminderTransitionEvent("no_response_timeout")).toBe(false);
     expect(isReminderTransitionEvent("target_soft_deleted")).toBe(false);
+  });
+});
+
+// UI transition-gating helpers (Phase 4): a transition-menu component reads
+// these to render only legal actions, so this is the same single source of
+// truth the resolve*Transition functions above already cover.
+describe("getValidDeadlineEvents", () => {
+  it("returns exactly the legal events per status, matching the forbidden-transition rules", () => {
+    expect(getValidDeadlineEvents("Not Started").sort()).toEqual(["user_cancels", "user_marks_in_progress"].sort());
+    expect(getValidDeadlineEvents("In Progress").sort()).toEqual(["user_cancels", "user_marks_submitted"].sort());
+    // Overdue can only be submitted, never cancelled.
+    expect(getValidDeadlineEvents("Overdue")).toEqual(["user_marks_submitted"]);
+    expect(getValidDeadlineEvents("Submitted")).toEqual(["user_confirms_done"]);
+    expect(getValidDeadlineEvents("Completed")).toEqual([]);
+    expect(getValidDeadlineEvents("Cancelled")).toEqual([]);
+  });
+});
+
+describe("getValidTaskEvents", () => {
+  it("returns both events from Open and none from either terminal state", () => {
+    expect(getValidTaskEvents("Open").sort()).toEqual(["user_cancels", "user_marks_done"].sort());
+    expect(getValidTaskEvents("Done")).toEqual([]);
+    expect(getValidTaskEvents("Cancelled")).toEqual([]);
+  });
+});
+
+describe("getValidReminderEvents", () => {
+  it("returns all three events only from Delivered", () => {
+    expect(getValidReminderEvents("Delivered").sort()).toEqual(
+      ["user_acknowledges", "user_dismisses", "user_snoozes"].sort(),
+    );
+    for (const status of ["Scheduled", "Acknowledged", "Dismissed", "Snoozed", "Expired"] as const) {
+      expect(getValidReminderEvents(status)).toEqual([]);
+    }
   });
 });

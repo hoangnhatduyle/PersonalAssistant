@@ -1,5 +1,5 @@
 id: SPEC-VOICE-005
-version: 0.2.0
+version: 0.3.0
 kind: domain
 title: Voice interaction session lifecycle
 status: draft
@@ -14,7 +14,8 @@ context_and_scope:
     - Discarding raw captured audio once transcription completes, per the recorded retention decision
     - "For a Course-delete mutating intent, disclosing the cascade scope (live Deadlines/Reminders that will also be affected) in the AwaitingConfirmation prompt itself, before the user confirms — Tracked-debt closure: SPEC-API-004 AC-6 only guarantees the confirmed mutation executes exactly as shown, so an under-disclosed prompt would technically satisfy every constraint while leaving the user's confirmation uninformed"
   out_of_scope:
-    - STT/TTS vendor integration code itself (Deepgram/ElevenLabs client wiring is an implementation concern, not modeled here)
+    - "STT vendor integration code itself (Deepgram client wiring is an implementation concern, not modeled here)"
+    - "TTS vendor integration code itself (the ElevenLabs/OpenAI client wiring in src/lib/voice/elevenlabs.ts) — but v0.3.0 note: the decision of *when* synthesizeSpeech() is actually invoked, and playing the result back, is now modeled by SPEC-API-010 (POST /api/voice/speak), gated on client-tracked voice-vs-text turn origin. This spec's own state machine and routes remain unaware of that origin."
     - Extended multi-turn open-ended conversation or general chit-chat beyond a single clarification round-trip — v1 supports task-directed commands only
     - Wake-word or always-listening background capture — v1 assumes explicit user-initiated capture (press-to-talk)
     - Class-session and appointment intents (no backing entity exists per SPEC-CORE-007's narrowed scope)

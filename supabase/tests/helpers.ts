@@ -143,6 +143,12 @@ export async function createVoiceSession(
   return data.id as string;
 }
 
+export async function createVoiceSpeakRequest(admin: SupabaseClient, userId: string): Promise<string> {
+  const { data, error } = await admin.from("voice_speak_requests").insert({ user_id: userId }).select("id").single();
+  if (error) throw new Error(`failed to create voice_speak_request: ${error.message}`, { cause: error });
+  return data.id as string;
+}
+
 export async function createFeedback(
   admin: SupabaseClient,
   userId: string,
@@ -156,6 +162,20 @@ export async function createFeedback(
     .select("id")
     .single();
   if (error) throw new Error(`failed to create feedback: ${error.message}`, { cause: error });
+  return data.id as string;
+}
+
+export async function createUserPreferences(
+  admin: SupabaseClient,
+  userId: string,
+  overrides: Record<string, unknown> = {},
+): Promise<string> {
+  const { data, error } = await admin
+    .from("user_preferences")
+    .insert({ user_id: userId, ...overrides })
+    .select("id")
+    .single();
+  if (error) throw new Error(`failed to create user_preferences: ${error.message}`, { cause: error });
   return data.id as string;
 }
 

@@ -1,0 +1,33 @@
+spec_id: SPEC-DATA-012
+generated_at: 2026-08-31T15:50:47.881Z
+cases:
+  - id: T-SPEC-DATA-012-AC-AC_1
+    kind: acceptance
+    traces_to: SPEC-DATA-012#AC-1
+    assertion: given an authenticated user with no existing user_preferences row, when they PATCH one or more preference fields for the first time, then exactly one user_preferences row is created for that user_id, with any field they did not supply taking its column default
+    invariant: false
+  - id: T-SPEC-DATA-012-AC-AC_2
+    kind: acceptance
+    traces_to: SPEC-DATA-012#AC-2
+    assertion: given user A's user_preferences row exists, when user B (authenticated, different user_id) attempts to select or update it directly against Postgres, then RLS returns zero rows / denies the write — user B never sees or changes user A's preferences
+    invariant: true
+  - id: T-SPEC-DATA-012-AC-AC_3
+    kind: acceptance
+    traces_to: SPEC-DATA-012#AC-3
+    assertion: given a write attempt setting quiet_hours_start to a time value and quiet_hours_end to null, when the INSERT or UPDATE is executed, then the CHECK constraint rejects it
+    invariant: true
+  - id: T-SPEC-DATA-012-AC-AC_4
+    kind: acceptance
+    traces_to: SPEC-DATA-012#AC-4
+    assertion: given a user's profile row is deleted, when the cascade fires, then their user_preferences row is deleted too, leaving no orphaned row
+    invariant: true
+  - id: T-SPEC-DATA-012-NC-NC_DATA_USERPREFS_001
+    kind: negative-constraint
+    traces_to: SPEC-DATA-012#NC-DATA-USERPREFS-001
+    assertion: user_preferences MUST have at most one row per user_id (UNIQUE constraint on user_id), never multiple preference rows for the same user.
+    invariant: true
+  - id: T-SPEC-DATA-012-NC-NC_DATA_USERPREFS_002
+    kind: negative-constraint
+    traces_to: SPEC-DATA-012#NC-DATA-USERPREFS-002
+    assertion: RLS MUST scope every select/insert/update to auth.uid() = user_id; no policy may allow reading or writing another user's preferences row.
+    invariant: true

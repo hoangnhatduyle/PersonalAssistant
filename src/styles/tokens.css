@@ -1,0 +1,41 @@
+/**
+ * Design tokens for the "ops console" visual direction — dark glass
+ * surfaces, semantic status color, sparing glow accents. Mapped into
+ * Tailwind v4 utilities via @theme inline in globals.css.
+ */
+:root {
+  /* surface */
+  --bg-void: #05070d;
+  --bg-void-elevated: #0a0e18;
+  --panel-bg: rgb(255 255 255 / 0.04);
+  --panel-border: rgb(255 255 255 / 0.08);
+  --panel-border-hover: rgb(255 255 255 / 0.16);
+
+  /* brand / accent */
+  --accent-indigo: #6366f1;
+  --accent-violet: #a855f7;
+  --accent-teal: #2dd4bf;
+
+  /* semantic state */
+  --status-ok: #2dd4bf;
+  --status-warn: #f59e0b;
+  --status-urgent: #fb7185;
+  --status-neutral: #64748b;
+
+  /* text */
+  --text-primary: #f4f6fb;
+  --text-secondary: #94a3b8;
+  --text-eyebrow: #64748b;
+
+  /* radii / shadow / glow. Prefixed --token-* so @theme inline in globals.css
+     (which maps these to same-named Tailwind utility vars like --radius-panel)
+     never aliases a variable to itself — that self-reference only resolved
+     correctly by accident of unlayered-vs-layered CSS cascade precedence. */
+  --token-radius-panel: 1rem;
+  --token-radius-control: 0.5rem;
+  --token-shadow-panel: 0 8px 30px -12px rgb(0 0 0 / 0.6);
+  --glow-accent: 0 0 24px -4px rgb(99 102 241 / 0.45);
+  --glow-ok: 0 0 20px -6px rgb(45 212 191 / 0.5);
+  --glow-warn: 0 0 20px -6px rgb(245 158 11 / 0.5);
+  --glow-urgent: 0 0 20px -6px rgb(251 113 133 / 0.5);
+}

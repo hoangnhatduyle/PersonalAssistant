@@ -9,7 +9,10 @@ import {
   reminderAckSchema,
   taskPatchSchema,
   taskPayloadSchema,
+  userPreferencesPatchSchema,
+  voiceSpeakSchema,
 } from "../schemas";
+import { MAX_SPEAK_TEXT_CHARS } from "@/lib/voice/constants";
 
 describe("coursePayloadSchema", () => {
   it("accepts a minimal valid payload", () => {
@@ -153,5 +156,89 @@ describe("feedbackPayloadSchema", () => {
 
   it("rejects an empty comment", () => {
     expect(feedbackPayloadSchema.safeParse({ ...base, comment: "" }).success).toBe(false);
+  });
+});
+
+// Traces: SPEC-API-009 AC-3, AC-4, NC-API-USERPREFS-001, NC-API-USERPREFS-002.
+describe("userPreferencesPatchSchema", () => {
+  it("accepts a single-field partial patch", () => {
+    expect(userPreferencesPatchSchema.safeParse({ voice_capture_enabled: false }).success).toBe(true);
+  });
+
+  it("parses an empty payload (the route layer rejects it, matching coursePatchSchema/etc's convention)", () => {
+    expect(userPreferencesPatchSchema.safeParse({}).success).toBe(true);
+  });
+
+  it("rejects an out-of-range default_reminder_lead_minutes", () => {
+    expect(userPreferencesPatchSchema.safeParse({ default_reminder_lead_minutes: -1 }).success).toBe(false);
+    expect(userPreferencesPatchSchema.safeParse({ default_reminder_lead_minutes: 1441 }).success).toBe(false);
+  });
+
+  it("accepts both quiet_hours_start and quiet_hours_end set together", () => {
+    expect(
+      userPreferencesPatchSchema.safeParse({ quiet_hours_start: "22:00", quiet_hours_end: "07:00" }).success,
+    ).toBe(true);
+  });
+
+  it("accepts both quiet_hours_start and quiet_hours_end cleared together", () => {
+    expect(
+      userPreferencesPatchSchema.safeParse({ quiet_hours_start: null, quiet_hours_end: null }).success,
+    ).toBe(true);
+  });
+
+  it("AC-3/NC-API-USERPREFS-001: rejects quiet_hours_start provided without quiet_hours_end", () => {
+    expect(userPreferencesPatchSchema.safeParse({ quiet_hours_start: "22:00" }).success).toBe(false);
+  });
+
+  it("AC-3/NC-API-USERPREFS-001: rejects quiet_hours_end provided without quiet_hours_start", () => {
+    expect(userPreferencesPatchSchema.safeParse({ quiet_hours_end: "07:00" }).success).toBe(false);
+  });
+
+  it("rejects one side set and the other explicitly null", () => {
+    expect(
+      userPreferencesPatchSchema.safeParse({ quiet_hours_start: "22:00", quiet_hours_end: null }).success,
+    ).toBe(false);
+  });
+
+  it("rejects a malformed time string", () => {
+    expect(
+      userPreferencesPatchSchema.safeParse({ quiet_hours_start: "10pm", quiet_hours_end: "07:00" }).success,
+    ).toBe(false);
+  });
+
+  it("AC-6/NC-API-USERPREFS-005: accepts a real IANA time zone name", () => {
+    expect(userPreferencesPatchSchema.safeParse({ timezone: "America/Chicago" }).success).toBe(true);
+    expect(userPreferencesPatchSchema.safeParse({ timezone: "UTC" }).success).toBe(true);
+  });
+
+  it("AC-6/NC-API-USERPREFS-005: rejects a string that isn't a resolvable IANA time zone name", () => {
+    expect(userPreferencesPatchSchema.safeParse({ timezone: "Not/A/Real/Zone" }).success).toBe(false);
+  });
+});
+
+// Traces: SPEC-API-010 AC-3, NC-API-SPEAK-002.
+describe("voiceSpeakSchema", () => {
+  it("accepts valid non-empty text", () => {
+    expect(voiceSpeakSchema.safeParse({ text: "Hello there." }).success).toBe(true);
+  });
+
+  it("trims whitespace-only text down to empty and rejects it", () => {
+    expect(voiceSpeakSchema.safeParse({ text: "   " }).success).toBe(false);
+  });
+
+  it("rejects an empty string", () => {
+    expect(voiceSpeakSchema.safeParse({ text: "" }).success).toBe(false);
+  });
+
+  it("accepts text exactly at MAX_SPEAK_TEXT_CHARS", () => {
+    expect(voiceSpeakSchema.safeParse({ text: "a".repeat(MAX_SPEAK_TEXT_CHARS) }).success).toBe(true);
+  });
+
+  it("rejects text over MAX_SPEAK_TEXT_CHARS", () => {
+    expect(voiceSpeakSchema.safeParse({ text: "a".repeat(MAX_SPEAK_TEXT_CHARS + 1) }).success).toBe(false);
+  });
+
+  it("rejects a missing text field", () => {
+    expect(voiceSpeakSchema.safeParse({}).success).toBe(false);
   });
 });

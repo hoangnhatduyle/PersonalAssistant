@@ -1,0 +1,58 @@
+id: SPEC-DATA-013
+version: 0.1.0
+kind: data
+title: Voice speak rate-limit Postgres schema
+status: draft
+context_and_scope:
+  in_scope:
+    - "voice_speak_requests table: one row inserted per allowed POST /api/voice/speak call (SPEC-API-010), holding only id/user_id/created_at -- a self-referential counter table so checkSpeakRateLimit's window query counts calls to that route itself, not a proxy signal from a different table"
+    - "RLS: select/insert scoped to auth.uid() = user_id, no update/delete policy (matches the revoke-update/delete-from-anon/authenticated stance 0007_knowledge_base.sql takes for knowledge_chunks)"
+    - A 1-day hard-delete retention sweep (delete_expired_voice_speak_requests(), pg_cron-scheduled every 15 minutes, in-process synchronous call per the established 0004_voice_session_retention.sql pattern) -- generous relative to the 10-minute rate-limit window itself, just bounding otherwise-unconstrained row growth
+    - An index on (user_id, created_at) backing both the rate-limit window query and the retention sweep's predicate
+  out_of_scope:
+    - The rate-limit window/cap values themselves (SPEAK_RATE_LIMIT_MAX, SPEAK_RATE_LIMIT_WINDOW_MINUTES) -- pinned as named constants at the application layer (src/lib/voice/constants.ts, SPEC-API-010), not modeled here
+    - Any UI surface for a user to view or clear their own rate-limit history -- v1 has none
+    - A dedicated DELETE route/policy for an individual row -- rows are only ever removed by the retention sweep
+  external_dependencies: []
+  shared_schemas:
+    - voice_speak_requests { id uuid PK DEFAULT gen_random_uuid(), user_id uuid NOT NULL FK profiles(id) ON DELETE CASCADE, created_at timestamptz NOT NULL DEFAULT now() }
+state_machines: []
+negative_constraints:
+  - id: NC-DATA-SPEAK-001
+    message: RLS MUST scope every select/insert to auth.uid() = user_id; no policy may allow reading or inserting a row on another user's behalf.
+    severity: critical
+  - id: NC-DATA-SPEAK-002
+    message: UPDATE and DELETE MUST be revoked from the anon/authenticated roles at the table-grant level, not left to RLS's policy-absence alone -- mirrors the explicit-revoke convention 0007_knowledge_base.sql documents for knowledge_chunks.
+    severity: high
+  - id: NC-DATA-SPEAK-003
+    message: voice_speak_requests rows MUST NOT be retained past 1 day from created_at; the retention-sweep function MUST perform a hard DELETE, matching 0004_voice_session_retention.sql's stance that this class of table carries no historical-record requirement.
+    severity: medium
+  - id: NC-DATA-SPEAK-004
+    message: The retention-sweep function's EXECUTE privilege MUST be revoked from public/anon/authenticated and granted only to the role pg_cron invokes it as -- mirrors the SECURITY DEFINER lockdown 0001_init.sql and 0004_voice_session_retention.sql both apply to their own sweep functions.
+    severity: critical
+acceptance_criteria:
+  - id: AC-1
+    given: an authenticated user under the rate limit
+    when: checkSpeakRateLimit inserts a voice_speak_requests row for that user
+    then: the row is created scoped to that user's own user_id via RLS
+    invariant: false
+  - id: AC-2
+    given: user A's voice_speak_requests rows exist
+    when: user B (authenticated, different user_id) selects against the table, or attempts to insert a row with user_id set to user A's id
+    then: RLS returns zero of user A's rows to user B, and rejects the cross-user insert
+    invariant: true
+  - id: AC-3
+    given: a voice_speak_requests row whose created_at is more than 1 day in the past
+    when: the retention-sweep function runs
+    then: the row is hard-deleted
+    invariant: true
+  - id: AC-4
+    given: a user's profile row is deleted
+    when: the cascade fires
+    then: their voice_speak_requests rows are deleted too, leaving no orphaned row
+    invariant: true
+depends_on:
+  - SPEC-DATA-001
+  - SPEC-API-010
+constitution_rules:
+  - NC-SQL-CONCAT

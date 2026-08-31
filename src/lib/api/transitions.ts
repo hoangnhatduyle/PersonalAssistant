@@ -68,3 +68,29 @@ export function isTaskTransitionEvent(value: string): value is TaskTransitionEve
 export function isReminderTransitionEvent(value: string): value is ReminderTransitionEvent {
   return value in reminderTransitions;
 }
+
+/**
+ * UI transition-gating: which events are legal from the current status, so a
+ * transition-menu component can render only valid actions instead of a raw
+ * status dropdown. Derived from the exact same tables the server enforces
+ * above (this file has no server-only imports, so it's safe to import from
+ * client components too) — a single source of truth, not a second copy that
+ * could drift from what the server actually accepts.
+ */
+export function getValidDeadlineEvents(status: DeadlineStatus): DeadlineTransitionEvent[] {
+  return (Object.keys(deadlineTransitions) as DeadlineTransitionEvent[]).filter(
+    (event) => deadlineTransitions[event]?.[status] !== undefined,
+  );
+}
+
+export function getValidTaskEvents(status: TaskStatus): TaskTransitionEvent[] {
+  return (Object.keys(taskTransitions) as TaskTransitionEvent[]).filter(
+    (event) => taskTransitions[event]?.[status] !== undefined,
+  );
+}
+
+export function getValidReminderEvents(status: ReminderStatus): ReminderTransitionEvent[] {
+  return (Object.keys(reminderTransitions) as ReminderTransitionEvent[]).filter(
+    (event) => reminderTransitions[event]?.[status] !== undefined,
+  );
+}

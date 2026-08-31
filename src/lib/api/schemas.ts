@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { KNOWLEDGE_MAX_PASTED_TEXT_CHARS, KNOWLEDGE_MAX_TITLE_CHARS } from "@/lib/knowledge/constants";
+import { MAX_SPEAK_TEXT_CHARS } from "@/lib/voice/constants";
 
 // Shared payload shapes from SPEC-API-004's shared_schemas. `xPatchSchema` is
 // the same shape with every field optional — used by the id-addressed PATCH
@@ -99,3 +100,60 @@ export const knowledgeSourceCreateFieldsSchema = z
     }
   });
 export type KnowledgeSourceCreateFields = z.infer<typeof knowledgeSourceCreateFieldsSchema>;
+
+// SPEC-API-009 UserPreferencesResponse. A singleton-per-caller resource (no
+// id-addressed route) — PATCH validates a partial payload and the route
+// upserts by user_id. quiet_hours_start/quiet_hours_end must be provided
+// together (NC-API-USERPREFS-001): the DB CHECK constraint
+// (0010_user_preferences.sql) is the real backstop, but rejecting a
+// half-set pair here gives the caller a specific 400 instead of a generic
+// constraint-violation 500.
+const QUIET_HOURS_TIME_REGEX = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+// NC-API-USERPREFS-005: reject an unresolvable IANA zone name before it
+// reaches the database — Intl.DateTimeFormat throws RangeError for one.
+function isValidTimeZone(value: string): boolean {
+  try {
+    Intl.DateTimeFormat(undefined, { timeZone: value });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export const userPreferencesPatchSchema = z
+  .object({
+    default_reminder_lead_minutes: z.number().int().min(0).max(1440),
+    quiet_hours_start: z.string().regex(QUIET_HOURS_TIME_REGEX, "Expected HH:MM (24-hour)").nullable(),
+    quiet_hours_end: z.string().regex(QUIET_HOURS_TIME_REGEX, "Expected HH:MM (24-hour)").nullable(),
+    timezone: z.string().refine(isValidTimeZone, "Not a recognized IANA time zone name"),
+    voice_capture_enabled: z.boolean(),
+  })
+  .partial()
+  .superRefine((value, ctx) => {
+    const touchesStart = "quiet_hours_start" in value;
+    const touchesEnd = "quiet_hours_end" in value;
+    if (touchesStart !== touchesEnd) {
+      ctx.addIssue({
+        code: "custom",
+        message: "quiet_hours_start and quiet_hours_end must be provided together",
+        path: [touchesStart ? "quiet_hours_end" : "quiet_hours_start"],
+      });
+      return;
+    }
+    if (touchesStart && (value.quiet_hours_start === null) !== (value.quiet_hours_end === null)) {
+      ctx.addIssue({
+        code: "custom",
+        message: "quiet_hours_start and quiet_hours_end must both be set or both be null",
+        path: ["quiet_hours_end"],
+      });
+    }
+  });
+export type UserPreferencesPatch = z.infer<typeof userPreferencesPatchSchema>;
+
+// SPEC-API-010 NC-API-SPEAK-002: validated before synthesizeSpeech() (a
+// paid ElevenLabs/OpenAI call) is ever invoked.
+export const voiceSpeakSchema = z.object({
+  text: z.string().trim().min(1).max(MAX_SPEAK_TEXT_CHARS),
+});
+export type VoiceSpeakPayload = z.infer<typeof voiceSpeakSchema>;

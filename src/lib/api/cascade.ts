@@ -10,10 +10,11 @@ export interface CourseDeleteCascadeResult {
 /**
  * SPEC-API-004 AC-7/AC-12/AC-13, NC-API-008: soft-deletes a Course and, in
  * the same DB transaction (see supabase/migrations/0002_delete_cascade.sql),
- * cascades to its live Deadlines (dismissing their Reminders) and clears
- * linked_course_id on any Note referencing it. Returns the cascade's scope so
- * the route response — and, per Tracked debt, the Item 5 voice confirm copy
- * — can disclose it rather than silently performing an unbounded cascade.
+ * cascades to soft-delete its live Deadlines (dismissing their Reminders)
+ * and clears linked_course_id on any Note referencing it. Returns the
+ * cascade's scope so the route response — and, per Tracked debt, the Item 5
+ * voice confirm copy — can disclose it rather than silently performing an
+ * unbounded cascade.
  */
 export async function cascadeDeleteCourse(
   supabase: SupabaseClient<Database>,

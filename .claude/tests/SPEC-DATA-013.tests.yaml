@@ -1,0 +1,38 @@
+spec_id: SPEC-DATA-013
+generated_at: 2026-08-31T18:54:51.017Z
+cases:
+  - id: T-SPEC-DATA-013-AC-AC_1
+    kind: acceptance
+    traces_to: SPEC-DATA-013#AC-1
+    assertion: given an authenticated user under the rate limit, when checkSpeakRateLimit inserts a voice_speak_requests row for that user, then the row is created scoped to that user's own user_id via RLS
+    invariant: false
+  - id: T-SPEC-DATA-013-AC-AC_2
+    kind: acceptance
+    traces_to: SPEC-DATA-013#AC-2
+    assertion: given user A's voice_speak_requests rows exist, when user B (authenticated, different user_id) selects against the table, or attempts to insert a row with user_id set to user A's id, then RLS returns zero of user A's rows to user B, and rejects the cross-user insert
+    invariant: true
+  - id: T-SPEC-DATA-013-AC-AC_3
+    kind: acceptance
+    traces_to: SPEC-DATA-013#AC-3
+    assertion: given a voice_speak_requests row whose created_at is more than 1 day in the past, when the retention-sweep function runs, then the row is hard-deleted
+    invariant: true
+  - id: T-SPEC-DATA-013-AC-AC_4
+    kind: acceptance
+    traces_to: SPEC-DATA-013#AC-4
+    assertion: given a user's profile row is deleted, when the cascade fires, then their voice_speak_requests rows are deleted too, leaving no orphaned row
+    invariant: true
+  - id: T-SPEC-DATA-013-NC-NC_DATA_SPEAK_001
+    kind: negative-constraint
+    traces_to: SPEC-DATA-013#NC-DATA-SPEAK-001
+    assertion: RLS MUST scope every select/insert to auth.uid() = user_id; no policy may allow reading or inserting a row on another user's behalf.
+    invariant: true
+  - id: T-SPEC-DATA-013-NC-NC_DATA_SPEAK_002
+    kind: negative-constraint
+    traces_to: SPEC-DATA-013#NC-DATA-SPEAK-002
+    assertion: UPDATE and DELETE MUST be revoked from the anon/authenticated roles at the table-grant level, not left to RLS's policy-absence alone -- mirrors the explicit-revoke convention 0007_knowledge_base.sql documents for knowledge_chunks.
+    invariant: true
+  - id: T-SPEC-DATA-013-NC-NC_DATA_SPEAK_004
+    kind: negative-constraint
+    traces_to: SPEC-DATA-013#NC-DATA-SPEAK-004
+    assertion: The retention-sweep function's EXECUTE privilege MUST be revoked from public/anon/authenticated and granted only to the role pg_cron invokes it as -- mirrors the SECURITY DEFINER lockdown 0001_init.sql and 0004_voice_session_retention.sql both apply to their own sweep functions.
+    invariant: true

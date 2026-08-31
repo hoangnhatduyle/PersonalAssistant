@@ -217,4 +217,99 @@ describe("intakeVoiceTurn / confirmVoiceSession / declineVoiceSession", () => {
 
     await expect(confirmVoiceSession(user.client, userId, idleSession!.id)).rejects.toBeInstanceOf(VoiceSessionInvalidStateError);
   });
+
+  // SPEC-VOICE-005 AC-9, NC-VOICE-007: knowledge_lookup follows the same
+  // read_only_query_resolved path as upcoming_schedule.
+  describe("knowledge_lookup", () => {
+    it("AC-9: executes immediately without confirmation and returns citation data", async () => {
+      const resolveIntent = fakeResolver({
+        confidence: 0.97,
+        readOnly: true,
+        summary: "look up financial aid deadlines",
+        queryKind: "knowledge_lookup",
+      });
+      const knowledgeLookup = vi.fn().mockResolvedValue({
+        message: "Financial aid applications are due March 2nd.",
+        citations: [{ sourceId: "11111111-1111-4111-8111-111111111111", title: "UC Financial Aid Page", originUrl: "https://example.edu/aid" }],
+      });
+
+      const result = await intakeVoiceTurn(
+        user.client,
+        userId,
+        { transcript: "when is financial aid due" },
+        { transcribe: vi.fn(), resolveIntent, knowledgeLookup },
+      );
+
+      expect(result.state).toBe("Responding");
+      expect(result.executed).toBe(true);
+      expect(result.message).toBe("Financial aid applications are due March 2nd.");
+      expect(result.citations).toEqual([
+        { sourceId: "11111111-1111-4111-8111-111111111111", title: "UC Financial Aid Page", originUrl: "https://example.edu/aid" },
+      ]);
+      expect(result.extractionLabel).toBeUndefined();
+      expect(knowledgeLookup).toHaveBeenCalledWith(user.client, userId, "when is financial aid due");
+
+      const row = await sessionRow(result.sessionId);
+      expect(row.state).toBe("Responding");
+      expect(row.pending_mutation).toBeNull();
+    });
+
+    it("AC-6/AC-9 (SPEC-CORE-008 NC-023): surfaces the machine_extracted label when the lookup result carries one", async () => {
+      const resolveIntent = fakeResolver({
+        confidence: 0.97,
+        readOnly: true,
+        summary: "describe the screenshot I saved",
+        queryKind: "knowledge_lookup",
+      });
+      const knowledgeLookup = vi.fn().mockResolvedValue({
+        message: "The screenshot shows a syllabus with a final exam date of May 10th.",
+        citations: [{ sourceId: "22222222-2222-4222-8222-222222222222", title: "Syllabus screenshot", originUrl: null }],
+        extractionLabel: "machine_extracted",
+      });
+
+      const result = await intakeVoiceTurn(
+        user.client,
+        userId,
+        { transcript: "what did that screenshot say" },
+        { transcribe: vi.fn(), resolveIntent, knowledgeLookup },
+      );
+
+      expect(result.extractionLabel).toBe("machine_extracted");
+    });
+
+    it("AC-6: a no-relevant-knowledge lookup result is still returned as a completed execution, not treated as ambiguous", async () => {
+      const resolveIntent = fakeResolver({
+        confidence: 0.97,
+        readOnly: true,
+        summary: "look up something not in the knowledge base",
+        queryKind: "knowledge_lookup",
+      });
+      const knowledgeLookup = vi.fn().mockResolvedValue({ message: "I don't have anything saved that answers that yet.", citations: [] });
+
+      const result = await intakeVoiceTurn(
+        user.client,
+        userId,
+        { transcript: "tell me something I never saved" },
+        { transcribe: vi.fn(), resolveIntent, knowledgeLookup },
+      );
+
+      expect(result.executed).toBe(true);
+      expect(result.citations).toEqual([]);
+      expect(result.message).toBe("I don't have anything saved that answers that yet.");
+    });
+
+    it("a lookup failure lands the session in Responding via execution_failed rather than stranding it in Executing", async () => {
+      const resolveIntent = fakeResolver({
+        confidence: 0.97,
+        readOnly: true,
+        summary: "look something up",
+        queryKind: "knowledge_lookup",
+      });
+      const knowledgeLookup = vi.fn().mockRejectedValue(new Error("embedding vendor call failed"));
+
+      await expect(
+        intakeVoiceTurn(user.client, userId, { transcript: "look something up" }, { transcribe: vi.fn(), resolveIntent, knowledgeLookup }),
+      ).rejects.toThrow("embedding vendor call failed");
+    });
+  });
 });

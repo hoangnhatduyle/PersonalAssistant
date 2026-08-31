@@ -1,26 +1,43 @@
 @import "tailwindcss";
-
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+@import "../styles/tokens.css";
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+  --color-bg-void: var(--bg-void);
+  --color-bg-void-elevated: var(--bg-void-elevated);
+  --color-panel: var(--panel-bg);
+  --color-panel-border: var(--panel-border);
+  --color-panel-border-hover: var(--panel-border-hover);
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --color-accent-indigo: var(--accent-indigo);
+  --color-accent-violet: var(--accent-violet);
+  --color-accent-teal: var(--accent-teal);
+
+  --color-status-ok: var(--status-ok);
+  --color-status-warn: var(--status-warn);
+  --color-status-urgent: var(--status-urgent);
+  --color-status-neutral: var(--status-neutral);
+
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-eyebrow: var(--text-eyebrow);
+
+  --radius-panel: var(--token-radius-panel);
+  --radius-control: var(--token-radius-control);
+  --shadow-panel: var(--token-shadow-panel);
+
+  --font-sans: var(--font-body-raw);
+  --font-display: var(--font-display-raw);
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bg-void);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
 }
+
+/* Sparing glow accents — applied via GlassPanel variant classes, not decoratively everywhere. */
+.glow-accent { box-shadow: var(--shadow-panel), var(--glow-accent); }
+.glow-ok { box-shadow: var(--shadow-panel), var(--glow-ok); }
+.glow-warn { box-shadow: var(--shadow-panel), var(--glow-warn); }
+.glow-urgent { box-shadow: var(--shadow-panel), var(--glow-urgent); }

@@ -1,0 +1,64 @@
+id: SPEC-DATA-012
+version: 0.2.0
+kind: data
+title: User Preferences Postgres schema
+status: draft
+context_and_scope:
+  in_scope:
+    - "user_preferences table: one row per user_id, holding default_reminder_lead_minutes, quiet_hours_start/quiet_hours_end, timezone, and voice_capture_enabled"
+    - "RLS: select/insert/update scoped to auth.uid() = user_id, no delete policy (row is cascade-deleted with the owning profile, never independently)"
+    - Column-level defaults so a freshly-inserted row is fully valid without the caller supplying every field (mirrors profiles.notification_channel's own default-on-insert pattern)
+    - A check constraint enforcing quiet_hours_start and quiet_hours_end are both null or both set (no half-open window)
+    - "timezone: an IANA time zone name (e.g. \"America/Chicago\") giving quiet_hours_start/end a frame of reference — v0.2.0 addition per architect-review finding (bare time columns with no timezone are ambiguous once actually consumed) and explicit human decision at the critical-risk approval checkpoint to add it now while the table is still empty, rather than as a later breaking migration"
+  out_of_scope:
+    - profiles.notification_channel — a separate, pre-existing, already-unused column from SPEC-DATA-001; not part of this feature and not touched by it
+    - Any cron/dispatch behavior actually reading quiet_hours_start/quiet_hours_end/timezone to delay reminder delivery — this spec only persists the values; SPEC-CORE-00x reminder dispatch is unchanged
+    - A dedicated DELETE route/policy for a single user's preferences row
+    - IANA timezone-name validity enforcement at the database layer — validated at the API/Zod layer (SPEC-API-009) only, matching this project's general split of "Zod validates business rules, DB CHECK enforces structural invariants"; Postgres has no built-in IANA validator without an extension
+  external_dependencies: []
+  shared_schemas:
+    - "user_preferences { id uuid PK DEFAULT gen_random_uuid(), user_id uuid UNIQUE NOT NULL FK profiles(id) ON DELETE CASCADE, default_reminder_lead_minutes integer NOT NULL DEFAULT 60 CHECK (0..1440), quiet_hours_start time, quiet_hours_end time, timezone text NOT NULL DEFAULT 'UTC', voice_capture_enabled boolean NOT NULL DEFAULT true, created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now() }"
+state_machines: []
+negative_constraints:
+  - id: NC-DATA-USERPREFS-001
+    message: user_preferences MUST have at most one row per user_id (UNIQUE constraint on user_id), never multiple preference rows for the same user.
+    severity: high
+  - id: NC-DATA-USERPREFS-002
+    message: RLS MUST scope every select/insert/update to auth.uid() = user_id; no policy may allow reading or writing another user's preferences row.
+    severity: critical
+  - id: NC-DATA-USERPREFS-003
+    message: quiet_hours_start and quiet_hours_end MUST NOT be independently nullable — a row with exactly one of the two set is invalid and must be rejected by a CHECK constraint, not left to application-layer validation alone.
+    severity: medium
+  - id: NC-DATA-USERPREFS-004
+    message: default_reminder_lead_minutes MUST be constrained to a sane bound (0 to 1440 inclusive) at the database layer, not just client-side, so a malformed direct write cannot store a nonsensical value.
+    severity: medium
+acceptance_criteria:
+  - id: AC-1
+    given: an authenticated user with no existing user_preferences row
+    when: they PATCH one or more preference fields for the first time
+    then: exactly one user_preferences row is created for that user_id, with any field they did not supply taking its column default
+    invariant: false
+  - id: AC-2
+    given: user A's user_preferences row exists
+    when: user B (authenticated, different user_id) attempts to select or update it directly against Postgres
+    then: RLS returns zero rows / denies the write — user B never sees or changes user A's preferences
+    invariant: true
+  - id: AC-3
+    given: a write attempt setting quiet_hours_start to a time value and quiet_hours_end to null
+    when: the INSERT or UPDATE is executed
+    then: the CHECK constraint rejects it
+    invariant: true
+  - id: AC-4
+    given: a user's profile row is deleted
+    when: the cascade fires
+    then: their user_preferences row is deleted too, leaving no orphaned row
+    invariant: true
+  - id: AC-5
+    given: an authenticated user with no existing user_preferences row
+    when: a row is inserted with only user_id
+    then: timezone takes its column default of 'UTC'
+    invariant: false
+depends_on:
+  - SPEC-DATA-001
+constitution_rules:
+  - NC-SQL-CONCAT

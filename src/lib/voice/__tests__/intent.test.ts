@@ -125,6 +125,30 @@ describe("llmResponseSchema", () => {
     expect(result.success).toBe(true);
   });
 
+  // SPEC-API-008/SPEC-VOICE-005: knowledge_lookup is the second supported
+  // read-only query_kind, added alongside upcoming_schedule.
+  it("accepts a well-formed knowledge_lookup response", () => {
+    const result = llmResponseSchema.safeParse({
+      confidence: 0.98,
+      read_only: true,
+      summary: "look up financial aid deadlines",
+      query_kind: "knowledge_lookup",
+      mutation: null,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects an unrecognized query_kind", () => {
+    const result = llmResponseSchema.safeParse({
+      confidence: 0.98,
+      read_only: true,
+      summary: "something else",
+      query_kind: "web_search",
+      mutation: null,
+    });
+    expect(result.success).toBe(false);
+  });
+
   it("accepts a well-formed mutating response", () => {
     const result = llmResponseSchema.safeParse({
       confidence: 0.97,

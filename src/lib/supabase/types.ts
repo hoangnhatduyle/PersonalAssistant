@@ -508,6 +508,50 @@ export type Database = {
           },
         ]
       }
+      user_preferences: {
+        Row: {
+          created_at: string
+          default_reminder_lead_minutes: number
+          id: string
+          quiet_hours_end: string | null
+          quiet_hours_start: string | null
+          timezone: string
+          updated_at: string
+          user_id: string
+          voice_capture_enabled: boolean
+        }
+        Insert: {
+          created_at?: string
+          default_reminder_lead_minutes?: number
+          id?: string
+          quiet_hours_end?: string | null
+          quiet_hours_start?: string | null
+          timezone?: string
+          updated_at?: string
+          user_id: string
+          voice_capture_enabled?: boolean
+        }
+        Update: {
+          created_at?: string
+          default_reminder_lead_minutes?: number
+          id?: string
+          quiet_hours_end?: string | null
+          quiet_hours_start?: string | null
+          timezone?: string
+          updated_at?: string
+          user_id?: string
+          voice_capture_enabled?: boolean
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_preferences_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       voice_sessions: {
         Row: {
           confidence_score: number | null
@@ -548,6 +592,32 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "voice_sessions_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      voice_speak_requests: {
+        Row: {
+          created_at: string
+          id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "voice_speak_requests_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "profiles"
@@ -820,6 +890,20 @@ export type Database = {
           isSetofReturn: true
         }
       }
+      delete_expired_voice_speak_requests: {
+        Args: never
+        Returns: {
+          created_at: string
+          id: string
+          user_id: string
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "voice_speak_requests"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
       dispatch_due_reminders: {
         Args: never
         Returns: {
@@ -844,6 +928,26 @@ export type Database = {
       fail_knowledge_import: {
         Args: { p_error_message: string; p_source_id: string }
         Returns: boolean
+      }
+      match_knowledge_chunks: {
+        Args: {
+          p_match_count: number
+          p_match_threshold: number
+          p_query_embedding: string
+        }
+        Returns: {
+          chunk_text: string
+          // `supabase gen types` can't see that this column is nullable on
+          // a `returns table(...)` SQL function -- corrected by hand to
+          // match knowledge_sources.origin_url's actual `string | null`
+          // column type (non-url sources have no origin_url).
+          origin_url: string | null
+          similarity: number
+          source_id: string
+          source_type: Database["public"]["Enums"]["knowledge_source_type"]
+          title: string
+          user_id: string
+        }[]
       }
       reap_stuck_knowledge_imports: { Args: never; Returns: number }
       retry_knowledge_import: {

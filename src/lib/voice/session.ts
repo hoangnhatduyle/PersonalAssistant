@@ -11,6 +11,7 @@ import {
 import { formatCascadeDisclosure, previewCourseDeleteCascade } from "@/lib/voice/cascade-preview";
 import { executePendingMutation, type MutationExecutionResult, type PendingMutation } from "@/lib/voice/mutations";
 import type { ResolveIntentFn, ResolvedIntent } from "@/lib/voice/intent";
+import { runKnowledgeLookup, type KnowledgeCitation, type KnowledgeLookupFn } from "@/lib/knowledge/retrieval";
 
 export class VoiceSessionNotFoundError extends Error {}
 export class VoiceSessionInvalidStateError extends Error {}
@@ -24,6 +25,8 @@ export type { ResolveIntentFn };
 export interface VoiceTurnDeps {
   transcribe: TranscribeFn;
   resolveIntent: ResolveIntentFn;
+  /** Defaults to src/lib/knowledge/retrieval.ts's runKnowledgeLookup when omitted. */
+  knowledgeLookup?: KnowledgeLookupFn;
 }
 
 export type VoiceTurnInput = { audio: Buffer; mimetype?: string } | { transcript: string };
@@ -34,6 +37,9 @@ export interface VoiceTurnResult {
   message: string;
   executed?: boolean;
   data?: unknown;
+  /** SPEC-API-008 VoiceTurnResult (extended): set only for a knowledge_lookup response. */
+  citations?: KnowledgeCitation[];
+  extractionLabel?: "machine_extracted";
 }
 
 /**
@@ -171,7 +177,8 @@ export async function intakeVoiceTurn(
   // fabricate a completed execution. Architect-review finding: this used to
   // report `executed: true` with the LLM's own unverified prose as `data`
   // for any read-only intent other than "upcoming_schedule".
-  const unsupportedReadOnlyQuery = intent.readOnly && intent.queryKind !== "upcoming_schedule";
+  const unsupportedReadOnlyQuery =
+    intent.readOnly && intent.queryKind !== "upcoming_schedule" && intent.queryKind !== "knowledge_lookup";
   if (!meetsConfidenceBar(intent.confidence) || unsupportedReadOnlyQuery) {
     await transition(supabase, userId, sessionId, "Transcribing", "intent_ambiguous_or_low_confidence", {
       resolved_intent: intent.summary,
@@ -198,6 +205,25 @@ export async function intakeVoiceTurn(
     // than leaving it stuck in Executing until the 24h retention sweep
     // (code-review finding).
     try {
+      // SPEC-VOICE-005 NC-VOICE-007/AC-9: knowledge_lookup follows this same
+      // read_only_query_resolved path as upcoming_schedule, no confirmation.
+      if (intent.queryKind === "knowledge_lookup") {
+        const lookup = deps.knowledgeLookup ?? runKnowledgeLookup;
+        const result = await lookup(supabase, userId, transcript);
+        await transition(supabase, userId, sessionId, "Executing", "execution_completed", {
+          ended_at: new Date().toISOString(),
+        });
+        return {
+          sessionId,
+          state: "Responding",
+          message: result.message,
+          executed: true,
+          data: result.message,
+          citations: result.citations,
+          ...(result.extractionLabel ? { extractionLabel: result.extractionLabel } : {}),
+        };
+      }
+
       const message = await runUpcomingScheduleQuery(supabase, userId);
       await transition(supabase, userId, sessionId, "Executing", "execution_completed", {
         ended_at: new Date().toISOString(),

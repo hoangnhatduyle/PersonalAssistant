@@ -57,6 +57,14 @@ export const KNOWLEDGE_CREATE_RATE_LIMIT_WINDOW_MINUTES = 10;
 // Supabase Storage bucket for uploaded file bytes (SPEC-INFRA-007 NC-INF-009).
 export const KNOWLEDGE_STORAGE_BUCKET = "knowledge-uploads";
 
+// SPEC-CORE-008 NC-027: knowledge_lookup retrieval tuning. Pinned as named
+// constants from the start (mirrors VOICE_CONFIDENCE_BAR in
+// src/lib/voice/transitions.ts) rather than left as an implied threshold —
+// AC-005's citation invariant and AC-006's "no relevant chunks" response are
+// only testable against a concrete cutoff.
+export const KNOWLEDGE_RELEVANCE_THRESHOLD = 0.75;
+export const KNOWLEDGE_TOP_K = 8;
+
 // SPEC-API-008 shared_schemas KnowledgeSourceResponse: the exact column set
 // client-facing routes select. Deliberately excludes raw_content (the full
 // extracted document — unbounded size, not part of the pinned response

@@ -1,0 +1,63 @@
+spec_id: SPEC-API-010
+generated_at: 2026-08-31T18:55:22.302Z
+cases:
+  - id: T-SPEC-API-010-AC-AC_1
+    kind: acceptance
+    traces_to: SPEC-API-010#AC-1
+    assertion: 'given an authenticated caller under the rate limit, POSTing valid non-empty text at or under MAX_SPEAK_TEXT_CHARS, when POST /api/voice/speak completes, then the response is 200 with { audio: <base64 string>, mimetype: "audio/mpeg" }'
+    invariant: false
+  - id: T-SPEC-API-010-AC-AC_2
+    kind: acceptance
+    traces_to: SPEC-API-010#AC-2
+    assertion: given an unauthenticated request, when POST /api/voice/speak is called, then the response is 401
+    invariant: true
+  - id: T-SPEC-API-010-AC-AC_3
+    kind: acceptance
+    traces_to: SPEC-API-010#AC-3
+    assertion: given a request body with an empty string, or text longer than MAX_SPEAK_TEXT_CHARS, when the request is validated, then it is rejected with a 400 validation error, and synthesizeSpeech() is never called
+    invariant: true
+  - id: T-SPEC-API-010-AC-AC_4
+    kind: acceptance
+    traces_to: SPEC-API-010#AC-4
+    assertion: given a caller whose voice_speak_requests row count within the rate-limit window is at or over SPEAK_RATE_LIMIT_MAX, when POST /api/voice/speak is called, then the response is 429 and synthesizeSpeech() is never called
+    invariant: true
+  - id: T-SPEC-API-010-AC-AC_5
+    kind: acceptance
+    traces_to: SPEC-API-010#AC-5
+    assertion: given synthesizeSpeech() throws (provider failure), when POST /api/voice/speak handles the request, then the response is 500 via the standard serverErrorResponse envelope, with no internal error detail leaked to the client
+    invariant: true
+  - id: T-SPEC-API-010-AC-AC_6
+    kind: acceptance
+    traces_to: SPEC-API-010#AC-6
+    assertion: given a text-fallback (typed) turn's response is rendered client-side, including any resulting confirmation prompt and its Confirm/Decline outcome, when the client processes it, then no request is ever made to POST /api/voice/speak
+    invariant: true
+  - id: T-SPEC-API-010-AC-AC_7
+    kind: acceptance
+    traces_to: SPEC-API-010#AC-7
+    assertion: given a microphone-originated turn's response, including an AwaitingConfirmation prompt it produced and that prompt's Confirm/Decline outcome, when the client processes each of those messages, then POST /api/voice/speak is called for each one and the returned audio is played back
+    invariant: false
+  - id: T-SPEC-API-010-NC-NC_API_SPEAK_001
+    kind: negative-constraint
+    traces_to: SPEC-API-010#NC-API-SPEAK-001
+    assertion: POST /api/voice/speak MUST require an authenticated caller (requireAuthenticatedContext) and return 401 otherwise, matching every other route.
+    invariant: true
+  - id: T-SPEC-API-010-NC-NC_API_SPEAK_002
+    kind: negative-constraint
+    traces_to: SPEC-API-010#NC-API-SPEAK-002
+    assertion: POST /api/voice/speak MUST reject empty or over-max-length text via voiceSpeakSchema before ever calling synthesizeSpeech() — an invalid request must never reach the paid TTS provider.
+    invariant: true
+  - id: T-SPEC-API-010-NC-NC_API_SPEAK_003
+    kind: negative-constraint
+    traces_to: SPEC-API-010#NC-API-SPEAK-003
+    assertion: POST /api/voice/speak MUST enforce a per-caller rate limit; a caller over the cap gets 429 and synthesizeSpeech() is never invoked for that request.
+    invariant: true
+  - id: T-SPEC-API-010-NC-NC_API_SPEAK_004
+    kind: negative-constraint
+    traces_to: SPEC-API-010#NC-API-SPEAK-004
+    assertion: A synthesizeSpeech() failure (missing/invalid provider keys, network error) MUST be caught and returned via the standard serverErrorResponse envelope — it must never crash the route or leak internal error details to the client.
+    invariant: true
+  - id: T-SPEC-API-010-NC-NC_API_SPEAK_006
+    kind: negative-constraint
+    traces_to: SPEC-API-010#NC-API-SPEAK-006
+    assertion: This route and its client callers MUST NOT modify voice_sessions state or alter the behavior of POST /api/voice or its confirm/decline routes.
+    invariant: true

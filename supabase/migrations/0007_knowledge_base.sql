@@ -10,6 +10,12 @@
 
 create extension if not exists vector with schema extensions;
 
+-- Hosted Supabase projects don't put `extensions` on the default search_path
+-- (kept off the PostgREST-exposed surface deliberately), so the bare `vector`
+-- references below (table column, hnsw operator class, ::vector cast) would
+-- otherwise fail to resolve during this migration itself.
+set search_path = public, extensions;
+
 -- ---------------------------------------------------------------------------
 -- Enums (NC-DATA-015, NC-DATA-028)
 -- ---------------------------------------------------------------------------
