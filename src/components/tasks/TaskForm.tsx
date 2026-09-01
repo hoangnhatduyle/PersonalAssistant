@@ -49,6 +49,7 @@ export function TaskForm({ task, onSubmit, onCancel, submitLabel = "Save" }: Pro
   });
 
   const tags = watch("tags") ?? [];
+  const remindersEnabled = watch("reminders_enabled");
 
   const addTag = () => {
     const value = tagDraft.trim();
@@ -129,15 +130,17 @@ export function TaskForm({ task, onSubmit, onCancel, submitLabel = "Save" }: Pro
 
       <Checkbox label="Reminders enabled" {...register("reminders_enabled")} />
 
-      <FormField label="Reminder lead (minutes)" htmlFor="reminder_lead_minutes" error={errors.reminder_lead_minutes?.message}>
-        <Input
-          id="reminder_lead_minutes"
-          type="number"
-          min={0}
-          invalid={Boolean(errors.reminder_lead_minutes)}
-          {...register("reminder_lead_minutes", { valueAsNumber: true })}
-        />
-      </FormField>
+      {remindersEnabled && (
+        <FormField label="Reminder lead (minutes)" htmlFor="reminder_lead_minutes" error={errors.reminder_lead_minutes?.message}>
+          <Input
+            id="reminder_lead_minutes"
+            type="number"
+            min={0}
+            invalid={Boolean(errors.reminder_lead_minutes)}
+            {...register("reminder_lead_minutes", { valueAsNumber: true })}
+          />
+        </FormField>
+      )}
 
       <div className="flex justify-end gap-2">
         {onCancel && (

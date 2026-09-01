@@ -95,16 +95,20 @@ export async function PATCH(request: Request, { params }: RouteParams) {
       .is("deleted_at", null);
     if (deadlinesError) return serverErrorResponse("course deadlines lookup failed", deadlinesError);
 
-    for (const deadline of liveDeadlines ?? []) {
-      await syncReminderForTarget(supabase, {
-        userId: user.id,
-        targetType: "deadline",
-        targetId: deadline.id,
-        dueAt: deadline.due_at,
-        remindersEnabled,
-        reminderLeadMinutes,
-      });
-    }
+    // Each deadline's sync touches only its own reminder row, so they can run
+    // concurrently instead of paying one sequential round-trip per deadline.
+    await Promise.all(
+      (liveDeadlines ?? []).map((deadline) =>
+        syncReminderForTarget(supabase, {
+          userId: user.id,
+          targetType: "deadline",
+          targetId: deadline.id,
+          dueAt: deadline.due_at,
+          remindersEnabled,
+          reminderLeadMinutes,
+        }),
+      ),
+    );
   }
 
   const personChanged = "person_id" in parsed.data && parsed.data.person_id !== existing.person_id;
