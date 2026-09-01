@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { EventBlock } from "@/components/calendar/EventBlock";
+import { DayColumnEvents } from "@/components/calendar/DayColumnEvents";
 import { formatMinutesOfDay } from "@/lib/calendar/recurrence";
 import { layoutDayEvents, PIXELS_PER_MINUTE, weekGridHeightPx } from "@/lib/calendar/layout-day-events";
 import type { DayColumn } from "@/lib/calendar/build-week-events";
@@ -19,7 +19,7 @@ const MIN_DAY_COLUMN_WIDTH_PX = 110;
 export function WeekGrid({ days, hourMarks, windowStart, windowEnd }: Props) {
   const gridRef = useRef<HTMLDivElement>(null);
   const [dayColumnWidthPx, setDayColumnWidthPx] = useState(MIN_DAY_COLUMN_WIDTH_PX);
-  const gridHeightPx = weekGridHeightPx(windowStart, windowEnd, days, dayColumnWidthPx);
+  const gridHeightPx = weekGridHeightPx(windowStart, windowEnd);
 
   useEffect(() => {
     const grid = gridRef.current;
@@ -63,41 +63,16 @@ export function WeekGrid({ days, hourMarks, windowStart, windowEnd }: Props) {
           ))}
         </div>
 
-        {days.map((day) => {
-          const layoutedEvents = layoutDayEvents(day.events, windowStart, dayColumnWidthPx);
-
-          return (
-            <div
-              key={day.key}
-              className={`relative border-l ${day.isToday ? "bg-panel/40" : ""} border-panel-border`}
-              style={{ height: gridHeightPx }}
-            >
-              {hourMarks.map((minute) => (
-                <div
-                  key={minute}
-                  aria-hidden="true"
-                  className="absolute inset-x-0 border-t border-panel-border/50"
-                  style={{ top: (minute - windowStart) * PIXELS_PER_MINUTE }}
-                />
-              ))}
-              {layoutedEvents.map((event) => (
-                <EventBlock
-                  key={event.id}
-                  title={event.title}
-                  timeLabel={event.timeLabel}
-                  subtitle={event.subtitle}
-                  topPx={event.topPx}
-                  heightPx={event.heightPx}
-                  leftPx={event.leftPx}
-                  widthPx={event.widthPx}
-                  tone={event.tone}
-                  href={event.href}
-                  color={event.color}
-                />
-              ))}
-            </div>
-          );
-        })}
+        {days.map((day) => (
+          <DayColumnEvents
+            key={day.key}
+            isToday={day.isToday}
+            events={layoutDayEvents(day.events, windowStart, dayColumnWidthPx)}
+            hourMarks={hourMarks}
+            windowStart={windowStart}
+            gridHeightPx={gridHeightPx}
+          />
+        ))}
       </div>
     </div>
   );
