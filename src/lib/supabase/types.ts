@@ -42,9 +42,11 @@ export type Database = {
           id: string
           instructor: string | null
           location: string | null
-          meeting_pattern: string | null
+          meeting_blocks: Json
           name: string
           person_id: string | null
+          recurrence_end_date: string | null
+          recurrence_start_date: string | null
           reminder_lead_minutes: number
           reminders_enabled: boolean
           term: string | null
@@ -58,9 +60,11 @@ export type Database = {
           id?: string
           instructor?: string | null
           location?: string | null
-          meeting_pattern?: string | null
+          meeting_blocks?: Json
           name: string
           person_id?: string | null
+          recurrence_end_date?: string | null
+          recurrence_start_date?: string | null
           reminder_lead_minutes?: number
           reminders_enabled?: boolean
           term?: string | null
@@ -74,9 +78,11 @@ export type Database = {
           id?: string
           instructor?: string | null
           location?: string | null
-          meeting_pattern?: string | null
+          meeting_blocks?: Json
           name?: string
           person_id?: string | null
+          recurrence_end_date?: string | null
+          recurrence_start_date?: string | null
           reminder_lead_minutes?: number
           reminders_enabled?: boolean
           term?: string | null
@@ -730,9 +736,11 @@ export type Database = {
           id: string | null
           instructor: string | null
           location: string | null
-          meeting_pattern: string | null
+          meeting_blocks: Json | null
           name: string | null
           person_id: string | null
+          recurrence_end_date: string | null
+          recurrence_start_date: string | null
           reminder_lead_minutes: number | null
           reminders_enabled: boolean | null
           term: string | null
@@ -746,9 +754,11 @@ export type Database = {
           id?: string | null
           instructor?: string | null
           location?: string | null
-          meeting_pattern?: string | null
+          meeting_blocks?: Json | null
           name?: string | null
           person_id?: string | null
+          recurrence_end_date?: string | null
+          recurrence_start_date?: string | null
           reminder_lead_minutes?: number | null
           reminders_enabled?: boolean | null
           term?: string | null
@@ -762,9 +772,11 @@ export type Database = {
           id?: string | null
           instructor?: string | null
           location?: string | null
-          meeting_pattern?: string | null
+          meeting_blocks?: Json | null
           name?: string | null
           person_id?: string | null
+          recurrence_end_date?: string | null
+          recurrence_start_date?: string | null
           reminder_lead_minutes?: number | null
           reminders_enabled?: boolean | null
           term?: string | null

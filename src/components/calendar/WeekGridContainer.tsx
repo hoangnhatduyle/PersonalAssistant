@@ -10,7 +10,6 @@ import { WeekGrid } from "@/components/calendar/WeekGrid";
 import { CalendarLegend } from "@/components/calendar/CalendarLegend";
 import { PersonFilterToggle, type PersonFilterValue } from "@/components/calendar/PersonFilterToggle";
 import { GlassPanel } from "@/components/ui/GlassPanel";
-import { Badge } from "@/components/ui/Badge";
 import { Skeleton } from "@/components/ui/Skeleton";
 
 export function WeekGridContainer() {
@@ -58,24 +57,9 @@ export function WeekGridContainer() {
       {!weekGrid ? (
         <Skeleton className="h-[640px] w-full" />
       ) : (
-        <>
-          <GlassPanel className="p-4">
-            <WeekGrid days={weekGrid.days} hourMarks={weekGrid.hourMarks} windowStart={weekGrid.windowStart} windowEnd={weekGrid.windowEnd} />
-          </GlassPanel>
-
-          {weekGrid.unparsedCourses.length > 0 && (
-            <GlassPanel className="flex flex-col gap-2 p-4">
-              <p className="font-mono text-xs uppercase tracking-wide text-text-eyebrow">Couldn&apos;t place on the grid</p>
-              <div className="flex flex-wrap gap-2">
-                {weekGrid.unparsedCourses.map((course) => (
-                  <Badge key={course.id} tone="neutral">
-                    {course.name}: {course.meeting_pattern}
-                  </Badge>
-                ))}
-              </div>
-            </GlassPanel>
-          )}
-        </>
+        <GlassPanel className="p-4">
+          <WeekGrid days={weekGrid.days} hourMarks={weekGrid.hourMarks} windowStart={weekGrid.windowStart} windowEnd={weekGrid.windowEnd} />
+        </GlassPanel>
       )}
     </div>
   );

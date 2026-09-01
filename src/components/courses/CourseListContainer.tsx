@@ -46,7 +46,7 @@ export function CourseListContainer() {
         <CourseList courses={data?.rows ?? []} />
       )}
 
-      <Dialog open={isCreateOpen} onClose={() => setCreateOpen(false)} title="New course">
+      <Dialog open={isCreateOpen} onClose={() => setCreateOpen(false)} title="New course" size="xl">
         <CourseForm onSubmit={handleCreate} onCancel={() => setCreateOpen(false)} submitLabel="Create course" />
       </Dialog>
     </div>

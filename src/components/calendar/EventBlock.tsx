@@ -3,6 +3,8 @@ import { toneClasses, type StatusTone } from "@/lib/status-colors";
 
 type Props = {
   title: string;
+  /** Set only for course blocks — the meeting's start–end time range. */
+  timeLabel?: string;
   subtitle?: string;
   top: number;
   height: number;
@@ -20,7 +22,7 @@ type Props = {
  * instead, so an arbitrary number of people can each get a distinct color
  * without needing a StatusTone entry per person.
  */
-export function EventBlock({ title, subtitle, top, height, tone, href, color }: Props) {
+export function EventBlock({ title, timeLabel, subtitle, top, height, tone, href, color }: Props) {
   return (
     <Link
       href={href}
@@ -34,6 +36,7 @@ export function EventBlock({ title, subtitle, top, height, tone, href, color }: 
       }}
     >
       <p className="truncate font-medium">{title}</p>
+      {timeLabel && <p className="truncate text-[10px] opacity-80">{timeLabel}</p>}
       {subtitle && <p className="truncate text-[10px] opacity-80">{subtitle}</p>}
     </Link>
   );

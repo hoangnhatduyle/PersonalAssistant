@@ -7,6 +7,27 @@ import { MAX_SPEAK_TEXT_CHARS } from "@/lib/voice/constants";
 // routes, which must never accept a `status` field (NC-API-002: state fields
 // only change through the explicit transition action route).
 
+// A structured replacement for the old free-text meeting_pattern column:
+// which days a block meets (0=Sun..6=Sat, matches Date.getDay()) and its
+// start/end time window in minutes-since-midnight. Structured data can't
+// fail to parse the way the old regex grammar could.
+const meetingBlockSchema = z
+  .object({
+    days: z
+      .array(z.number().int().min(0).max(6))
+      .min(1)
+      .max(7)
+      .refine((days) => new Set(days).size === days.length, "Duplicate day in a single block"),
+    startMinutes: z.number().int().min(0).max(1439),
+    endMinutes: z.number().int().min(0).max(1439),
+  })
+  .refine((block) => block.endMinutes > block.startMinutes, {
+    message: "End time must be after start time",
+    path: ["endMinutes"],
+  });
+
+const RECURRENCE_DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+
 // person_id: nullable/optional on Courses and Tasks -- null/omitted means
 // "the account owner's own item", a non-null value must reference a People
 // row the caller owns (verified by the route, and backstopped by the
@@ -14,19 +35,48 @@ import { MAX_SPEAK_TEXT_CHARS } from "@/lib/voice/constants";
 // supabase/migrations/0013_people.sql). Deadlines deliberately have no
 // person_id field here: a deadline's owner is always inherited from its
 // (required) course, never client-set -- see POST /api/deadlines.
-export const coursePayloadSchema = z.object({
+//
+// meeting_blocks/recurrence_start_date/recurrence_end_date replace the old
+// free-text meeting_pattern (supabase/migrations/0014_course_recurrence.sql).
+// Timezone is deliberately not a course field — it's read from the caller's
+// user_preferences.timezone at render time instead.
+//
+// Base object kept separate from its .refine() below (same reason
+// userPreferencesPatchSchema applies .partial() before .superRefine()):
+// .refine() returns a ZodEffects, which has no .partial() method, so the
+// PATCH schema must branch off the plain object, not the refined payload one.
+// (A generic `withRecurrenceDateOrderCheck<T>(schema)` helper was tried here
+// but breaks zodResolver's type inference — react-hook-form needs each
+// schema's concrete literal type, not one erased through a generic
+// ZodType<T> parameter — so the refine is duplicated inline on each instead.)
+const courseBaseSchema = z.object({
   code: z.string().trim().min(1).optional(),
   name: z.string().trim().min(1),
   term: z.string().trim().min(1).optional(),
-  meeting_pattern: z.string().trim().min(1).optional(),
+  meeting_blocks: z.array(meetingBlockSchema).max(10).optional(),
+  recurrence_start_date: z.string().regex(RECURRENCE_DATE_REGEX, "Expected YYYY-MM-DD").nullable().optional(),
+  recurrence_end_date: z.string().regex(RECURRENCE_DATE_REGEX, "Expected YYYY-MM-DD").nullable().optional(),
   location: z.string().trim().min(1).optional(),
   instructor: z.string().trim().min(1).optional(),
   reminders_enabled: z.boolean().optional(),
   reminder_lead_minutes: z.number().int().nonnegative().optional(),
   person_id: z.uuid().nullable().optional(),
 });
+
+const RECURRENCE_DATE_ORDER_CHECK = {
+  message: "recurrence_start_date must be on or before recurrence_end_date",
+  path: ["recurrence_end_date"],
+};
+
+export const coursePayloadSchema = courseBaseSchema.refine(
+  (value) => !value.recurrence_start_date || !value.recurrence_end_date || value.recurrence_start_date <= value.recurrence_end_date,
+  RECURRENCE_DATE_ORDER_CHECK,
+);
 export type CoursePayload = z.infer<typeof coursePayloadSchema>;
-export const coursePatchSchema = coursePayloadSchema.partial();
+export const coursePatchSchema = courseBaseSchema.partial().refine(
+  (value) => !value.recurrence_start_date || !value.recurrence_end_date || value.recurrence_start_date <= value.recurrence_end_date,
+  RECURRENCE_DATE_ORDER_CHECK,
+);
 export type CoursePatch = z.infer<typeof coursePatchSchema>;
 
 export const deadlinePayloadSchema = z.object({

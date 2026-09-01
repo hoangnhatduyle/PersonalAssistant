@@ -4,14 +4,23 @@ import { useEffect } from "react";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 
+type DialogSize = "md" | "xl";
+
 type Props = {
   open: boolean;
   onClose: () => void;
   title: string;
   children: ReactNode;
+  /** "md" (default) fits the usual single-column forms; "xl" is for wider content like CourseForm's two-column recurrence picker. */
+  size?: DialogSize;
 };
 
-export function Dialog({ open, onClose, title, children }: Props) {
+const SIZE_CLASSES: Record<DialogSize, string> = {
+  md: "max-w-lg",
+  xl: "max-w-5xl",
+};
+
+export function Dialog({ open, onClose, title, children, size = "md" }: Props) {
   useEffect(() => {
     if (!open) return;
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -34,12 +43,12 @@ export function Dialog({ open, onClose, title, children }: Props) {
         role="dialog"
         aria-modal="true"
         aria-labelledby="dialog-title"
-        className="relative w-full max-w-lg rounded-panel border border-panel-border bg-bg-void-elevated p-6 shadow-panel"
+        className={`relative flex max-h-[85vh] w-full flex-col rounded-panel border border-panel-border bg-bg-void-elevated p-6 shadow-panel ${SIZE_CLASSES[size]}`}
       >
-        <h2 id="dialog-title" className="mb-4 font-display text-lg font-semibold text-text-primary">
+        <h2 id="dialog-title" className="mb-4 shrink-0 font-display text-lg font-semibold text-text-primary">
           {title}
         </h2>
-        {children}
+        <div className="overflow-y-auto">{children}</div>
       </div>
     </div>,
     document.body,

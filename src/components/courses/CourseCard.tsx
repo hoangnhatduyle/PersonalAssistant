@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { GlassPanel } from "@/components/ui/GlassPanel";
 import { Badge } from "@/components/ui/Badge";
+import { formatBlocksSummary } from "@/lib/calendar/recurrence";
 import type { CourseRow } from "@/lib/api/entity-types";
 
 type Props = {
@@ -16,7 +17,7 @@ export function CourseCard({ course }: Props) {
       {(course.code || course.term) && (
         <p className="font-mono text-xs text-text-secondary">{[course.code, course.term].filter(Boolean).join(" · ")}</p>
       )}
-      {course.meeting_pattern && <p className="text-xs text-text-secondary">{course.meeting_pattern}</p>}
+      <p className="text-xs text-text-secondary">{formatBlocksSummary(course.meeting_blocks)}</p>
       <Badge tone={course.reminders_enabled ? "ok" : "neutral"}>
         {course.reminders_enabled ? `Reminders ${course.reminder_lead_minutes}m lead` : "Reminders off"}
       </Badge>

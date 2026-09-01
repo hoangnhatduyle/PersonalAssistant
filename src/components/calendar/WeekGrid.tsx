@@ -1,5 +1,5 @@
 import { EventBlock } from "@/components/calendar/EventBlock";
-import { formatMinutesOfDay } from "@/lib/calendar/parse-meeting-pattern";
+import { formatMinutesOfDay } from "@/lib/calendar/recurrence";
 import type { DayColumn } from "@/lib/calendar/build-week-events";
 
 type Props = {
@@ -59,6 +59,7 @@ export function WeekGrid({ days, hourMarks, windowStart, windowEnd }: Props) {
               <EventBlock
                 key={event.id}
                 title={event.title}
+                timeLabel={event.timeLabel}
                 subtitle={event.subtitle}
                 top={event.top}
                 height={event.height}

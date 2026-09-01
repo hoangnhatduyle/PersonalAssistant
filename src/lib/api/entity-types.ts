@@ -1,10 +1,17 @@
 import type { Database } from "@/lib/supabase/types";
+import type { MeetingBlock } from "@/lib/calendar/recurrence";
 
 // Row types for every entity a hook fetches/mutates. Kept separate from
 // src/lib/knowledge/extraction.ts's own KnowledgeSourceRow (which pulls in
 // server-only extraction code alongside it) so client components import a
 // module with zero non-type-only side effects.
-export type CourseRow = Database["public"]["Tables"]["courses"]["Row"];
+//
+// meeting_blocks is typed as generic Json by the Supabase generator (it
+// can't see the app-level shape stored in the jsonb column) — overridden
+// here with the precise MeetingBlock[] shape every consumer actually uses.
+export type CourseRow = Omit<Database["public"]["Tables"]["courses"]["Row"], "meeting_blocks"> & {
+  meeting_blocks: MeetingBlock[];
+};
 export type DeadlineRow = Database["public"]["Tables"]["deadlines"]["Row"];
 export type TaskRow = Database["public"]["Tables"]["tasks"]["Row"];
 export type NoteRow = Database["public"]["Tables"]["notes"]["Row"];

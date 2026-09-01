@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Space_Grotesk, IBM_Plex_Sans } from "next/font/google";
 import "./globals.css";
 import { Providers } from "./providers";
@@ -18,8 +18,17 @@ const ibmPlexSans = IBM_Plex_Sans({
 });
 
 export const metadata: Metadata = {
-  title: "PersonalAssistant",
+  title: "Cadence",
   description: "Courses, deadlines, tasks, notes, and a voice-driven assistant with cited knowledge lookup.",
+  appleWebApp: {
+    capable: true,
+    title: "Cadence",
+    statusBarStyle: "black-translucent",
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#05070d",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

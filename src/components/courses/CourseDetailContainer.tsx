@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { useToast } from "@/components/ui/Toast";
+import { formatBlocksSummary } from "@/lib/calendar/recurrence";
 import type { CoursePayload } from "@/lib/api/schemas";
 
 type Props = {
@@ -48,7 +49,7 @@ export function CourseDetailContainer({ courseId }: Props) {
               {[course.code, course.term].filter(Boolean).join(" · ") || "Course"}
             </p>
             <h1 className="mt-1 font-display text-2xl font-semibold text-text-primary">{course.name}</h1>
-            {course.meeting_pattern && <p className="mt-1 text-sm text-text-secondary">{course.meeting_pattern}</p>}
+            <p className="mt-1 text-sm text-text-secondary">{formatBlocksSummary(course.meeting_blocks)}</p>
             {course.location && <p className="text-sm text-text-secondary">{course.location}</p>}
             {course.instructor && <p className="text-sm text-text-secondary">{course.instructor}</p>}
           </div>

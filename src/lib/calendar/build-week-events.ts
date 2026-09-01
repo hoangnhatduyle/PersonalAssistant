@@ -1,4 +1,4 @@
-import { parseMeetingPattern } from "@/lib/calendar/parse-meeting-pattern";
+import { expandBlockInWeek, formatMinutesOfDay } from "@/lib/calendar/recurrence";
 import { isOpenDeadline, isOpenTask } from "@/lib/dashboard/upcoming-items";
 import { DEADLINE_STATUS_TONE, TASK_STATUS_TONE, type StatusTone } from "@/lib/status-colors";
 import type { CourseRow, DeadlineRow, TaskRow, PersonRow } from "@/lib/api/entity-types";
@@ -6,6 +6,8 @@ import type { CourseRow, DeadlineRow, TaskRow, PersonRow } from "@/lib/api/entit
 export interface CalendarEvent {
   id: string;
   title: string;
+  /** Set only for course blocks — the meeting's start–end time range (e.g. "12:30–1:50 PM"). */
+  timeLabel?: string;
   subtitle?: string;
   /** Percent (0-100) from the top of the day column. */
   top: number;
@@ -34,8 +36,6 @@ export interface WeekGridData {
   hourMarks: number[];
   windowStart: number;
   windowEnd: number;
-  /** Courses whose meeting_pattern didn't match the supported grammar — render as a text badge, not on the grid. */
-  unparsedCourses: CourseRow[];
 }
 
 const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -60,13 +60,15 @@ function sameDay(a: Date, b: Date): boolean {
 
 /**
  * Composes the current week's grid from already-fetched Courses (recurring
- * blocks, parsed from meeting_pattern), Deadlines (single-day markers on
- * due_at), and open Tasks with a due_at (single-day markers, same treatment
- * as Deadlines) — only those falling within the displayed week. People
- * (tracked schedules — see supabase/migrations/0013_people.sql) supplies the
- * personId -> name/color lookup used to color-code and label events that
- * belong to someone other than the account owner. No `/api/calendar` route
- * exists — this is client-side composition, same pattern as the Dashboard.
+ * meeting_blocks, each expanded to this week's matching weekdays and bounded
+ * by recurrence_start_date/recurrence_end_date), Deadlines (single-day
+ * markers on due_at), and open Tasks with a due_at (single-day markers, same
+ * treatment as Deadlines) — only those falling within the displayed week.
+ * People (tracked schedules — see supabase/migrations/0013_people.sql)
+ * supplies the personId -> name/color lookup used to color-code and label
+ * events that belong to someone other than the account owner. No
+ * `/api/calendar` route exists — this is client-side composition, same
+ * pattern as the Dashboard.
  */
 export function buildWeekGridData(
   courses: CourseRow[],
@@ -87,17 +89,29 @@ export function buildWeekGridData(
     return { personId, personLabel: person?.name ?? "Unknown", color: person?.color };
   }
 
-  const parsedCourseBlocks: Array<{ course: CourseRow; days: number[]; startMinutes: number; endMinutes: number }> = [];
-  const unparsedCourses: CourseRow[] = [];
-
+  // blockIndex disambiguates the id when two blocks on the same course land
+  // on the same weekday (e.g. a lecture block and a separately-configured
+  // lab block that both happen to include Monday).
+  interface CourseOccurrence {
+    course: CourseRow;
+    blockIndex: number;
+    dayOfWeek: number;
+    startMinutes: number;
+    endMinutes: number;
+  }
+  const courseOccurrences: CourseOccurrence[] = [];
   for (const course of courses) {
-    if (!course.meeting_pattern) continue;
-    const parsed = parseMeetingPattern(course.meeting_pattern);
-    if (!parsed) {
-      unparsedCourses.push(course);
-      continue;
-    }
-    parsedCourseBlocks.push({ course, days: parsed.days, startMinutes: parsed.startMinutes, endMinutes: parsed.endMinutes });
+    course.meeting_blocks.forEach((block, blockIndex) => {
+      for (const occurrence of expandBlockInWeek(block, weekStart, weekEnd, course.recurrence_start_date, course.recurrence_end_date)) {
+        courseOccurrences.push({
+          course,
+          blockIndex,
+          dayOfWeek: occurrence.dayOfWeek,
+          startMinutes: occurrence.startMinutes,
+          endMinutes: occurrence.endMinutes,
+        });
+      }
+    });
   }
 
   const weekDeadlines = deadlines.filter((deadline) => {
@@ -114,9 +128,9 @@ export function buildWeekGridData(
 
   let windowStart = DEFAULT_WINDOW_START;
   let windowEnd = DEFAULT_WINDOW_END;
-  for (const block of parsedCourseBlocks) {
-    windowStart = Math.min(windowStart, block.startMinutes);
-    windowEnd = Math.max(windowEnd, block.endMinutes);
+  for (const occurrence of courseOccurrences) {
+    windowStart = Math.min(windowStart, occurrence.startMinutes);
+    windowEnd = Math.max(windowEnd, occurrence.endMinutes);
   }
   for (const deadline of weekDeadlines) {
     const dueAt = new Date(deadline.due_at);
@@ -141,17 +155,18 @@ export function buildWeekGridData(
     date.setDate(date.getDate() + dayOfWeek);
     const events: CalendarEvent[] = [];
 
-    for (const block of parsedCourseBlocks) {
-      if (!block.days.includes(dayOfWeek)) continue;
+    for (const occurrence of courseOccurrences) {
+      if (occurrence.dayOfWeek !== dayOfWeek) continue;
       events.push({
-        id: `course-${block.course.id}-${dayOfWeek}`,
-        title: block.course.name,
-        subtitle: block.course.location ?? undefined,
-        top: ((block.startMinutes - windowStart) / span) * 100,
-        height: ((block.endMinutes - block.startMinutes) / span) * 100,
+        id: `course-${occurrence.course.id}-${occurrence.blockIndex}-${dayOfWeek}`,
+        title: occurrence.course.name,
+        timeLabel: `${formatMinutesOfDay(occurrence.startMinutes)}–${formatMinutesOfDay(occurrence.endMinutes)}`,
+        subtitle: occurrence.course.location ?? undefined,
+        top: ((occurrence.startMinutes - windowStart) / span) * 100,
+        height: ((occurrence.endMinutes - occurrence.startMinutes) / span) * 100,
         tone: "accent",
-        href: `/courses/${block.course.id}`,
-        ...personInfo(block.course.person_id),
+        href: `/courses/${occurrence.course.id}`,
+        ...personInfo(occurrence.course.person_id),
       });
     }
 
@@ -199,5 +214,5 @@ export function buildWeekGridData(
   const hourMarks: number[] = [];
   for (let minute = windowStart; minute <= windowEnd; minute += HOUR) hourMarks.push(minute);
 
-  return { days, hourMarks, windowStart, windowEnd, unparsedCourses };
+  return { days, hourMarks, windowStart, windowEnd };
 }

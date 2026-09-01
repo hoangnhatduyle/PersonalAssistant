@@ -1,4 +1,14 @@
 import type { CourseRow, DeadlineRow, TaskRow, PersonRow } from "@/lib/api/entity-types";
+import type { MeetingBlock } from "@/lib/calendar/recurrence";
+
+export function makeMeetingBlock(overrides: Partial<MeetingBlock> = {}): MeetingBlock {
+  return {
+    days: [1, 3, 5],
+    startMinutes: 10 * 60,
+    endMinutes: 10 * 60 + 50,
+    ...overrides,
+  };
+}
 
 export function makeCourse(overrides: Partial<CourseRow> = {}): CourseRow {
   return {
@@ -6,7 +16,9 @@ export function makeCourse(overrides: Partial<CourseRow> = {}): CourseRow {
     name: "Algorithms",
     code: null,
     term: null,
-    meeting_pattern: null,
+    meeting_blocks: [],
+    recurrence_start_date: null,
+    recurrence_end_date: null,
     location: null,
     instructor: null,
     reminders_enabled: true,
