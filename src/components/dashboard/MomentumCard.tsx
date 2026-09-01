@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { GlassPanel } from "@/components/ui/GlassPanel";
 import { buildUpcomingItems } from "@/lib/dashboard/upcoming-items";
-import { buildCompletionTrend } from "@/lib/dashboard/completion-trend";
+import { buildCompletionTrend, buildCompletedThisWeek } from "@/lib/dashboard/completion-trend";
+import { formatRelativeTime } from "@/lib/format-relative-time";
 import type { DeadlineRow, TaskRow } from "@/lib/api/entity-types";
 
 type Props = {
@@ -32,6 +33,7 @@ export function MomentumCard({ deadlines, tasks }: Props) {
   const hoursRemaining = nearestDeadline ? Math.round((nearestDeadline.at.getTime() - now.getTime()) / 3_600_000) : null;
 
   const trend = buildCompletionTrend(deadlines, tasks);
+  const completedItems = buildCompletedThisWeek(deadlines, tasks);
   const max = Math.max(1, ...trend);
   const step = trend.length > 1 ? (SPARKLINE_WIDTH - SPARKLINE_PAD * 2) / (trend.length - 1) : 0;
   const points = trend
@@ -67,6 +69,23 @@ export function MomentumCard({ deadlines, tasks }: Props) {
         </svg>
         <p className="mt-1 font-mono text-xs text-text-secondary">{completedThisWeek} resolved this week</p>
       </div>
+
+      {completedItems.length === 0 ? (
+        <p className="text-xs text-text-secondary">Nothing resolved yet this week.</p>
+      ) : (
+        <ul className="flex flex-col divide-y divide-panel-border">
+          {completedItems.map((item) => (
+            <li key={`${item.kind}-${item.id}`} className="flex flex-col py-2 first:pt-0 last:pb-0">
+              <Link href={item.href} className="truncate text-xs text-text-primary hover:underline">
+                {item.title}
+              </Link>
+              <span className="font-mono text-[10px] text-text-secondary">
+                {item.kind === "deadline" ? "Deadline" : "Task"} · {formatRelativeTime(item.at, now)}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
     </GlassPanel>
   );
 }

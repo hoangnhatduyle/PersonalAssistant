@@ -89,6 +89,31 @@ export type DeadlinePayload = z.infer<typeof deadlinePayloadSchema>;
 export const deadlinePatchSchema = deadlinePayloadSchema.omit({ course_id: true }).partial();
 export type DeadlinePatch = z.infer<typeof deadlinePatchSchema>;
 
+// Course To-Do board: a lightweight per-course/custom-list checklist,
+// distinct from Tasks (no course link) and Deadlines (status enum, priority,
+// reminders). course_id null means a freestanding custom list ("Misc",
+// "Project: X") — see supabase/migrations/0015_course_todos.sql.
+export const todoListPayloadSchema = z.object({
+  course_id: z.uuid().nullable().optional(),
+  name: z.string().trim().min(1),
+});
+export type TodoListPayload = z.infer<typeof todoListPayloadSchema>;
+export const todoListPatchSchema = todoListPayloadSchema.partial();
+export type TodoListPatch = z.infer<typeof todoListPatchSchema>;
+
+export const todoItemPayloadSchema = z.object({
+  list_id: z.uuid(),
+  title: z.string().trim().min(1),
+  due_date: z.iso.date().nullable().optional(),
+});
+export type TodoItemPayload = z.infer<typeof todoItemPayloadSchema>;
+export const todoItemPatchSchema = z.object({
+  title: z.string().trim().min(1).optional(),
+  due_date: z.iso.date().nullable().optional(),
+  is_done: z.boolean().optional(),
+});
+export type TodoItemPatch = z.infer<typeof todoItemPatchSchema>;
+
 export const taskPayloadSchema = z.object({
   title: z.string().trim().min(1),
   due_at: z.iso.datetime({ offset: true }).nullable().optional(),

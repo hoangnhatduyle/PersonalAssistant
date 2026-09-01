@@ -30,6 +30,18 @@ export const noteKeys = {
   detail: (id: string) => [...noteKeys.all, "detail", id] as const,
 };
 
+export const todoListKeys = {
+  all: ["todo-lists"] as const,
+  list: (filters?: object) => [...todoListKeys.all, "list", filters ?? {}] as const,
+  detail: (id: string) => [...todoListKeys.all, "detail", id] as const,
+};
+
+export const todoItemKeys = {
+  all: ["todo-items"] as const,
+  list: (filters?: object) => [...todoItemKeys.all, "list", filters ?? {}] as const,
+  detail: (id: string) => [...todoItemKeys.all, "detail", id] as const,
+};
+
 export const reminderKeys = {
   all: ["reminders"] as const,
   list: (filters?: object) => [...reminderKeys.all, "list", filters ?? {}] as const,

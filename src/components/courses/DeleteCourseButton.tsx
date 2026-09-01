@@ -16,9 +16,10 @@ type Props = {
  * generic; the DELETE response's actual cascade counts render in the
  * post-delete toast instead. Deleting a course also soft-deletes its live
  * deadlines and dismisses their reminders (verified against
- * soft_delete_course_cascade in supabase/migrations/0002_delete_cascade.sql
- * — it sets deadlines.deleted_at, not just their reminders) and unlinks any
- * notes linked to the course.
+ * soft_delete_course_cascade in supabase/migrations/0002_delete_cascade.sql/
+ * 0015_course_todos.sql — it sets deadlines.deleted_at, not just their
+ * reminders) unlinks any notes linked to the course, and soft-deletes the
+ * course's To-Do list along with its items.
  */
 export function DeleteCourseButton({ courseId }: Props) {
   const [open, setOpen] = useState(false);
@@ -31,7 +32,8 @@ export function DeleteCourseButton({ courseId }: Props) {
       const result = await deleteCourse.mutateAsync();
       showToast(
         `Course deleted — ${result.cascade.deadlinesDeleted} deadline(s) deleted, ` +
-          `${result.cascade.remindersDismissed} reminder(s) dismissed, ${result.cascade.notesUnlinked} note(s) unlinked.`,
+          `${result.cascade.remindersDismissed} reminder(s) dismissed, ${result.cascade.notesUnlinked} note(s) unlinked, ` +
+          `${result.cascade.todoItemsDeleted} to-do item(s) deleted.`,
         "success",
       );
       setOpen(false);
@@ -51,7 +53,7 @@ export function DeleteCourseButton({ courseId }: Props) {
         onClose={() => setOpen(false)}
         onConfirm={handleConfirm}
         title="Delete this course?"
-        description="Deleting this course also deletes its deadlines, dismisses their reminders, and unlinks its notes."
+        description="Deleting this course also deletes its deadlines, dismisses their reminders, unlinks its notes, and deletes its to-do list."
         confirmLabel="Delete"
         isConfirming={deleteCourse.isPending}
       />

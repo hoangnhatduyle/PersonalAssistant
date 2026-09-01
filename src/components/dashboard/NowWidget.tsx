@@ -29,12 +29,14 @@ const KIND_FILL_CLASS: Record<UpcomingItem["kind"], string> = {
   deadline: "fill-status-urgent",
   task: "fill-accent-indigo",
   reminder: "fill-accent-teal",
+  todo: "fill-accent-violet",
 };
 
 const KIND_BG_CLASS: Record<UpcomingItem["kind"], string> = {
   deadline: "bg-status-urgent",
   task: "bg-accent-indigo",
   reminder: "bg-accent-teal",
+  todo: "bg-accent-violet",
 };
 
 function truncate(title: string, max = 16): string {

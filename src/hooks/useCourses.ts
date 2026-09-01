@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch, toQueryString } from "@/lib/http/client";
-import { courseKeys, deadlineKeys, noteKeys, reminderKeys } from "@/lib/query/keys";
+import { courseKeys, deadlineKeys, noteKeys, reminderKeys, todoItemKeys, todoListKeys } from "@/lib/query/keys";
 import type { CoursePatch, CoursePayload } from "@/lib/api/schemas";
 import type { CourseRow } from "@/lib/api/entity-types";
 
@@ -14,7 +14,7 @@ export interface CourseListFilters {
 
 export interface CourseDeleteResult {
   id: string;
-  cascade: { deadlinesDeleted: number; remindersDismissed: number; notesUnlinked: number };
+  cascade: { deadlinesDeleted: number; remindersDismissed: number; notesUnlinked: number; todoItemsDeleted: number };
 }
 
 export function useCourses(filters?: CourseListFilters) {
@@ -64,15 +64,18 @@ export function useDeleteCourse(id: string) {
       // The cascade also soft-deletes the course's own live deadlines (not
       // just dismissing their reminders — see cascadeDeleteCourse in
       // src/lib/api/cascade.ts, sourced from soft_delete_course_cascade in
-      // supabase/migrations/0002_delete_cascade.sql) and unlinks their
-      // notes — invalidate all three alongside the course lists/detail.
-      // Removed, not just invalidated, for the course's own detail key: see
-      // useDeleteTask's onSuccess for why.
+      // supabase/migrations/0002_delete_cascade.sql/0015_course_todos.sql)
+      // and unlinks their notes, and soft-deletes the course's To-Do list
+      // (and its items) — invalidate all four alongside the course
+      // lists/detail. Removed, not just invalidated, for the course's own
+      // detail key: see useDeleteTask's onSuccess for why.
       queryClient.removeQueries({ queryKey: courseKeys.detail(id) });
       queryClient.invalidateQueries({ queryKey: courseKeys.all });
       queryClient.invalidateQueries({ queryKey: reminderKeys.all });
       queryClient.invalidateQueries({ queryKey: noteKeys.all });
       queryClient.invalidateQueries({ queryKey: deadlineKeys.all });
+      queryClient.invalidateQueries({ queryKey: todoListKeys.all });
+      queryClient.invalidateQueries({ queryKey: todoItemKeys.all });
     },
   });
 }

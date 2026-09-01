@@ -3,6 +3,7 @@
 import { useDeadlines } from "@/hooks/useDeadlines";
 import { useTasks } from "@/hooks/useTasks";
 import { useReminders } from "@/hooks/useReminders";
+import { useTodoItems } from "@/hooks/useTodoItems";
 import { NowWidget } from "@/components/dashboard/NowWidget";
 import { MomentumCard } from "@/components/dashboard/MomentumCard";
 import { NextSequenceQueue } from "@/components/dashboard/NextSequenceQueue";
@@ -14,8 +15,9 @@ export function DashboardContainer() {
   const { data: deadlines, isLoading: deadlinesLoading } = useDeadlines();
   const { data: tasks, isLoading: tasksLoading } = useTasks();
   const { data: reminders, isLoading: remindersLoading } = useReminders({ state: ["Delivered", "Snoozed"] });
+  const { data: todoItems, isLoading: todoItemsLoading } = useTodoItems();
 
-  const isLoading = deadlinesLoading || tasksLoading || remindersLoading;
+  const isLoading = deadlinesLoading || tasksLoading || remindersLoading || todoItemsLoading;
 
   return (
     <div className="flex flex-col gap-6">
@@ -38,7 +40,7 @@ export function DashboardContainer() {
           <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
             <div className="flex flex-col gap-6">
               <NowWidget deadlines={deadlines?.rows ?? []} tasks={tasks?.rows ?? []} reminders={reminders?.rows ?? []} />
-              <NextSequenceQueue deadlines={deadlines?.rows ?? []} tasks={tasks?.rows ?? []} />
+              <NextSequenceQueue deadlines={deadlines?.rows ?? []} tasks={tasks?.rows ?? []} todoItems={todoItems?.rows ?? []} />
             </div>
             <MomentumCard deadlines={deadlines?.rows ?? []} tasks={tasks?.rows ?? []} />
           </div>

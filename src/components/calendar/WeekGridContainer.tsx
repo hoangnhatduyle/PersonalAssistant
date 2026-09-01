@@ -8,6 +8,7 @@ import { usePeople } from "@/hooks/usePeople";
 import { buildWeekGridData } from "@/lib/calendar/build-week-events";
 import { WeekGrid } from "@/components/calendar/WeekGrid";
 import { CalendarLegend } from "@/components/calendar/CalendarLegend";
+import { AppointmentsTimeline } from "@/components/calendar/AppointmentsTimeline";
 import {
   PersonFilterToggle,
   defaultPersonFilterSelection,
@@ -65,6 +66,8 @@ export function WeekGridContainer() {
           <WeekGrid days={weekGrid.days} hourMarks={weekGrid.hourMarks} windowStart={weekGrid.windowStart} windowEnd={weekGrid.windowEnd} />
         </GlassPanel>
       )}
+
+      <AppointmentsTimeline />
     </div>
   );
 }

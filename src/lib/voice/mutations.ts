@@ -28,7 +28,7 @@ export type PendingMutation =
 export interface MutationExecutionResult {
   summary: string;
   data: unknown;
-  cascade?: { deadlinesDeleted: number; remindersDismissed: number; notesUnlinked: number };
+  cascade?: { deadlinesDeleted: number; remindersDismissed: number; notesUnlinked: number; todoItemsDeleted?: number };
 }
 
 /** Thrown when a pending_mutation's target no longer exists/is owned by the caller at execution time. */
@@ -73,6 +73,7 @@ export async function executePendingMutation(
           deadlinesDeleted: cascade.deadlinesAffected,
           remindersDismissed: cascade.remindersDismissed,
           notesUnlinked: cascade.notesUnlinked,
+          todoItemsDeleted: cascade.todoItemsAffected,
         },
       };
     }

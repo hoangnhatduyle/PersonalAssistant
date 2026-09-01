@@ -606,6 +606,122 @@ export type Database = {
           },
         ]
       }
+      todo_items: {
+        Row: {
+          created_at: string
+          deleted_at: string | null
+          due_date: string | null
+          id: string
+          is_done: boolean
+          list_id: string
+          position: number
+          title: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          deleted_at?: string | null
+          due_date?: string | null
+          id?: string
+          is_done?: boolean
+          list_id: string
+          position?: number
+          title: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          deleted_at?: string | null
+          due_date?: string | null
+          id?: string
+          is_done?: boolean
+          list_id?: string
+          position?: number
+          title?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "todo_items_list_id_fkey"
+            columns: ["list_id"]
+            isOneToOne: false
+            referencedRelation: "active_todo_lists"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "todo_items_list_id_fkey"
+            columns: ["list_id"]
+            isOneToOne: false
+            referencedRelation: "todo_lists"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "todo_items_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      todo_lists: {
+        Row: {
+          course_id: string | null
+          created_at: string
+          deleted_at: string | null
+          id: string
+          name: string
+          position: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          course_id?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          name: string
+          position?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          course_id?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          name?: string
+          position?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "todo_lists_course_id_fkey"
+            columns: ["course_id"]
+            isOneToOne: false
+            referencedRelation: "active_courses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "todo_lists_course_id_fkey"
+            columns: ["course_id"]
+            isOneToOne: false
+            referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "todo_lists_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_preferences: {
         Row: {
           created_at: string
@@ -1059,6 +1175,122 @@ export type Database = {
           },
         ]
       }
+      active_todo_items: {
+        Row: {
+          created_at: string | null
+          deleted_at: string | null
+          due_date: string | null
+          id: string | null
+          is_done: boolean | null
+          list_id: string | null
+          position: number | null
+          title: string | null
+          updated_at: string | null
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          deleted_at?: string | null
+          due_date?: string | null
+          id?: string | null
+          is_done?: boolean | null
+          list_id?: string | null
+          position?: number | null
+          title?: string | null
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          deleted_at?: string | null
+          due_date?: string | null
+          id?: string | null
+          is_done?: boolean | null
+          list_id?: string | null
+          position?: number | null
+          title?: string | null
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "todo_items_list_id_fkey"
+            columns: ["list_id"]
+            isOneToOne: false
+            referencedRelation: "active_todo_lists"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "todo_items_list_id_fkey"
+            columns: ["list_id"]
+            isOneToOne: false
+            referencedRelation: "todo_lists"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "todo_items_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      active_todo_lists: {
+        Row: {
+          course_id: string | null
+          created_at: string | null
+          deleted_at: string | null
+          id: string | null
+          name: string | null
+          position: number | null
+          updated_at: string | null
+          user_id: string | null
+        }
+        Insert: {
+          course_id?: string | null
+          created_at?: string | null
+          deleted_at?: string | null
+          id?: string | null
+          name?: string | null
+          position?: number | null
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          course_id?: string | null
+          created_at?: string | null
+          deleted_at?: string | null
+          id?: string | null
+          name?: string | null
+          position?: number | null
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "todo_lists_course_id_fkey"
+            columns: ["course_id"]
+            isOneToOne: false
+            referencedRelation: "active_courses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "todo_lists_course_id_fkey"
+            columns: ["course_id"]
+            isOneToOne: false
+            referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "todo_lists_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Functions: {
       complete_knowledge_import: {
@@ -1157,6 +1389,7 @@ export type Database = {
           deadlines_affected: number
           notes_unlinked: number
           reminders_dismissed: number
+          todo_items_affected: number
         }[]
       }
       soft_delete_person_cascade: {
@@ -1173,6 +1406,12 @@ export type Database = {
         Args: { p_task_id: string }
         Returns: {
           notes_unlinked: number
+        }[]
+      }
+      soft_delete_todo_list_cascade: {
+        Args: { p_list_id: string }
+        Returns: {
+          items_affected: number
         }[]
       }
       start_knowledge_import: {

@@ -5,6 +5,7 @@ export interface CourseDeleteCascadeResult {
   deadlinesAffected: number;
   remindersDismissed: number;
   notesUnlinked: number;
+  todoItemsAffected: number;
 }
 
 /**
@@ -27,11 +28,30 @@ export async function cascadeDeleteCourse(
     deadlinesAffected: data.deadlines_affected ?? 0,
     remindersDismissed: data.reminders_dismissed ?? 0,
     notesUnlinked: data.notes_unlinked ?? 0,
+    todoItemsAffected: data.todo_items_affected ?? 0,
   };
 }
 
 export interface TaskDeleteCascadeResult {
   notesUnlinked: number;
+}
+
+export interface TodoListDeleteCascadeResult {
+  itemsAffected: number;
+}
+
+/**
+ * Soft-deletes a To-Do list and, atomically, its live items (see
+ * supabase/migrations/0015_course_todos.sql's soft_delete_todo_list_cascade).
+ */
+export async function cascadeDeleteTodoList(
+  supabase: SupabaseClient<Database>,
+  listId: string,
+): Promise<TodoListDeleteCascadeResult> {
+  const { data, error } = await supabase.rpc("soft_delete_todo_list_cascade", { p_list_id: listId }).single();
+  if (error) throw error;
+
+  return { itemsAffected: data.items_affected ?? 0 };
 }
 
 export interface PersonDeleteCascadeResult {

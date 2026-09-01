@@ -5,6 +5,7 @@ export interface CourseDeleteCascadePreview {
   deadlinesAffected: number;
   remindersLive: number;
   notesAffected: number;
+  todoItemsAffected: number;
 }
 
 /**
@@ -22,20 +23,34 @@ export async function previewCourseDeleteCascade(
   userId: string,
   courseId: string,
 ): Promise<CourseDeleteCascadePreview> {
-  const [{ data: deadlines, error }, { count: notesAffected, error: notesError }] = await Promise.all([
+  const [{ data: deadlines, error }, { count: notesAffected, error: notesError }, { data: todoList, error: todoListError }] = await Promise.all([
     supabase.from("deadlines").select("id").eq("course_id", courseId).eq("user_id", userId).is("deleted_at", null),
     // Matches soft_delete_course_cascade's own unlink query (supabase/migrations/
     // 0002_delete_cascade.sql): scoped by linked_course_id only, not filtered
     // on the note's own deleted_at — a soft-deleted note's link is still
     // cleared by that cascade, so this count must include it too.
     supabase.from("notes").select("id", { count: "exact", head: true }).eq("linked_course_id", courseId).eq("user_id", userId),
+    supabase.from("todo_lists").select("id").eq("course_id", courseId).eq("user_id", userId).is("deleted_at", null).maybeSingle(),
   ]);
   if (error) throw error;
   if (notesError) throw notesError;
+  if (todoListError) throw todoListError;
 
   const deadlineIds = (deadlines ?? []).map((d) => d.id);
+
+  let todoItemsAffected = 0;
+  if (todoList) {
+    const { count: todoItemCount, error: todoItemsError } = await supabase
+      .from("todo_items")
+      .select("id", { count: "exact", head: true })
+      .eq("list_id", todoList.id)
+      .is("deleted_at", null);
+    if (todoItemsError) throw todoItemsError;
+    todoItemsAffected = todoItemCount ?? 0;
+  }
+
   if (deadlineIds.length === 0) {
-    return { deadlinesAffected: 0, remindersLive: 0, notesAffected: notesAffected ?? 0 };
+    return { deadlinesAffected: 0, remindersLive: 0, notesAffected: notesAffected ?? 0, todoItemsAffected };
   }
 
   const { count, error: countError } = await supabase
@@ -46,7 +61,7 @@ export async function previewCourseDeleteCascade(
     .in("acknowledgment_state", ["Scheduled", "Snoozed"]);
   if (countError) throw countError;
 
-  return { deadlinesAffected: deadlineIds.length, remindersLive: count ?? 0, notesAffected: notesAffected ?? 0 };
+  return { deadlinesAffected: deadlineIds.length, remindersLive: count ?? 0, notesAffected: notesAffected ?? 0, todoItemsAffected };
 }
 
 /**
@@ -66,8 +81,12 @@ export function formatCascadeDisclosure(preview: CourseDeleteCascadePreview): st
     const noteWord = preview.notesAffected === 1 ? "note" : "notes";
     clauses.push(`unlink it from ${preview.notesAffected} ${noteWord}`);
   }
+  if (preview.todoItemsAffected > 0) {
+    const itemWord = preview.todoItemsAffected === 1 ? "item" : "items";
+    clauses.push(`delete its to-do list (${preview.todoItemsAffected} ${itemWord})`);
+  }
   if (clauses.length === 0) {
-    return "It has no deadlines or linked notes.";
+    return "It has no deadlines, linked notes, or to-do items.";
   }
   return `This will also ${clauses.join(" and ")}.`;
 }

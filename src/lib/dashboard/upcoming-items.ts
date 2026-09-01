@@ -1,6 +1,6 @@
-import type { DeadlineRow, DeadlineStatus, TaskRow, TaskStatus, ReminderRow } from "@/lib/api/entity-types";
+import type { DeadlineRow, DeadlineStatus, TaskRow, TaskStatus, ReminderRow, TodoItemRow } from "@/lib/api/entity-types";
 
-export type UpcomingItemKind = "deadline" | "task" | "reminder";
+export type UpcomingItemKind = "deadline" | "task" | "reminder" | "todo";
 
 export interface UpcomingItem {
   id: string;
@@ -24,6 +24,7 @@ interface BuildUpcomingItemsInput {
   deadlines: DeadlineRow[];
   tasks: TaskRow[];
   reminders?: ReminderRow[];
+  todoItems?: TodoItemRow[];
 }
 
 /**
@@ -31,30 +32,50 @@ interface BuildUpcomingItemsInput {
  * ascending-sorted timeline. No `/api/dashboard` route exists — this
  * composes already-fetched, already-cached list data client-side.
  */
-export function buildUpcomingItems({ deadlines, tasks, reminders = [] }: BuildUpcomingItemsInput): UpcomingItem[] {
+export function buildUpcomingItems({ deadlines, tasks, reminders = [], todoItems = [] }: BuildUpcomingItemsInput): UpcomingItem[] {
   const items: UpcomingItem[] = [];
+  const now = Date.now();
 
   for (const deadline of deadlines) {
     if (!isOpenDeadline(deadline.status)) continue;
+    const at = new Date(deadline.due_at);
     items.push({
       id: deadline.id,
       kind: "deadline",
       title: deadline.title,
-      at: new Date(deadline.due_at),
+      at,
       href: `/deadlines/${deadline.id}`,
-      urgent: deadline.status === "Overdue",
+      // Overdue status is the authoritative signal, but a due_at that's
+      // slipped past "now" without the status catching up yet (a lag this
+      // codebase already accounts for elsewhere — see MomentumCard's
+      // nearestDeadline comment) should still read as past due.
+      urgent: deadline.status === "Overdue" || at.getTime() < now,
     });
   }
 
   for (const task of tasks) {
     if (!isOpenTask(task.status) || !task.due_at) continue;
+    const at = new Date(task.due_at);
     items.push({
       id: task.id,
       kind: "task",
       title: task.title,
-      at: new Date(task.due_at),
+      at,
       href: `/tasks/${task.id}`,
-      urgent: false,
+      urgent: at.getTime() < now,
+    });
+  }
+
+  for (const item of todoItems) {
+    if (item.is_done || !item.due_date) continue;
+    const at = new Date(item.due_date);
+    items.push({
+      id: item.id,
+      kind: "todo",
+      title: item.title,
+      at,
+      href: "/courses/todos",
+      urgent: at.getTime() < now,
     });
   }
 
