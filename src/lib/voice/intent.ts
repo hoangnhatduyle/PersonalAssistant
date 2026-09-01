@@ -35,6 +35,11 @@ const mutationSchemaBase = z.discriminatedUnion("target_type", [
     target_id: z.uuid().nullable(),
     title: z.string().nullable(),
     due_at: z.iso.datetime({ offset: true }).nullable(),
+    // null = no reminder-timing phrase present in the request (e.g. plain
+    // "add a task to buy milk" with no "remind me" wording). 0 = an explicit
+    // "remind me AT <time>" phrasing, meaning the reminder should fire
+    // exactly at due_at rather than some minutes before it.
+    reminder_lead_minutes: z.number().int().min(0).max(1440).nullable(),
   }),
   z.object({
     target_type: z.literal("note"),
@@ -109,9 +114,10 @@ export const llmResponseSchema = z
   });
 
 const SYSTEM_PROMPT = `You are the intent-resolution layer for a student personal-assistant app.
-Given a spoken/transcribed user request and a JSON list of that user's current
-Courses, Deadlines, and Tasks (with their ids), resolve it to exactly one
-supported operation and respond with ONLY a JSON object matching this shape:
+Given a spoken/transcribed user request, the current server time, the user's
+IANA time zone, and a JSON list of that user's current Courses, Deadlines,
+and Tasks (with their ids), resolve it to exactly one supported operation
+and respond with ONLY a JSON object matching this shape:
 
 {
   "confidence": number,        // 0-1, your genuine confidence this is the right resolution
@@ -122,7 +128,8 @@ supported operation and respond with ONLY a JSON object matching this shape:
     "target_type": "course" | "deadline" | "task" | "note" | "reminder",
     "operation": "create" | "update" | "delete" | "acknowledge",
     "target_id": string | null,   // an id from the provided context list; null only for "create"
-    ... other fields for the target type (title, due_at, body, event, etc.), null if not mentioned
+    ... other fields for the target type (title, due_at, body, event,
+    reminder_lead_minutes, etc.), null if not mentioned
   } | null
 }
 
@@ -133,6 +140,37 @@ personal knowledge base of imported reference material (read-only,
 query_kind "knowledge_lookup" — use this whenever the request is a factual
 or advice question rather than a request about the user's own Courses/
 Deadlines/Tasks). Nothing else is supported.
+
+The request's "now" field is the current server timestamp (UTC, ISO 8601)
+and "timezone" is the user's IANA time zone — use both as the anchor for any
+relative date/time phrase ("tomorrow", "next Friday", "in an hour", "5pm").
+Resolve a time-of-day phrase like "5pm" to 5pm in the user's own timezone,
+then convert it to an ISO datetime string with that timezone's correct UTC
+offset for that instant — never assume UTC or guess at today's date.
+
+A "remind me to X" phrase with no reference to an existing Course, Deadline,
+or Task is a request to create a new Task, not a Reminder operation
+directly — Reminders are always derived automatically from a Task's or
+Deadline's due_at, never created directly (the only supported Reminder
+operation is "acknowledge", against an id from the provided context list).
+Set target_type "task", operation "create", and title to the request
+stripped of the leading "remind me [to]" phrasing (e.g. "remind me to
+submit my assignment" -> title "Submit my assignment"). Use
+reminder_lead_minutes to capture reminder-timing phrasing on a task
+create/update: an explicit "remind me AT <time>" (fire exactly at due_at)
+sets it to 0; "remind me N minutes/hours before" sets it to that many
+minutes; no reminder-timing phrasing at all leaves it null (the task's own
+default lead time applies).
+
+Examples:
+- "Remind me to submit my assignment tomorrow at 5pm" -> task create, title
+  "Submit my assignment", due_at resolved from "tomorrow at 5pm" using now/
+  timezone, reminder_lead_minutes: 0.
+- "Remind me 30 minutes before my dentist task" (referencing an existing
+  task) -> task update, target_id from context, reminder_lead_minutes: 30.
+- "Remind me to review notes before Friday" (no exact time) -> task create,
+  title "Review notes", due_at resolved to end-of-day Friday in the user's
+  timezone, reminder_lead_minutes: null.
 
 If the request doesn't map confidently to one of these, or names an entity
 not in the provided context list, set confidence below 0.95 rather than
@@ -151,6 +189,18 @@ async function loadEntityContext(supabase: SupabaseClient<Database>, userId: str
     supabase.from("tasks").select("id, title").eq("user_id", userId).is("deleted_at", null),
   ]);
   return { courses: courses ?? [], deadlines: deadlines ?? [], tasks: tasks ?? [] };
+}
+
+/**
+ * The anchor resolveIntent needs so relative date/time phrases ("tomorrow
+ * at 5pm") resolve against the user's actual timezone rather than the
+ * model's own guess. Falls back to "UTC" (matches
+ * DEFAULT_USER_PREFERENCES.timezone) when the user has never saved a
+ * preferences row.
+ */
+export async function loadUserTimezone(supabase: SupabaseClient<Database>, userId: string): Promise<string> {
+  const { data } = await supabase.from("user_preferences").select("timezone").eq("user_id", userId).maybeSingle();
+  return data?.timezone ?? "UTC";
 }
 
 /**
@@ -187,7 +237,15 @@ export function toPendingMutation(raw: RawMutation): PendingMutation {
     }
     case "task": {
       if (raw.operation === "create") {
-        return { targetType: "task", operation: "create", payload: { title: raw.title!, due_at: raw.due_at } };
+        return {
+          targetType: "task",
+          operation: "create",
+          payload: {
+            title: raw.title!,
+            due_at: raw.due_at,
+            ...(raw.reminder_lead_minutes !== null ? { reminder_lead_minutes: raw.reminder_lead_minutes } : {}),
+          },
+        };
       }
       if (raw.operation === "delete") {
         return { targetType: "task", operation: "delete", targetId: raw.target_id! };
@@ -196,7 +254,11 @@ export function toPendingMutation(raw: RawMutation): PendingMutation {
         targetType: "task",
         operation: "update",
         targetId: raw.target_id!,
-        payload: { ...(raw.title ? { title: raw.title } : {}), ...(raw.due_at !== null ? { due_at: raw.due_at } : {}) },
+        payload: {
+          ...(raw.title ? { title: raw.title } : {}),
+          ...(raw.due_at !== null ? { due_at: raw.due_at } : {}),
+          ...(raw.reminder_lead_minutes !== null ? { reminder_lead_minutes: raw.reminder_lead_minutes } : {}),
+        },
       };
     }
     case "note": {
@@ -232,7 +294,8 @@ export async function resolveIntent(
   userId: string,
   transcript: string,
 ): Promise<ResolvedIntent> {
-  const context = await loadEntityContext(supabase, userId);
+  const [context, timezone] = await Promise.all([loadEntityContext(supabase, userId), loadUserTimezone(supabase, userId)]);
+  const now = new Date().toISOString();
   const openai = new OpenAI({ apiKey: requireEnv("OPENAI_API_KEY") });
 
   const completion = await openai.chat.completions.create({
@@ -240,7 +303,7 @@ export async function resolveIntent(
     response_format: { type: "json_object" },
     messages: [
       { role: "system", content: SYSTEM_PROMPT },
-      { role: "user", content: JSON.stringify({ transcript, context }) },
+      { role: "user", content: JSON.stringify({ transcript, now, timezone, context }) },
     ],
   });
 

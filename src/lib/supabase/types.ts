@@ -417,6 +417,7 @@ export type Database = {
           channel: string
           created_at: string
           delivered_at: string | null
+          emailed_at: string | null
           id: string
           snooze_until: string | null
           target_id: string
@@ -429,6 +430,7 @@ export type Database = {
           channel?: string
           created_at?: string
           delivered_at?: string | null
+          emailed_at?: string | null
           id?: string
           snooze_until?: string | null
           target_id: string
@@ -441,6 +443,7 @@ export type Database = {
           channel?: string
           created_at?: string
           delivered_at?: string | null
+          emailed_at?: string | null
           id?: string
           snooze_until?: string | null
           target_id?: string
@@ -512,6 +515,7 @@ export type Database = {
         Row: {
           created_at: string
           default_reminder_lead_minutes: number
+          email_reminders_enabled: boolean
           id: string
           quiet_hours_end: string | null
           quiet_hours_start: string | null
@@ -523,6 +527,7 @@ export type Database = {
         Insert: {
           created_at?: string
           default_reminder_lead_minutes?: number
+          email_reminders_enabled?: boolean
           id?: string
           quiet_hours_end?: string | null
           quiet_hours_start?: string | null
@@ -534,6 +539,7 @@ export type Database = {
         Update: {
           created_at?: string
           default_reminder_lead_minutes?: number
+          email_reminders_enabled?: boolean
           id?: string
           quiet_hours_end?: string | null
           quiet_hours_start?: string | null
@@ -911,6 +917,7 @@ export type Database = {
           channel: string
           created_at: string
           delivered_at: string | null
+          emailed_at: string | null
           id: string
           snooze_until: string | null
           target_id: string

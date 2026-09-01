@@ -1,6 +1,7 @@
 import { VoiceCaptureToggleCard } from "@/components/settings/VoiceCaptureToggleCard";
 import { ReminderCadenceCard } from "@/components/settings/ReminderCadenceCard";
 import { QuietHoursCard } from "@/components/settings/QuietHoursCard";
+import { EmailRemindersToggleCard } from "@/components/settings/EmailRemindersToggleCard";
 import { KnowledgeSection } from "@/components/knowledge/KnowledgeSection";
 
 export function SettingsPageContainer() {
@@ -14,6 +15,7 @@ export function SettingsPageContainer() {
           <ReminderCadenceCard />
           <QuietHoursCard />
           <VoiceCaptureToggleCard />
+          <EmailRemindersToggleCard />
         </div>
       </section>
 

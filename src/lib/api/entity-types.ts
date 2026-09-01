@@ -38,23 +38,27 @@ export interface UserPreferences {
   /** IANA time zone name (e.g. "America/Chicago") — the frame of reference for quiet_hours_start/end. */
   timezone: string;
   voice_capture_enabled: boolean;
+  /** Whether a Delivered reminder also triggers an email, in addition to in-app. */
+  email_reminders_enabled: boolean;
   updated_at: string | null;
 }
 
-// Mirrors supabase/migrations/0010_user_preferences.sql's column DEFAULTs —
-// kept in sync by hand (same pattern as this codebase's other
-// hardcoded-but-commented constants, e.g. the knowledge retry cap) since a
-// read must never write a row just to discover its own defaults
-// (NC-API-USERPREFS-003). Exported (not route-local) so
-// supabase/tests/user-preferences.test.ts can assert it actually matches
-// the migration's real DEFAULTs — architect-review finding: this exact
-// hand-duplication is a drift risk if only informally commented.
+// Mirrors supabase/migrations/0010_user_preferences.sql's (and
+// 0012_reminder_email_delivery.sql's) column DEFAULTs — kept in sync by
+// hand (same pattern as this codebase's other hardcoded-but-commented
+// constants, e.g. the knowledge retry cap) since a read must never write a
+// row just to discover its own defaults (NC-API-USERPREFS-003). Exported
+// (not route-local) so supabase/tests/user-preferences.test.ts can assert
+// it actually matches the migration's real DEFAULTs — architect-review
+// finding: this exact hand-duplication is a drift risk if only informally
+// commented.
 export const DEFAULT_USER_PREFERENCES: UserPreferences = {
   default_reminder_lead_minutes: 60,
   quiet_hours_start: null,
   quiet_hours_end: null,
   timezone: "UTC",
   voice_capture_enabled: true,
+  email_reminders_enabled: true,
   updated_at: null,
 };
 

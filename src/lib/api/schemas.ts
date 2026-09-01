@@ -128,6 +128,7 @@ export const userPreferencesPatchSchema = z
     quiet_hours_end: z.string().regex(QUIET_HOURS_TIME_REGEX, "Expected HH:MM (24-hour)").nullable(),
     timezone: z.string().refine(isValidTimeZone, "Not a recognized IANA time zone name"),
     voice_capture_enabled: z.boolean(),
+    email_reminders_enabled: z.boolean(),
   })
   .partial()
   .superRefine((value, ctx) => {

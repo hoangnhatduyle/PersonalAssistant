@@ -12,7 +12,9 @@ describe("user_preferences schema", () => {
 
     const { data, error } = await admin
       .from("user_preferences")
-      .select("default_reminder_lead_minutes, quiet_hours_start, quiet_hours_end, timezone, voice_capture_enabled")
+      .select(
+        "default_reminder_lead_minutes, quiet_hours_start, quiet_hours_end, timezone, voice_capture_enabled, email_reminders_enabled",
+      )
       .eq("id", id)
       .single();
     expect(error).toBeNull();
@@ -22,6 +24,7 @@ describe("user_preferences schema", () => {
       quiet_hours_end: null,
       timezone: "UTC",
       voice_capture_enabled: true,
+      email_reminders_enabled: true,
     });
   });
 
@@ -35,7 +38,9 @@ describe("user_preferences schema", () => {
 
     const { data, error } = await admin
       .from("user_preferences")
-      .select("default_reminder_lead_minutes, quiet_hours_start, quiet_hours_end, timezone, voice_capture_enabled")
+      .select(
+        "default_reminder_lead_minutes, quiet_hours_start, quiet_hours_end, timezone, voice_capture_enabled, email_reminders_enabled",
+      )
       .eq("id", id)
       .single();
     expect(error).toBeNull();
@@ -45,6 +50,7 @@ describe("user_preferences schema", () => {
       quiet_hours_end: DEFAULT_USER_PREFERENCES.quiet_hours_end,
       timezone: DEFAULT_USER_PREFERENCES.timezone,
       voice_capture_enabled: DEFAULT_USER_PREFERENCES.voice_capture_enabled,
+      email_reminders_enabled: DEFAULT_USER_PREFERENCES.email_reminders_enabled,
     });
   });
 
@@ -102,6 +108,23 @@ describe("user_preferences schema", () => {
     const { data, error } = await admin.from("user_preferences").select("id").eq("id", id);
     expect(error).toBeNull();
     expect(data ?? []).toHaveLength(0);
+  });
+
+  it("email_reminders_enabled can be updated independently of the other preference fields", async () => {
+    const user = await createAuthenticatedUser();
+    const id = await createUserPreferences(admin, user.userId);
+
+    const { error } = await admin.from("user_preferences").update({ email_reminders_enabled: false }).eq("id", id);
+    expect(error).toBeNull();
+
+    const { data } = await admin
+      .from("user_preferences")
+      .select("email_reminders_enabled, voice_capture_enabled, default_reminder_lead_minutes")
+      .eq("id", id)
+      .single();
+    expect(data?.email_reminders_enabled).toBe(false);
+    expect(data?.voice_capture_enabled).toBe(true);
+    expect(data?.default_reminder_lead_minutes).toBe(60);
   });
 
   it("updated_at advances on update", async () => {

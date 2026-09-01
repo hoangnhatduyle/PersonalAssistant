@@ -42,6 +42,7 @@ export function makeReminder(overrides: Partial<ReminderRow> = {}): ReminderRow 
     channel: "email",
     trigger_at: "2026-01-03T00:00:00Z",
     delivered_at: "2026-01-03T00:00:00Z",
+    emailed_at: null,
     snooze_until: null,
     created_at: "2026-01-01T00:00:00Z",
     user_id: "u-1",

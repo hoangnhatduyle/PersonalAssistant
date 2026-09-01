@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { llmResponseSchema, mutationSchema, toPendingMutation } from "../intent";
+import { llmResponseSchema, loadUserTimezone, mutationSchema, toPendingMutation } from "../intent";
 
 const VALID_TARGET_ID = "11111111-1111-4111-8111-111111111111";
 const VALID_COURSE_ID = "22222222-2222-4222-8222-222222222222";
@@ -45,7 +45,14 @@ describe("mutationSchema", () => {
   });
 
   it("rejects a task create with no title", () => {
-    const result = mutationSchema.safeParse({ target_type: "task", operation: "create", target_id: null, title: null, due_at: null });
+    const result = mutationSchema.safeParse({
+      target_type: "task",
+      operation: "create",
+      target_id: null,
+      title: null,
+      due_at: null,
+      reminder_lead_minutes: null,
+    });
     expect(result.success).toBe(false);
   });
 
@@ -87,6 +94,42 @@ describe("mutationSchema", () => {
 
   it("a course delete always requires a non-null target_id (schema-level, not just the shared refine)", () => {
     const result = mutationSchema.safeParse({ target_type: "course", operation: "delete", target_id: null });
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts a task create with reminder_lead_minutes: 0 (explicit \"remind me at <time>\")", () => {
+    const result = mutationSchema.safeParse({
+      target_type: "task",
+      operation: "create",
+      target_id: null,
+      title: "Submit assignment",
+      due_at: "2026-09-01T17:00:00.000Z",
+      reminder_lead_minutes: 0,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts a task create with reminder_lead_minutes: null (no reminder-timing phrase present)", () => {
+    const result = mutationSchema.safeParse({
+      target_type: "task",
+      operation: "create",
+      target_id: null,
+      title: "Buy milk",
+      due_at: null,
+      reminder_lead_minutes: null,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects a task's reminder_lead_minutes outside the 0-1440 bound", () => {
+    const result = mutationSchema.safeParse({
+      target_type: "task",
+      operation: "create",
+      target_id: null,
+      title: "Submit assignment",
+      due_at: "2026-09-01T17:00:00.000Z",
+      reminder_lead_minutes: 1500,
+    });
     expect(result.success).toBe(false);
   });
 });
@@ -191,6 +234,7 @@ describe("toPendingMutation", () => {
       target_id: VALID_TARGET_ID,
       title: "Renamed",
       due_at: null,
+      reminder_lead_minutes: null,
     });
     expect(toPendingMutation(raw)).toEqual({
       targetType: "task",
@@ -203,6 +247,36 @@ describe("toPendingMutation", () => {
   it("maps a note delete", () => {
     const raw = mutationSchema.parse({ target_type: "note", operation: "delete", target_id: VALID_TARGET_ID, body: null });
     expect(toPendingMutation(raw)).toEqual({ targetType: "note", operation: "delete", targetId: VALID_TARGET_ID });
+  });
+
+  it("maps a task create with an explicit reminder_lead_minutes: 0", () => {
+    const raw = mutationSchema.parse({
+      target_type: "task",
+      operation: "create",
+      target_id: null,
+      title: "Submit assignment",
+      due_at: "2026-09-01T17:00:00.000Z",
+      reminder_lead_minutes: 0,
+    });
+    expect(toPendingMutation(raw)).toEqual({
+      targetType: "task",
+      operation: "create",
+      payload: { title: "Submit assignment", due_at: "2026-09-01T17:00:00.000Z", reminder_lead_minutes: 0 },
+    });
+  });
+
+  it("maps a task create with reminder_lead_minutes: null by omitting the key entirely", () => {
+    const raw = mutationSchema.parse({
+      target_type: "task",
+      operation: "create",
+      target_id: null,
+      title: "Buy milk",
+      due_at: null,
+      reminder_lead_minutes: null,
+    });
+    const mutation = toPendingMutation(raw);
+    expect(mutation).toEqual({ targetType: "task", operation: "create", payload: { title: "Buy milk", due_at: null } });
+    expect(mutation).not.toHaveProperty("payload.reminder_lead_minutes");
   });
 
   it("maps a reminder acknowledge with a snooze", () => {
@@ -220,5 +294,32 @@ describe("toPendingMutation", () => {
       event: "user_snoozes",
       snoozeUntil: "2026-09-01T00:00:00.000Z",
     });
+  });
+});
+
+describe("loadUserTimezone", () => {
+  // Minimal fake of the .from().select().eq().maybeSingle() chain
+  // resolveIntent's timezone lookup uses — not a real SupabaseClient.
+  function fakeSupabase(maybeSingleResult: { data: { timezone: string } | null }) {
+    return {
+      from: () => ({
+        select: () => ({
+          eq: () => ({
+            maybeSingle: async () => maybeSingleResult,
+          }),
+        }),
+      }),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any;
+  }
+
+  it("returns the stored timezone when a user_preferences row exists", async () => {
+    const timezone = await loadUserTimezone(fakeSupabase({ data: { timezone: "America/Chicago" } }), "user-1");
+    expect(timezone).toBe("America/Chicago");
+  });
+
+  it("falls back to UTC when no user_preferences row exists", async () => {
+    const timezone = await loadUserTimezone(fakeSupabase({ data: null }), "user-1");
+    expect(timezone).toBe("UTC");
   });
 });
