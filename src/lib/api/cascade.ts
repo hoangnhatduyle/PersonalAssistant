@@ -34,6 +34,14 @@ export interface TaskDeleteCascadeResult {
   notesUnlinked: number;
 }
 
+export interface PersonDeleteCascadeResult {
+  coursesAffected: number;
+  deadlinesAffected: number;
+  tasksAffected: number;
+  remindersDismissed: number;
+  notesUnlinked: number;
+}
+
 /**
  * SPEC-API-004 AC-7/AC-13, NC-API-008: soft-deletes a Task and, atomically,
  * clears linked_task_id on any Note referencing it. The task's own Reminder
@@ -48,4 +56,26 @@ export async function cascadeDeleteTask(
   if (error) throw error;
 
   return { notesUnlinked: data.notes_unlinked ?? 0 };
+}
+
+/**
+ * Soft-deletes a Person and, atomically, cascades to soft-delete their live
+ * Courses/Deadlines/Tasks (dismissing Reminders) and clears linked_course_id/
+ * linked_task_id on any Note referencing those (see
+ * supabase/migrations/0013_people.sql's soft_delete_person_cascade).
+ */
+export async function cascadeDeletePerson(
+  supabase: SupabaseClient<Database>,
+  personId: string,
+): Promise<PersonDeleteCascadeResult> {
+  const { data, error } = await supabase.rpc("soft_delete_person_cascade", { p_person_id: personId }).single();
+  if (error) throw error;
+
+  return {
+    coursesAffected: data.courses_affected ?? 0,
+    deadlinesAffected: data.deadlines_affected ?? 0,
+    tasksAffected: data.tasks_affected ?? 0,
+    remindersDismissed: data.reminders_dismissed ?? 0,
+    notesUnlinked: data.notes_unlinked ?? 0,
+  };
 }

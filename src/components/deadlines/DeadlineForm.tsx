@@ -5,6 +5,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { deadlinePayloadSchema, type DeadlinePayload } from "@/lib/api/schemas";
 import type { DeadlineRow } from "@/lib/api/entity-types";
 import { useCourses } from "@/hooks/useCourses";
+import { usePeople } from "@/hooks/usePeople";
 import { FormField } from "@/components/ui/FormField";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
@@ -25,10 +26,12 @@ const emptyToUndefined = (value: string) => (value === "" ? undefined : value);
 
 export function DeadlineForm({ deadline, onSubmit, onCancel, submitLabel = "Save" }: Props) {
   const { data: courses } = useCourses();
+  const { data: people } = usePeople();
   const {
     register,
     handleSubmit,
     control,
+    watch,
     formState: { errors, isSubmitting },
   } = useForm<DeadlinePayload>({
     resolver: zodResolver(deadlinePayloadSchema),
@@ -39,6 +42,15 @@ export function DeadlineForm({ deadline, onSubmit, onCancel, submitLabel = "Save
       priority: deadline?.priority ?? undefined,
     },
   });
+
+  // Read-only: a Deadline's owner is always inherited from its Course, never
+  // set directly here (see deadlinePayloadSchema / POST /api/deadlines) — this
+  // is purely informational so "For" stays visible while picking a course.
+  const selectedCourseId = watch("course_id");
+  const selectedCourse = courses?.rows.find((course) => course.id === selectedCourseId);
+  const forPersonLabel = selectedCourse?.person_id
+    ? (people?.rows.find((person) => person.id === selectedCourse.person_id)?.name ?? "…")
+    : "Me";
 
   return (
     <form onSubmit={handleSubmit(async (values) => onSubmit(values))} className="flex flex-col gap-4" noValidate>
@@ -58,6 +70,7 @@ export function DeadlineForm({ deadline, onSubmit, onCancel, submitLabel = "Save
             </option>
           ))}
         </Select>
+        {selectedCourseId && <p className="mt-1.5 text-xs text-text-secondary">For: {forPersonLabel}</p>}
       </FormField>
 
       <FormField label="Title" htmlFor="title" error={errors.title?.message}>

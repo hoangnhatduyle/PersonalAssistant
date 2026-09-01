@@ -4,8 +4,10 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { coursePayloadSchema, type CoursePayload } from "@/lib/api/schemas";
 import type { CourseRow } from "@/lib/api/entity-types";
+import { usePeople } from "@/hooks/usePeople";
 import { FormField } from "@/components/ui/FormField";
 import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { Button } from "@/components/ui/Button";
 
@@ -23,6 +25,7 @@ type Props = {
 const emptyToUndefined = (value: string) => (value === "" ? undefined : value);
 
 export function CourseForm({ course, onSubmit, onCancel, submitLabel = "Save" }: Props) {
+  const { data: people } = usePeople();
   const {
     register,
     handleSubmit,
@@ -38,6 +41,7 @@ export function CourseForm({ course, onSubmit, onCancel, submitLabel = "Save" }:
       instructor: course?.instructor ?? undefined,
       reminders_enabled: course?.reminders_enabled ?? true,
       reminder_lead_minutes: course?.reminder_lead_minutes ?? 60,
+      person_id: course?.person_id ?? undefined,
     },
   });
 
@@ -45,6 +49,17 @@ export function CourseForm({ course, onSubmit, onCancel, submitLabel = "Save" }:
     <form onSubmit={handleSubmit(async (values) => onSubmit(values))} className="flex flex-col gap-4" noValidate>
       <FormField label="Name" htmlFor="name" error={errors.name?.message}>
         <Input id="name" invalid={Boolean(errors.name)} {...register("name")} />
+      </FormField>
+
+      <FormField label="For" htmlFor="person_id" error={errors.person_id?.message}>
+        <Select id="person_id" invalid={Boolean(errors.person_id)} {...register("person_id", { setValueAs: emptyToUndefined })}>
+          <option value="">Me</option>
+          {(people?.rows ?? []).map((person) => (
+            <option key={person.id} value={person.id}>
+              {person.name}
+            </option>
+          ))}
+        </Select>
       </FormField>
 
       <div className="grid gap-4 sm:grid-cols-2">

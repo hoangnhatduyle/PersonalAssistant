@@ -53,6 +53,18 @@ export async function PATCH(request: Request, { params }: RouteParams) {
   // errors rather than no-opping — reject explicitly instead (NC-API-002/AC-2).
   if (Object.keys(parsed.data).length === 0) return validationErrorResponse("No valid fields to update");
 
+  if (parsed.data.person_id) {
+    const { data: person, error: personError } = await supabase
+      .from("people")
+      .select("id")
+      .eq("id", parsed.data.person_id)
+      .eq("user_id", user.id)
+      .is("deleted_at", null)
+      .maybeSingle();
+    if (personError) return serverErrorResponse("person lookup failed", personError);
+    if (!person) return notFoundResponse();
+  }
+
   const { data: existing, error: fetchError } = await supabase
     .from("tasks")
     .select("id")

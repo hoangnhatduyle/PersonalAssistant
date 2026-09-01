@@ -34,7 +34,10 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 /**
  * PATCH /api/courses/[id]. When reminders_enabled/reminder_lead_minutes
  * changes, every live Deadline under this Course inherits the new setting,
- * so each of their Reminders is recomputed too (SPEC-API-004 AC-8).
+ * so each of their Reminders is recomputed too (SPEC-API-004 AC-8). When
+ * person_id changes (People feature), every live Deadline under this Course
+ * inherits the Course's new owner too — a Deadline's person_id is never
+ * client-set (see deadlinePayloadSchema), so it must be kept in sync here.
  */
 export async function PATCH(request: Request, { params }: RouteParams) {
   const ctx = await requireAuthenticatedContext();
@@ -48,9 +51,21 @@ export async function PATCH(request: Request, { params }: RouteParams) {
   // empty UPDATE, which errors rather than no-opping — reject explicitly.
   if (Object.keys(parsed.data).length === 0) return validationErrorResponse("No valid fields to update");
 
+  if (parsed.data.person_id) {
+    const { data: person, error: personError } = await supabase
+      .from("people")
+      .select("id")
+      .eq("id", parsed.data.person_id)
+      .eq("user_id", user.id)
+      .is("deleted_at", null)
+      .maybeSingle();
+    if (personError) return serverErrorResponse("person lookup failed", personError);
+    if (!person) return notFoundResponse();
+  }
+
   const { data: existing, error: fetchError } = await supabase
     .from("courses")
-    .select("id, reminders_enabled, reminder_lead_minutes")
+    .select("id, reminders_enabled, reminder_lead_minutes, person_id")
     .eq("id", id)
     .eq("user_id", user.id)
     .is("deleted_at", null)
@@ -90,6 +105,16 @@ export async function PATCH(request: Request, { params }: RouteParams) {
         reminderLeadMinutes,
       });
     }
+  }
+
+  const personChanged = "person_id" in parsed.data && parsed.data.person_id !== existing.person_id;
+  if (personChanged) {
+    const { error: syncError } = await supabase
+      .from("deadlines")
+      .update({ person_id: parsed.data.person_id ?? null })
+      .eq("course_id", id)
+      .is("deleted_at", null);
+    if (syncError) return serverErrorResponse("course deadlines person sync failed", syncError);
   }
 
   return successResponse(updated);

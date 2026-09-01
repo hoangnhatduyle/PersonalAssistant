@@ -7,6 +7,7 @@ import {
   createFeedback,
   createKnowledgeChunk,
   createKnowledgeSource,
+  createPerson,
   createReminder,
   createTask,
   createUserPreferences,
@@ -31,11 +32,13 @@ describe("Row Level Security", () => {
   let knowledgeSourceAId: string;
   let knowledgeChunkAId: string;
   let userPreferencesAId: string;
+  let personAId: string;
 
   beforeAll(async () => {
     userA = await createAuthenticatedUser();
     userB = await createAuthenticatedUser();
 
+    personAId = await createPerson(admin, userA.userId, { name: "A's tracked person" });
     courseAId = await createCourse(admin, userA.userId);
     deadlineAId = await createDeadline(admin, userA.userId, courseAId);
     taskAId = await createTask(admin, userA.userId);
@@ -180,5 +183,40 @@ describe("Row Level Security", () => {
       trigger_at: new Date().toISOString(),
     });
     expect(error).not.toBeNull();
+  });
+
+  // Traces: supabase/migrations/0013_people.sql (People feature).
+  it("hides user A's person from user B", async () => {
+    const { data, error } = await userB.client.from("people").select("id").eq("id", personAId);
+    expect(error).toBeNull();
+    expect(data ?? []).toHaveLength(0);
+  });
+
+  it("rejects user B creating a course whose person_id points at user A's person", async () => {
+    const { error } = await userB.client.from("courses").insert({
+      user_id: userB.userId,
+      name: "Cross-user course",
+      person_id: personAId,
+    });
+    expect(error).not.toBeNull();
+  });
+
+  it("rejects user B creating a task whose person_id points at user A's person", async () => {
+    const { error } = await userB.client.from("tasks").insert({
+      user_id: userB.userId,
+      title: "Cross-user task",
+      person_id: personAId,
+    });
+    expect(error).not.toBeNull();
+  });
+
+  it("lets user A create a course for their own tracked person", async () => {
+    const { data, error } = await userA.client
+      .from("courses")
+      .insert({ user_id: userA.userId, name: "A's person's course", person_id: personAId })
+      .select("id, person_id")
+      .single();
+    expect(error).toBeNull();
+    expect(data?.person_id).toBe(personAId);
   });
 });

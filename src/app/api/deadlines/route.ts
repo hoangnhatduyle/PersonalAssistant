@@ -10,7 +10,11 @@ import {
   serverErrorResponse,
 } from "@/lib/api/response";
 
-/** GET /api/deadlines — list, scoped to the caller (NC-API-001/AC-4, NC-API-007). */
+/**
+ * GET /api/deadlines — list, scoped to the caller (NC-API-001/AC-4,
+ * NC-API-007). `personId` filters to one tracked Person's deadlines ("me"
+ * for the account owner's own, unfiltered when omitted — People feature).
+ */
 export async function GET(request: NextRequest) {
   const ctx = await requireAuthenticatedContext();
   if (!("supabase" in ctx)) return ctx;
@@ -31,6 +35,10 @@ export async function GET(request: NextRequest) {
   const courseId = searchParams.get("courseId");
   if (courseId) query = query.eq("course_id", courseId);
 
+  const personId = searchParams.get("personId");
+  if (personId === "me") query = query.is("person_id", null);
+  else if (personId) query = query.eq("person_id", personId);
+
   const { data, count, error } = await query;
   if (error) return serverErrorResponse("deadlines list failed", error);
 
@@ -41,7 +49,10 @@ export async function GET(request: NextRequest) {
  * POST /api/deadlines — create (SPEC-API-004 AC-1/AC-6). Reminder governance
  * (reminders_enabled/reminder_lead_minutes) is inherited from the parent
  * Course, so the Course must be looked up (and owned by the caller — AC-4)
- * before the Reminder can be scheduled.
+ * before the Reminder can be scheduled. person_id (People feature) is
+ * likewise inherited from the Course, never accepted from the client
+ * (deadlinePayloadSchema has no such field) — a Deadline's owner is always
+ * its Course's owner.
  */
 export async function POST(request: NextRequest) {
   const ctx = await requireAuthenticatedContext();
@@ -53,7 +64,7 @@ export async function POST(request: NextRequest) {
 
   const { data: course, error: courseError } = await supabase
     .from("courses")
-    .select("id, reminders_enabled, reminder_lead_minutes")
+    .select("id, reminders_enabled, reminder_lead_minutes, person_id")
     .eq("id", parsed.data.course_id)
     .eq("user_id", user.id)
     .is("deleted_at", null)
@@ -63,7 +74,7 @@ export async function POST(request: NextRequest) {
 
   const { data: deadline, error: insertError } = await supabase
     .from("deadlines")
-    .insert({ user_id: user.id, ...parsed.data })
+    .insert({ user_id: user.id, ...parsed.data, person_id: course.person_id })
     .select("*")
     .single();
   if (insertError) return serverErrorResponse("deadline create failed", insertError);

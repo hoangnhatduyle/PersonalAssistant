@@ -10,6 +10,7 @@ export type TaskRow = Database["public"]["Tables"]["tasks"]["Row"];
 export type NoteRow = Database["public"]["Tables"]["notes"]["Row"];
 export type ReminderRow = Database["public"]["Tables"]["reminders"]["Row"];
 export type FeedbackRow = Database["public"]["Tables"]["feedback"]["Row"];
+export type PersonRow = Database["public"]["Tables"]["people"]["Row"];
 
 // The knowledge list/detail routes select KNOWLEDGE_SOURCE_PUBLIC_COLUMNS,
 // not the full row (raw_content/storage_object_path are deliberately never

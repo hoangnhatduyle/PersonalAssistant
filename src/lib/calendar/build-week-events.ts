@@ -1,7 +1,7 @@
 import { parseMeetingPattern } from "@/lib/calendar/parse-meeting-pattern";
-import { isOpenDeadline } from "@/lib/dashboard/upcoming-items";
-import { DEADLINE_STATUS_TONE, type StatusTone } from "@/lib/status-colors";
-import type { CourseRow, DeadlineRow } from "@/lib/api/entity-types";
+import { isOpenDeadline, isOpenTask } from "@/lib/dashboard/upcoming-items";
+import { DEADLINE_STATUS_TONE, TASK_STATUS_TONE, type StatusTone } from "@/lib/status-colors";
+import type { CourseRow, DeadlineRow, TaskRow, PersonRow } from "@/lib/api/entity-types";
 
 export interface CalendarEvent {
   id: string;
@@ -13,6 +13,12 @@ export interface CalendarEvent {
   height: number;
   tone: StatusTone;
   href: string;
+  /** null for the account owner's own event; a People row's id otherwise (People feature). */
+  personId: string | null;
+  /** "Me" when personId is null, else that Person's name. */
+  personLabel: string;
+  /** Set only for a tracked Person's event — takes rendering priority over `tone` (see EventBlock). */
+  color?: string;
 }
 
 export interface DayColumn {
@@ -38,8 +44,9 @@ const DEFAULT_WINDOW_START = 8 * HOUR;
 const DEFAULT_WINDOW_END = 18 * HOUR;
 const MIN_WINDOW_SPAN = 8 * HOUR;
 const WINDOW_PADDING = 30;
-/** Deadlines have no duration — give the marker a fixed visual height on the grid. */
+/** Deadlines/Tasks have no duration — give their marker a fixed visual height on the grid. */
 const DEADLINE_MARKER_MINUTES = 45;
+const TASK_MARKER_MINUTES = 45;
 
 function startOfWeek(date: Date): Date {
   const start = new Date(date.getFullYear(), date.getMonth(), date.getDate());
@@ -53,16 +60,32 @@ function sameDay(a: Date, b: Date): boolean {
 
 /**
  * Composes the current week's grid from already-fetched Courses (recurring
- * blocks, parsed from meeting_pattern) and Deadlines (single-day markers on
- * due_at, only those falling within the displayed week). No `/api/calendar`
- * route exists — this is client-side composition, same pattern as the
- * Dashboard.
+ * blocks, parsed from meeting_pattern), Deadlines (single-day markers on
+ * due_at), and open Tasks with a due_at (single-day markers, same treatment
+ * as Deadlines) — only those falling within the displayed week. People
+ * (tracked schedules — see supabase/migrations/0013_people.sql) supplies the
+ * personId -> name/color lookup used to color-code and label events that
+ * belong to someone other than the account owner. No `/api/calendar` route
+ * exists — this is client-side composition, same pattern as the Dashboard.
  */
-export function buildWeekGridData(courses: CourseRow[], deadlines: DeadlineRow[], referenceDate: Date = new Date()): WeekGridData {
+export function buildWeekGridData(
+  courses: CourseRow[],
+  deadlines: DeadlineRow[],
+  tasks: TaskRow[] = [],
+  people: PersonRow[] = [],
+  referenceDate: Date = new Date(),
+): WeekGridData {
   const weekStart = startOfWeek(referenceDate);
   const weekEnd = new Date(weekStart.getTime() + 7 * 24 * 60 * 60 * 1000);
   // referenceDate doubles as "today" — there's no week-navigation yet, so
   // the displayed week and "now" are always the same instant in practice.
+
+  const personById = new Map(people.map((person) => [person.id, person]));
+  function personInfo(personId: string | null): { personId: string | null; personLabel: string; color?: string } {
+    if (!personId) return { personId: null, personLabel: "Me" };
+    const person = personById.get(personId);
+    return { personId, personLabel: person?.name ?? "Unknown", color: person?.color };
+  }
 
   const parsedCourseBlocks: Array<{ course: CourseRow; days: number[]; startMinutes: number; endMinutes: number }> = [];
   const unparsedCourses: CourseRow[] = [];
@@ -83,6 +106,12 @@ export function buildWeekGridData(courses: CourseRow[], deadlines: DeadlineRow[]
     return dueAt >= weekStart && dueAt < weekEnd;
   });
 
+  const weekTasks = tasks.filter((task) => {
+    if (!isOpenTask(task.status) || !task.due_at) return false;
+    const dueAt = new Date(task.due_at);
+    return dueAt >= weekStart && dueAt < weekEnd;
+  });
+
   let windowStart = DEFAULT_WINDOW_START;
   let windowEnd = DEFAULT_WINDOW_END;
   for (const block of parsedCourseBlocks) {
@@ -94,6 +123,12 @@ export function buildWeekGridData(courses: CourseRow[], deadlines: DeadlineRow[]
     const minutesOfDay = dueAt.getHours() * 60 + dueAt.getMinutes();
     windowStart = Math.min(windowStart, minutesOfDay);
     windowEnd = Math.max(windowEnd, minutesOfDay + DEADLINE_MARKER_MINUTES);
+  }
+  for (const task of weekTasks) {
+    const dueAt = new Date(task.due_at as string);
+    const minutesOfDay = dueAt.getHours() * 60 + dueAt.getMinutes();
+    windowStart = Math.min(windowStart, minutesOfDay);
+    windowEnd = Math.max(windowEnd, minutesOfDay + TASK_MARKER_MINUTES);
   }
   windowStart = Math.max(0, Math.floor((windowStart - WINDOW_PADDING) / HOUR) * HOUR);
   windowEnd = Math.min(24 * HOUR, Math.ceil((windowEnd + WINDOW_PADDING) / HOUR) * HOUR);
@@ -116,6 +151,7 @@ export function buildWeekGridData(courses: CourseRow[], deadlines: DeadlineRow[]
         height: ((block.endMinutes - block.startMinutes) / span) * 100,
         tone: "accent",
         href: `/courses/${block.course.id}`,
+        ...personInfo(block.course.person_id),
       });
     }
 
@@ -131,6 +167,23 @@ export function buildWeekGridData(courses: CourseRow[], deadlines: DeadlineRow[]
         height: (DEADLINE_MARKER_MINUTES / span) * 100,
         tone: DEADLINE_STATUS_TONE[deadline.status],
         href: `/deadlines/${deadline.id}`,
+        ...personInfo(deadline.person_id),
+      });
+    }
+
+    for (const task of weekTasks) {
+      const dueAt = new Date(task.due_at as string);
+      if (!sameDay(dueAt, date)) continue;
+      const minutesOfDay = dueAt.getHours() * 60 + dueAt.getMinutes();
+      events.push({
+        id: `task-${task.id}`,
+        title: task.title,
+        subtitle: "Task",
+        top: ((minutesOfDay - windowStart) / span) * 100,
+        height: (TASK_MARKER_MINUTES / span) * 100,
+        tone: TASK_STATUS_TONE[task.status],
+        href: `/tasks/${task.id}`,
+        ...personInfo(task.person_id),
       });
     }
 

@@ -44,6 +44,7 @@ export type Database = {
           location: string | null
           meeting_pattern: string | null
           name: string
+          person_id: string | null
           reminder_lead_minutes: number
           reminders_enabled: boolean
           term: string | null
@@ -59,6 +60,7 @@ export type Database = {
           location?: string | null
           meeting_pattern?: string | null
           name: string
+          person_id?: string | null
           reminder_lead_minutes?: number
           reminders_enabled?: boolean
           term?: string | null
@@ -74,6 +76,7 @@ export type Database = {
           location?: string | null
           meeting_pattern?: string | null
           name?: string
+          person_id?: string | null
           reminder_lead_minutes?: number
           reminders_enabled?: boolean
           term?: string | null
@@ -81,6 +84,20 @@ export type Database = {
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "courses_person_id_fkey"
+            columns: ["person_id"]
+            isOneToOne: false
+            referencedRelation: "active_people"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "courses_person_id_fkey"
+            columns: ["person_id"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "courses_user_id_fkey"
             columns: ["user_id"]
@@ -97,6 +114,7 @@ export type Database = {
           deleted_at: string | null
           due_at: string
           id: string
+          person_id: string | null
           priority: string | null
           status: Database["public"]["Enums"]["deadline_status"]
           title: string
@@ -109,6 +127,7 @@ export type Database = {
           deleted_at?: string | null
           due_at: string
           id?: string
+          person_id?: string | null
           priority?: string | null
           status?: Database["public"]["Enums"]["deadline_status"]
           title: string
@@ -121,6 +140,7 @@ export type Database = {
           deleted_at?: string | null
           due_at?: string
           id?: string
+          person_id?: string | null
           priority?: string | null
           status?: Database["public"]["Enums"]["deadline_status"]
           title?: string
@@ -140,6 +160,20 @@ export type Database = {
             columns: ["course_id"]
             isOneToOne: false
             referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deadlines_person_id_fkey"
+            columns: ["person_id"]
+            isOneToOne: false
+            referencedRelation: "active_people"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deadlines_person_id_fkey"
+            columns: ["person_id"]
+            isOneToOne: false
+            referencedRelation: "people"
             referencedColumns: ["id"]
           },
           {
@@ -390,6 +424,44 @@ export type Database = {
           },
         ]
       }
+      people: {
+        Row: {
+          color: string
+          created_at: string
+          deleted_at: string | null
+          id: string
+          name: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          color?: string
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          name: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          color?: string
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          name?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "people_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           created_at: string
@@ -467,6 +539,7 @@ export type Database = {
           deleted_at: string | null
           due_at: string | null
           id: string
+          person_id: string | null
           reminder_lead_minutes: number
           reminders_enabled: boolean
           status: Database["public"]["Enums"]["task_status"]
@@ -480,6 +553,7 @@ export type Database = {
           deleted_at?: string | null
           due_at?: string | null
           id?: string
+          person_id?: string | null
           reminder_lead_minutes?: number
           reminders_enabled?: boolean
           status?: Database["public"]["Enums"]["task_status"]
@@ -493,6 +567,7 @@ export type Database = {
           deleted_at?: string | null
           due_at?: string | null
           id?: string
+          person_id?: string | null
           reminder_lead_minutes?: number
           reminders_enabled?: boolean
           status?: Database["public"]["Enums"]["task_status"]
@@ -502,6 +577,20 @@ export type Database = {
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "tasks_person_id_fkey"
+            columns: ["person_id"]
+            isOneToOne: false
+            referencedRelation: "active_people"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tasks_person_id_fkey"
+            columns: ["person_id"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "tasks_user_id_fkey"
             columns: ["user_id"]
@@ -643,6 +732,7 @@ export type Database = {
           location: string | null
           meeting_pattern: string | null
           name: string | null
+          person_id: string | null
           reminder_lead_minutes: number | null
           reminders_enabled: boolean | null
           term: string | null
@@ -658,6 +748,7 @@ export type Database = {
           location?: string | null
           meeting_pattern?: string | null
           name?: string | null
+          person_id?: string | null
           reminder_lead_minutes?: number | null
           reminders_enabled?: boolean | null
           term?: string | null
@@ -673,6 +764,7 @@ export type Database = {
           location?: string | null
           meeting_pattern?: string | null
           name?: string | null
+          person_id?: string | null
           reminder_lead_minutes?: number | null
           reminders_enabled?: boolean | null
           term?: string | null
@@ -680,6 +772,20 @@ export type Database = {
           user_id?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "courses_person_id_fkey"
+            columns: ["person_id"]
+            isOneToOne: false
+            referencedRelation: "active_people"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "courses_person_id_fkey"
+            columns: ["person_id"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "courses_user_id_fkey"
             columns: ["user_id"]
@@ -696,6 +802,7 @@ export type Database = {
           deleted_at: string | null
           due_at: string | null
           id: string | null
+          person_id: string | null
           priority: string | null
           status: Database["public"]["Enums"]["deadline_status"] | null
           title: string | null
@@ -708,6 +815,7 @@ export type Database = {
           deleted_at?: string | null
           due_at?: string | null
           id?: string | null
+          person_id?: string | null
           priority?: string | null
           status?: Database["public"]["Enums"]["deadline_status"] | null
           title?: string | null
@@ -720,6 +828,7 @@ export type Database = {
           deleted_at?: string | null
           due_at?: string | null
           id?: string | null
+          person_id?: string | null
           priority?: string | null
           status?: Database["public"]["Enums"]["deadline_status"] | null
           title?: string | null
@@ -739,6 +848,20 @@ export type Database = {
             columns: ["course_id"]
             isOneToOne: false
             referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deadlines_person_id_fkey"
+            columns: ["person_id"]
+            isOneToOne: false
+            referencedRelation: "active_people"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deadlines_person_id_fkey"
+            columns: ["person_id"]
+            isOneToOne: false
+            referencedRelation: "people"
             referencedColumns: ["id"]
           },
           {
@@ -819,12 +942,51 @@ export type Database = {
           },
         ]
       }
+      active_people: {
+        Row: {
+          color: string | null
+          created_at: string | null
+          deleted_at: string | null
+          id: string | null
+          name: string | null
+          updated_at: string | null
+          user_id: string | null
+        }
+        Insert: {
+          color?: string | null
+          created_at?: string | null
+          deleted_at?: string | null
+          id?: string | null
+          name?: string | null
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          color?: string | null
+          created_at?: string | null
+          deleted_at?: string | null
+          id?: string | null
+          name?: string | null
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "people_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       active_tasks: {
         Row: {
           created_at: string | null
           deleted_at: string | null
           due_at: string | null
           id: string | null
+          person_id: string | null
           reminder_lead_minutes: number | null
           reminders_enabled: boolean | null
           status: Database["public"]["Enums"]["task_status"] | null
@@ -838,6 +1000,7 @@ export type Database = {
           deleted_at?: string | null
           due_at?: string | null
           id?: string | null
+          person_id?: string | null
           reminder_lead_minutes?: number | null
           reminders_enabled?: boolean | null
           status?: Database["public"]["Enums"]["task_status"] | null
@@ -851,6 +1014,7 @@ export type Database = {
           deleted_at?: string | null
           due_at?: string | null
           id?: string | null
+          person_id?: string | null
           reminder_lead_minutes?: number | null
           reminders_enabled?: boolean | null
           status?: Database["public"]["Enums"]["task_status"] | null
@@ -860,6 +1024,20 @@ export type Database = {
           user_id?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "tasks_person_id_fkey"
+            columns: ["person_id"]
+            isOneToOne: false
+            referencedRelation: "active_people"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tasks_person_id_fkey"
+            columns: ["person_id"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "tasks_user_id_fkey"
             columns: ["user_id"]
@@ -967,6 +1145,16 @@ export type Database = {
           deadlines_affected: number
           notes_unlinked: number
           reminders_dismissed: number
+        }[]
+      }
+      soft_delete_person_cascade: {
+        Args: { p_person_id: string }
+        Returns: {
+          courses_affected: number
+          deadlines_affected: number
+          notes_unlinked: number
+          reminders_dismissed: number
+          tasks_affected: number
         }[]
       }
       soft_delete_task_cascade: {

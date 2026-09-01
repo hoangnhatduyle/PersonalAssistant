@@ -107,6 +107,20 @@ export async function createTask(
   return data.id as string;
 }
 
+export async function createPerson(
+  admin: SupabaseClient,
+  userId: string,
+  overrides: Record<string, unknown> = {},
+): Promise<string> {
+  const { data, error } = await admin
+    .from("people")
+    .insert({ user_id: userId, name: "Test Person", ...overrides })
+    .select("id")
+    .single();
+  if (error) throw new Error(`failed to create person: ${error.message}`, { cause: error });
+  return data.id as string;
+}
+
 export async function createReminder(
   admin: SupabaseClient,
   userId: string,

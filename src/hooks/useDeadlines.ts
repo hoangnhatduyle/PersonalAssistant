@@ -10,6 +10,8 @@ export interface DeadlineListFilters {
   includeDeleted?: boolean;
   page?: number;
   limit?: number;
+  /** "me" for the account owner's own deadlines, or a People row's id (People feature). */
+  personId?: string;
 }
 
 export function useDeadlines(filters?: DeadlineListFilters) {

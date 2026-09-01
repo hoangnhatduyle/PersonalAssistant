@@ -9,6 +9,8 @@ export interface TaskListFilters {
   includeDeleted?: boolean;
   page?: number;
   limit?: number;
+  /** "me" for the account owner's own tasks, or a People row's id (People feature). */
+  personId?: string;
 }
 
 export interface TaskDeleteResult {

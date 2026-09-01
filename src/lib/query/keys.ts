@@ -18,6 +18,12 @@ export const taskKeys = {
   detail: (id: string) => [...taskKeys.all, "detail", id] as const,
 };
 
+export const peopleKeys = {
+  all: ["people"] as const,
+  list: (filters?: object) => [...peopleKeys.all, "list", filters ?? {}] as const,
+  detail: (id: string) => [...peopleKeys.all, "detail", id] as const,
+};
+
 export const noteKeys = {
   all: ["notes"] as const,
   list: (filters?: object) => [...noteKeys.all, "list", filters ?? {}] as const,

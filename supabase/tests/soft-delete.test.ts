@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from "vitest";
-import { adminClient, createAuthenticatedUser, createCourse, createTask, type TestUser } from "./helpers";
+import { adminClient, createAuthenticatedUser, createCourse, createPerson, createTask, type TestUser } from "./helpers";
 
 // Traces: SPEC-DATA-006 AC-5, AC-6, NC-DATA-005, NC-DATA-006, NC-DATA-007.
 describe("soft delete", () => {
@@ -55,6 +55,25 @@ describe("soft delete", () => {
 
     const { data: viaView } = await admin.from("active_tasks").select("id").eq("id", taskId);
     expect(viaView ?? []).toHaveLength(0);
+  });
+
+  it("NC-DATA-005: RLS has no DELETE policy on people, so a real DELETE from the owner has no effect", async () => {
+    const personId = await createPerson(admin, userId, { name: "Undeletable" });
+    await user.client.from("people").delete().eq("id", personId);
+
+    const { data } = await admin.from("people").select("id").eq("id", personId);
+    expect(data ?? []).toHaveLength(1);
+  });
+
+  it("AC-6/NC-DATA-007: the active_people view excludes soft-deleted rows", async () => {
+    const personId = await createPerson(admin, userId, { name: "To be deleted" });
+    await admin.from("people").update({ deleted_at: new Date().toISOString() }).eq("id", personId);
+
+    const { data: viaView } = await admin.from("active_people").select("id").eq("id", personId);
+    expect(viaView ?? []).toHaveLength(0);
+
+    const { data: viaTable } = await admin.from("people").select("id").eq("id", personId);
+    expect(viaTable ?? []).toHaveLength(1);
   });
 
   it("NC-DATA-006: hard-deleting a course sets linked_course_id to null on its notes", async () => {

@@ -2,6 +2,7 @@ import { VoiceCaptureToggleCard } from "@/components/settings/VoiceCaptureToggle
 import { ReminderCadenceCard } from "@/components/settings/ReminderCadenceCard";
 import { QuietHoursCard } from "@/components/settings/QuietHoursCard";
 import { EmailRemindersToggleCard } from "@/components/settings/EmailRemindersToggleCard";
+import { PeopleManagementCard } from "@/components/settings/PeopleManagementCard";
 import { KnowledgeSection } from "@/components/knowledge/KnowledgeSection";
 
 export function SettingsPageContainer() {
@@ -17,6 +18,13 @@ export function SettingsPageContainer() {
           <VoiceCaptureToggleCard />
           <EmailRemindersToggleCard />
         </div>
+      </section>
+
+      <section aria-labelledby="people-heading" className="flex flex-col gap-4">
+        <h2 id="people-heading" className="font-display text-lg font-semibold text-text-primary">
+          People
+        </h2>
+        <PeopleManagementCard />
       </section>
 
       <section aria-labelledby="knowledge-heading" className="flex flex-col gap-4">

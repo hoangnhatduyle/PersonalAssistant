@@ -64,6 +64,7 @@ export function WeekGrid({ days, hourMarks, windowStart, windowEnd }: Props) {
                 height={event.height}
                 tone={event.tone}
                 href={event.href}
+                color={event.color}
               />
             ))}
           </div>

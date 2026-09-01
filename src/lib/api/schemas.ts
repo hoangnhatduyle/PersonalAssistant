@@ -7,6 +7,13 @@ import { MAX_SPEAK_TEXT_CHARS } from "@/lib/voice/constants";
 // routes, which must never accept a `status` field (NC-API-002: state fields
 // only change through the explicit transition action route).
 
+// person_id: nullable/optional on Courses and Tasks -- null/omitted means
+// "the account owner's own item", a non-null value must reference a People
+// row the caller owns (verified by the route, and backstopped by the
+// guard_course_person_ownership/guard_task_person_ownership DB triggers in
+// supabase/migrations/0013_people.sql). Deadlines deliberately have no
+// person_id field here: a deadline's owner is always inherited from its
+// (required) course, never client-set -- see POST /api/deadlines.
 export const coursePayloadSchema = z.object({
   code: z.string().trim().min(1).optional(),
   name: z.string().trim().min(1),
@@ -16,6 +23,7 @@ export const coursePayloadSchema = z.object({
   instructor: z.string().trim().min(1).optional(),
   reminders_enabled: z.boolean().optional(),
   reminder_lead_minutes: z.number().int().nonnegative().optional(),
+  person_id: z.uuid().nullable().optional(),
 });
 export type CoursePayload = z.infer<typeof coursePayloadSchema>;
 export const coursePatchSchema = coursePayloadSchema.partial();
@@ -37,10 +45,25 @@ export const taskPayloadSchema = z.object({
   tags: z.array(z.string().trim().min(1)).optional(),
   reminders_enabled: z.boolean().optional(),
   reminder_lead_minutes: z.number().int().nonnegative().optional(),
+  person_id: z.uuid().nullable().optional(),
 });
 export type TaskPayload = z.infer<typeof taskPayloadSchema>;
 export const taskPatchSchema = taskPayloadSchema.partial();
 export type TaskPatch = z.infer<typeof taskPatchSchema>;
+
+// SPEC-CALENDAR-001-ish People: a Person tracked under the account owner's
+// own account (e.g. a family member whose schedule they maintain for
+// coordination) -- not a real second app user. color must be #RRGGBB,
+// matching the DB CHECK constraint on people.color.
+const HEX_COLOR_REGEX = /^#[0-9a-fA-F]{6}$/;
+
+export const personPayloadSchema = z.object({
+  name: z.string().trim().min(1),
+  color: z.string().regex(HEX_COLOR_REGEX, "Expected #RRGGBB hex color").optional(),
+});
+export type PersonPayload = z.infer<typeof personPayloadSchema>;
+export const personPatchSchema = personPayloadSchema.partial();
+export type PersonPatch = z.infer<typeof personPatchSchema>;
 
 export const reminderAckSchema = z.object({
   event: z.enum(["user_acknowledges", "user_dismisses", "user_snoozes"]),
