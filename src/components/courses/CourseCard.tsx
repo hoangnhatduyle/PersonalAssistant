@@ -6,14 +6,28 @@ import type { CourseRow } from "@/lib/api/entity-types";
 
 type Props = {
   course: CourseRow;
+  /** A tracked Person's name/hex color (People feature) — set only when the course isn't the account owner's own. Mirrors EventBlock's `color` prop on the calendar. */
+  personName?: string;
+  personColor?: string;
 };
 
-export function CourseCard({ course }: Props) {
+export function CourseCard({ course, personName, personColor }: Props) {
   return (
-    <GlassPanel className="flex flex-col gap-2 p-4">
-      <Link href={`/courses/${course.id}`} className="font-display text-base font-medium text-text-primary hover:underline">
-        {course.name}
-      </Link>
+    <GlassPanel
+      className={`flex flex-col gap-2 p-4 ${personColor ? "border-l-[3px]" : ""}`}
+      style={personColor ? { borderLeftColor: personColor } : undefined}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <Link href={`/courses/${course.id}`} className="font-display text-base font-medium text-text-primary hover:underline">
+          {course.name}
+        </Link>
+        {personName && (
+          <span className="flex shrink-0 items-center gap-1.5 font-mono text-[10px] uppercase tracking-wide text-text-secondary">
+            <span aria-hidden="true" className="h-2 w-2 rounded-full" style={{ backgroundColor: personColor }} />
+            {personName}
+          </span>
+        )}
+      </div>
       {(course.code || course.term) && (
         <p className="font-mono text-xs text-text-secondary">{[course.code, course.term].filter(Boolean).join(" · ")}</p>
       )}

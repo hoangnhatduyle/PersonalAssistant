@@ -1,4 +1,5 @@
 import { toneClasses } from "@/lib/status-colors";
+import { PersonLegend } from "@/components/calendar/PersonLegend";
 import type { PersonRow } from "@/lib/api/entity-types";
 
 const LEGEND_ITEMS = [
@@ -21,12 +22,7 @@ export function CalendarLegend({ people = [] }: Props) {
           {item.label}
         </span>
       ))}
-      {people.map((person) => (
-        <span key={person.id} className="flex items-center gap-1.5">
-          <span aria-hidden="true" className="h-2.5 w-2.5 rounded-full border border-white/20" style={{ backgroundColor: person.color }} />
-          {person.name}
-        </span>
-      ))}
+      <PersonLegend people={people} />
     </div>
   );
 }
