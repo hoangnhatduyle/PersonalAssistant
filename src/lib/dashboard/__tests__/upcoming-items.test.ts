@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { buildUpcomingItems, isOpenDeadline, isOpenTask } from "../upcoming-items";
+import { buildUpcomingItems, filterUpcomingItemsByTimeWindow, isOpenDeadline, isOpenTask } from "../upcoming-items";
+import type { UpcomingItem } from "../upcoming-items";
 import { makeDeadline, makeReminder, makeTask, makeTodoItem } from "./fixtures";
 
 describe("isOpenDeadline / isOpenTask", () => {
@@ -111,5 +112,47 @@ describe("buildUpcomingItems", () => {
       ],
     });
     expect(items[0].at.toISOString()).toBe("2026-01-09T00:00:00.000Z");
+  });
+});
+
+function itemAt(id: string, at: string): UpcomingItem {
+  return { id, kind: "task", title: id, at: new Date(at), href: null, urgent: false };
+}
+
+describe("filterUpcomingItemsByTimeWindow", () => {
+  const now = new Date("2026-09-01T12:00:00");
+
+  it("returns every item for the All window", () => {
+    const items = [itemAt("past", "2026-08-30T12:00:00"), itemAt("future", "2026-09-10T12:00:00")];
+    expect(filterUpcomingItemsByTimeWindow(items, "all", now).map((item) => item.id)).toEqual(["past", "future"]);
+  });
+
+  it("includes overdue and today items in Today", () => {
+    const items = [
+      itemAt("overdue", "2026-08-31T12:00:00"),
+      itemAt("today", "2026-09-01T08:00:00"),
+      itemAt("tomorrow", "2026-09-02T08:00:00"),
+    ];
+    expect(filterUpcomingItemsByTimeWindow(items, "today", now).map((item) => item.id)).toEqual(["overdue", "today"]);
+  });
+
+  it("only includes tomorrow in Tomorrow", () => {
+    const items = [itemAt("today", "2026-09-01T08:00:00"), itemAt("tomorrow", "2026-09-02T08:00:00")];
+    expect(filterUpcomingItemsByTimeWindow(items, "tomorrow", now).map((item) => item.id)).toEqual(["tomorrow"]);
+  });
+
+  it("includes the next three calendar days in 3 Days", () => {
+    const items = [
+      itemAt("overdue", "2026-08-31T12:00:00"),
+      itemAt("today", "2026-09-01T08:00:00"),
+      itemAt("day-2", "2026-09-03T08:00:00"),
+      itemAt("day-3", "2026-09-04T08:00:00"),
+    ];
+    expect(filterUpcomingItemsByTimeWindow(items, "3days", now).map((item) => item.id)).toEqual(["overdue", "today", "day-2"]);
+  });
+
+  it("includes the next seven calendar days in 7 Days", () => {
+    const items = [itemAt("today", "2026-09-01T08:00:00"), itemAt("day-7", "2026-09-08T08:00:00"), itemAt("day-8", "2026-09-09T08:00:00")];
+    expect(filterUpcomingItemsByTimeWindow(items, "7days", now).map((item) => item.id)).toEqual(["today", "day-7"]);
   });
 });

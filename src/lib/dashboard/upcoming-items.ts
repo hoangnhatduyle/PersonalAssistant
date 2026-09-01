@@ -2,6 +2,15 @@ import type { DeadlineRow, DeadlineStatus, TaskRow, TaskStatus, ReminderRow, Tod
 
 export type UpcomingItemKind = "deadline" | "task" | "reminder" | "todo";
 
+export type TimeWindowFilter = "today" | "tomorrow" | "3days" | "7days" | "all";
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function localDayOffset(itemAt: Date, now: Date): number {
+  const startOf = (date: Date) => new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+  return Math.round((startOf(itemAt) - startOf(now)) / DAY_MS);
+}
+
 export interface UpcomingItem {
   id: string;
   kind: UpcomingItemKind;
@@ -108,4 +117,25 @@ export function buildUpcomingItems({ deadlines, tasks, reminders = [], todoItems
   }
 
   return items.sort((a, b) => a.at.getTime() - b.at.getTime());
+}
+
+/** Narrows a sorted upcoming-items list to a calendar-day window relative to `now`. */
+export function filterUpcomingItemsByTimeWindow(items: UpcomingItem[], window: TimeWindowFilter, now: Date = new Date()): UpcomingItem[] {
+  if (window === "all") return items;
+
+  return items.filter((item) => {
+    const offset = localDayOffset(item.at, now);
+    switch (window) {
+      case "today":
+        return offset <= 0;
+      case "tomorrow":
+        return offset === 1;
+      case "3days":
+        return offset <= 2;
+      case "7days":
+        return offset <= 6;
+      default:
+        return true;
+    }
+  });
 }
