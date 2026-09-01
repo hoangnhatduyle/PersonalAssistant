@@ -9,25 +9,27 @@ import { Dialog } from "@/components/ui/Dialog";
 import { Button } from "@/components/ui/Button";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { useToast } from "@/components/ui/Toast";
-import { PersonFilterToggle, type PersonFilterValue } from "@/components/calendar/PersonFilterToggle";
+import {
+  PersonFilterToggle,
+  defaultPersonFilterSelection,
+  type PersonFilterSelection,
+} from "@/components/calendar/PersonFilterToggle";
 import { PersonLegend } from "@/components/calendar/PersonLegend";
 import type { CoursePayload } from "@/lib/api/schemas";
 
 export function CourseListContainer() {
   const [isCreateOpen, setCreateOpen] = useState(false);
-  // Defaults to "all" (overlaid) — matches WeekGridContainer's default so
-  // switching between Calendar and Courses doesn't reset expectations.
-  const [personFilter, setPersonFilter] = useState<PersonFilterValue>("all");
+  // null = untouched, falls back to everyone overlaid — matches
+  // WeekGridContainer's default so switching between Calendar and Courses
+  // doesn't reset expectations. Each person can be toggled independently.
+  const [personFilter, setPersonFilter] = useState<PersonFilterSelection | null>(null);
   const { data, isLoading } = useCourses();
   const { data: people, isLoading: peopleLoading } = usePeople();
   const createCourse = useCreateCourse();
   const { showToast } = useToast();
 
-  const matchesFilter = (personId: string | null) => {
-    if (personFilter === "all") return true;
-    if (personFilter === "me") return personId === null;
-    return personId === personFilter;
-  };
+  const selection = personFilter ?? defaultPersonFilterSelection(people?.rows ?? []);
+  const matchesFilter = (personId: string | null) => selection.has(personId ?? "me");
 
   const courses = (data?.rows ?? []).filter((course) => matchesFilter(course.person_id));
 
@@ -50,7 +52,7 @@ export function CourseListContainer() {
         </div>
         <div className="flex flex-wrap items-center gap-3">
           {(people?.rows.length ?? 0) > 0 && (
-            <PersonFilterToggle people={people?.rows ?? []} value={personFilter} onChange={setPersonFilter} label="courses" />
+            <PersonFilterToggle people={people?.rows ?? []} value={selection} onChange={setPersonFilter} label="courses" />
           )}
           <Button onClick={() => setCreateOpen(true)}>New course</Button>
         </div>
