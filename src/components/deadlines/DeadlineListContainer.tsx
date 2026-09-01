@@ -48,7 +48,9 @@ export function DeadlineListContainer() {
               </option>
             ))}
           </Select>
-          <Button onClick={() => setCreateOpen(true)}>New deadline</Button>
+          <Button onClick={() => setCreateOpen(true)} className="shrink-0 whitespace-nowrap">
+            New deadline
+          </Button>
         </div>
       </div>
 
