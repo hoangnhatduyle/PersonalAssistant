@@ -78,7 +78,7 @@ export function EventBlock({
         ...(color ? { backgroundColor: `${color}26`, borderColor: `${color}66`, color } : {}),
       }}
     >
-      <div className="flex h-full flex-col justify-between gap-0.5">
+      <div className="flex h-full flex-col justify-start gap-0.5 py-0.5">
         <div className="flex items-start justify-between gap-1">
           <p className="line-clamp-1 text-xs font-medium leading-tight">{title}</p>
           {stackSize > 1 && !isElevated && stackIndex === stackSize - 1 && (
