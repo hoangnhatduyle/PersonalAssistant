@@ -12,6 +12,7 @@ import { formatCascadeDisclosure, previewCourseDeleteCascade } from "@/lib/voice
 import { executePendingMutation, type MutationExecutionResult, type PendingMutation } from "@/lib/voice/mutations";
 import type { ResolveIntentFn, ResolvedIntent } from "@/lib/voice/intent";
 import { runKnowledgeLookup, type KnowledgeCitation, type KnowledgeLookupFn } from "@/lib/knowledge/retrieval";
+import { runSuggestionsLookup, type SuggestionsLookupFn } from "@/lib/voice/suggestions-lookup";
 
 export class VoiceSessionNotFoundError extends Error {}
 export class VoiceSessionInvalidStateError extends Error {}
@@ -27,6 +28,8 @@ export interface VoiceTurnDeps {
   resolveIntent: ResolveIntentFn;
   /** Defaults to src/lib/knowledge/retrieval.ts's runKnowledgeLookup when omitted. */
   knowledgeLookup?: KnowledgeLookupFn;
+  /** Defaults to src/lib/voice/suggestions-lookup.ts's runSuggestionsLookup when omitted. */
+  suggestionsLookup?: SuggestionsLookupFn;
 }
 
 export type VoiceTurnInput = { audio: Buffer; mimetype?: string } | { transcript: string };
@@ -40,6 +43,8 @@ export interface VoiceTurnResult {
   /** SPEC-API-008 VoiceTurnResult (extended): set only for a knowledge_lookup response. */
   citations?: KnowledgeCitation[];
   extractionLabel?: "machine_extracted";
+  /** Set only for a personalization_suggestions response — tells the client to kick off the review-aloud loop (src/hooks/useReviewSuggestionsAloud.ts) once this message has been spoken. */
+  queryKind?: "personalization_suggestions";
 }
 
 /**
@@ -178,7 +183,10 @@ export async function intakeVoiceTurn(
   // report `executed: true` with the LLM's own unverified prose as `data`
   // for any read-only intent other than "upcoming_schedule".
   const unsupportedReadOnlyQuery =
-    intent.readOnly && intent.queryKind !== "upcoming_schedule" && intent.queryKind !== "knowledge_lookup";
+    intent.readOnly &&
+    intent.queryKind !== "upcoming_schedule" &&
+    intent.queryKind !== "knowledge_lookup" &&
+    intent.queryKind !== "personalization_suggestions";
   if (!meetsConfidenceBar(intent.confidence) || unsupportedReadOnlyQuery) {
     await transition(supabase, userId, sessionId, "Transcribing", "intent_ambiguous_or_low_confidence", {
       resolved_intent: intent.summary,
@@ -221,6 +229,22 @@ export async function intakeVoiceTurn(
           data: result.message,
           citations: result.citations,
           ...(result.extractionLabel ? { extractionLabel: result.extractionLabel } : {}),
+        };
+      }
+
+      if (intent.queryKind === "personalization_suggestions") {
+        const lookup = deps.suggestionsLookup ?? runSuggestionsLookup;
+        const result = await lookup(supabase, userId);
+        await transition(supabase, userId, sessionId, "Executing", "execution_completed", {
+          ended_at: new Date().toISOString(),
+        });
+        return {
+          sessionId,
+          state: "Responding",
+          message: result.message,
+          executed: true,
+          data: result.message,
+          queryKind: "personalization_suggestions",
         };
       }
 

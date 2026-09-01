@@ -21,19 +21,21 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
   return (
     <VoiceCaptureProvider>
       <div className="flex min-h-screen">
-        <IconRail />
-        <div className="flex flex-1 flex-col">
+        <IconRail email={user.email ?? ""} />
+        <div className="flex min-w-0 flex-1 flex-col">
           <header className="flex items-center justify-between border-b border-panel-border bg-bg-void-elevated py-3 pl-16 pr-6 md:px-6">
             <div className="flex items-center gap-2">
               <span className="h-2 w-2 rounded-full bg-status-ok" aria-hidden="true" />
-              <span className="font-mono text-xs uppercase tracking-wide text-text-eyebrow">Signed in as {user.email}</span>
+              <span className="hidden font-mono text-xs uppercase tracking-wide text-text-eyebrow md:inline">
+                Signed in as {user.email}
+              </span>
             </div>
             <div className="flex items-center gap-3">
               <CaptureQuickAction />
               <SignOutButton />
             </div>
           </header>
-          <main className="flex-1 px-6 py-6">{children}</main>
+          <main className="min-w-0 flex-1 px-6 py-6">{children}</main>
         </div>
       </div>
     </VoiceCaptureProvider>

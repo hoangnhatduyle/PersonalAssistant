@@ -3,6 +3,7 @@ import { intakeVoiceTurn } from "@/lib/voice/session";
 import { transcribeAudio } from "@/lib/voice/deepgram";
 import { resolveIntent } from "@/lib/voice/intent";
 import { runKnowledgeLookup } from "@/lib/knowledge/retrieval";
+import { runSuggestionsLookup } from "@/lib/voice/suggestions-lookup";
 import { successResponse, validationErrorResponse, serverErrorResponse } from "@/lib/api/response";
 
 /**
@@ -36,6 +37,7 @@ export async function POST(request: Request) {
       transcribe: transcribeAudio,
       resolveIntent,
       knowledgeLookup: runKnowledgeLookup,
+      suggestionsLookup: runSuggestionsLookup,
     });
     return successResponse(turn, { status: 201 });
   } catch (error) {

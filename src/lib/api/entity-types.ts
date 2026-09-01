@@ -50,6 +50,10 @@ export interface UserPreferences {
   voice_capture_enabled: boolean;
   /** Whether a Delivered reminder also triggers an email, in addition to in-app. */
   email_reminders_enabled: boolean;
+  /** Re-arms the mic after any voice-originated response instead of requiring a tap for every turn. */
+  hands_free_voice_enabled: boolean;
+  /** The sole deliberate exception to "only speak back when the input was voice" — lets a button-tap on the Suggestions panel also trigger a spoken review-and-confirm loop. */
+  speak_suggestions_aloud: boolean;
   updated_at: string | null;
 }
 
@@ -69,9 +73,14 @@ export const DEFAULT_USER_PREFERENCES: UserPreferences = {
   timezone: "UTC",
   voice_capture_enabled: true,
   email_reminders_enabled: true,
+  hands_free_voice_enabled: false,
+  speak_suggestions_aloud: false,
   updated_at: null,
 };
 
 export type DeadlineStatus = Database["public"]["Enums"]["deadline_status"];
 export type TaskStatus = Database["public"]["Enums"]["task_status"];
 export type ReminderStatus = Database["public"]["Enums"]["reminder_status"];
+
+export type PersonalizationSuggestionRow = Database["public"]["Tables"]["personalization_suggestions"]["Row"];
+export type PersonalizationSuggestionStatus = Database["public"]["Enums"]["personalization_suggestion_status"];

@@ -6,15 +6,28 @@ import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
 import { useVoiceCapture, type VoiceTurnOrigin } from "@/components/assistant/VoiceCaptureProvider";
 import { useConfirmVoiceTurn, useDeclineVoiceTurn } from "@/hooks/useVoiceTurn";
+import { useAutoStopRecorder } from "@/hooks/useAutoStopRecorder";
+import { apiFetch } from "@/lib/http/client";
+import { classifyYesNo } from "@/lib/voice/yes-no";
 import { CONFIRMATION_WINDOW_MINUTES } from "@/lib/voice/transitions";
+import { CONFIRM_MAX_DURATION_MS, CONFIRM_SILENCE_MS } from "@/lib/voice/constants";
+import type { VoiceTranscribeResponse } from "@/app/api/voice/transcribe/route";
 
 type Props = {
   sessionId: string;
   message: string;
   receivedAt: number;
   origin: VoiceTurnOrigin;
-  /** Called with the Confirm/Decline outcome's message when origin === "voice". Owned by the parent CaptureChannel (its single useSpeakVoiceResponse instance) — see that file for why. */
-  onSpeak: (text: string) => void;
+  /**
+   * Speaks the Confirm/Decline outcome's message when origin === "voice",
+   * awaiting full playback before resolving. Owned by the parent
+   * CaptureChannel (its single useSpeakVoiceResponse instance, and the one
+   * place that decides what happens after any spoken message finishes —
+   * see that file).
+   */
+  onSpoken: (text: string) => Promise<void>;
+  /** True once CaptureChannel has finished speaking the confirmation prompt for a voice-originated turn — the earliest moment it's safe to start listening for a spoken yes/no without talking over itself. */
+  readyToListen: boolean;
 };
 
 const WINDOW_MS = CONFIRMATION_WINDOW_MINUTES * 60_000;
@@ -33,7 +46,7 @@ function formatCountdown(remainingMs: number): string {
  * the window already expired server-side surfaces that error via toast and
  * resets to idle, rather than the client unilaterally deciding it's expired.
  */
-export function ConfirmationBar({ sessionId, message, receivedAt, origin, onSpeak }: Props) {
+export function ConfirmationBar({ sessionId, message, receivedAt, origin, onSpoken, readyToListen }: Props) {
   const { applyTurnResult, reset } = useVoiceCapture();
   const { showToast } = useToast();
   const confirmTurn = useConfirmVoiceTurn();
@@ -58,7 +71,7 @@ export function ConfirmationBar({ sessionId, message, receivedAt, origin, onSpea
         : "";
       const responseMessage = `${result.summary}${cascadeSuffix}`;
       applyTurnResult({ sessionId, state: "Responding", message: responseMessage }, origin);
-      if (origin === "voice") onSpeak(responseMessage);
+      if (origin === "voice") void onSpoken(responseMessage);
     } catch (error) {
       handleFailure(error);
     }
@@ -68,17 +81,52 @@ export function ConfirmationBar({ sessionId, message, receivedAt, origin, onSpea
     try {
       const declined = await declineTurn.mutateAsync(sessionId);
       applyTurnResult({ sessionId, state: "Responding", message: declined.message }, origin);
-      if (origin === "voice") onSpeak(declined.message);
+      if (origin === "voice") void onSpoken(declined.message);
     } catch (error) {
       handleFailure(error);
     }
   };
+
+  // Spoken yes/no: no LLM call, no retry-prompt loop for v1 — an
+  // unrecognized or absent answer just leaves the Confirm/Decline buttons
+  // tappable, same as if this effect never ran.
+  const { status: listenStatus, start: startListening } = useAutoStopRecorder(
+    async (blob) => {
+      try {
+        const { data } = await apiFetch<VoiceTranscribeResponse>("/api/voice/transcribe", {
+          method: "POST",
+          body: blob,
+          headers: { "Content-Type": blob.type },
+        });
+        const answer = classifyYesNo(data.transcript);
+        if (answer === "yes") void handleConfirm();
+        else if (answer === "no") void handleDecline();
+      } catch {
+        // Silent — this is a background convenience listen, not a user-initiated action; buttons remain available.
+      }
+    },
+    { silenceMs: CONFIRM_SILENCE_MS, maxDurationMs: CONFIRM_MAX_DURATION_MS },
+  );
+
+  useEffect(() => {
+    if (!readyToListen) return;
+    void startListening().catch(() => {
+      // Mic unavailable/denied — no toast here (background convenience listen); buttons remain available.
+    });
+    // Only re-run when readyToListen flips true for a fresh prompt; startListening's identity is stable across the options object it closes over.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [readyToListen]);
 
   const hasExpired = remainingMs <= 0;
 
   return (
     <GlassPanel variant="glow-warn" className="flex flex-col gap-3 p-4">
       <p className="text-sm text-text-primary">{message}</p>
+      {listenStatus === "listening" && (
+        <p className="font-mono text-xs text-accent-teal" role="status">
+          Listening for yes or no…
+        </p>
+      )}
       <div className="flex items-center justify-between gap-3">
         <span className="font-mono text-xs text-text-secondary">
           {hasExpired ? "Confirmation window expired" : `Expires in ${formatCountdown(remainingMs)}`}

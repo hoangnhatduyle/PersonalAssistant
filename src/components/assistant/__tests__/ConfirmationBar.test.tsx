@@ -17,11 +17,18 @@ vi.mock("@/hooks/useVoiceTurn", () => ({
   useDeclineVoiceTurn: () => ({ mutateAsync: declineMutateAsync, isPending: false }),
 }));
 
-const onSpeak = vi.fn();
+const onSpoken = vi.fn().mockResolvedValue(undefined);
 
 function renderBar(origin: "voice" | "text" = "text") {
   return renderWithProviders(
-    <ConfirmationBar sessionId="session-1" message="Delete Calc 101?" receivedAt={Date.now()} origin={origin} onSpeak={onSpeak} />,
+    <ConfirmationBar
+      sessionId="session-1"
+      message="Delete Calc 101?"
+      receivedAt={Date.now()}
+      origin={origin}
+      onSpoken={onSpoken}
+      readyToListen={false}
+    />,
   );
 }
 
@@ -31,7 +38,7 @@ describe("ConfirmationBar", () => {
     reset.mockClear();
     confirmMutateAsync.mockReset();
     declineMutateAsync.mockReset();
-    onSpeak.mockClear();
+    onSpoken.mockClear();
   });
 
   afterEach(() => {
@@ -113,7 +120,7 @@ describe("ConfirmationBar", () => {
 
   // Traces: SPEC-API-010 AC-6, AC-7, NC-API-SPEAK-007.
   describe("voice-originated origin propagation", () => {
-    it("propagates origin \"voice\" to applyTurnResult and calls onSpeak with the confirm result", async () => {
+    it("propagates origin \"voice\" to applyTurnResult and calls onSpoken with the confirm result", async () => {
       confirmMutateAsync.mockResolvedValue({
         session_id: "session-1",
         executed: true,
@@ -128,10 +135,10 @@ describe("ConfirmationBar", () => {
         { sessionId: "session-1", state: "Responding", message: "Deleted the course." },
         "voice",
       );
-      expect(onSpeak).toHaveBeenCalledWith("Deleted the course.");
+      expect(onSpoken).toHaveBeenCalledWith("Deleted the course.");
     });
 
-    it("propagates origin \"voice\" to applyTurnResult and calls onSpeak with the decline result", async () => {
+    it("propagates origin \"voice\" to applyTurnResult and calls onSpoken with the decline result", async () => {
       declineMutateAsync.mockResolvedValue({ session_id: "session-1", executed: false, message: "Okay, I won't do that." });
       renderBar("voice");
 
@@ -142,17 +149,17 @@ describe("ConfirmationBar", () => {
         { sessionId: "session-1", state: "Responding", message: "Okay, I won't do that." },
         "voice",
       );
-      expect(onSpeak).toHaveBeenCalledWith("Okay, I won't do that.");
+      expect(onSpoken).toHaveBeenCalledWith("Okay, I won't do that.");
     });
   });
 
-  it("does not call onSpeak when origin is \"text\"", async () => {
+  it("does not call onSpoken when origin is \"text\"", async () => {
     declineMutateAsync.mockResolvedValue({ session_id: "session-1", executed: false, message: "Okay, I won't do that." });
     renderBar("text");
 
     fireEvent.click(screen.getByRole("button", { name: "Decline" }));
 
     await waitFor(() => expect(applyTurnResult).toHaveBeenCalled());
-    expect(onSpeak).not.toHaveBeenCalled();
+    expect(onSpoken).not.toHaveBeenCalled();
   });
 });

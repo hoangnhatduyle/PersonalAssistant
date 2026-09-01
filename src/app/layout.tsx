@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Space_Grotesk, IBM_Plex_Sans } from "next/font/google";
 import "./globals.css";
 import { Providers } from "./providers";
+import { ServiceWorkerRegister } from "./service-worker-register";
 
 // Named *-raw: globals.css's @theme inline maps these to Tailwind's
 // --font-display/--font-sans utility vars — same names would self-reference.
@@ -38,6 +39,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       className={`${spaceGrotesk.variable} ${ibmPlexSans.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col bg-bg-void text-text-primary">
+        <ServiceWorkerRegister />
         <Providers>{children}</Providers>
       </body>
     </html>

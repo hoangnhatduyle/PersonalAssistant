@@ -154,6 +154,7 @@ export async function DELETE(_request: Request, { params }: RouteParams) {
         remindersDismissed: cascade.remindersDismissed,
         notesUnlinked: cascade.notesUnlinked,
         todoItemsDeleted: cascade.todoItemsAffected,
+        suggestionsDismissed: cascade.suggestionsDismissed,
       },
     });
   } catch (error) {

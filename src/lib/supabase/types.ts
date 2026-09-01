@@ -473,6 +473,62 @@ export type Database = {
           },
         ]
       }
+      personalization_suggestions: {
+        Row: {
+          applied_at: string | null
+          created_at: string
+          dismissed_at: string | null
+          field: string
+          from_value: number
+          id: string
+          rationale: string
+          scope: string
+          source_feedback_ids: string[]
+          status: Database["public"]["Enums"]["personalization_suggestion_status"]
+          target_id: string
+          to_value: number
+          user_id: string
+        }
+        Insert: {
+          applied_at?: string | null
+          created_at?: string
+          dismissed_at?: string | null
+          field?: string
+          from_value: number
+          id?: string
+          rationale: string
+          scope: string
+          source_feedback_ids: string[]
+          status?: Database["public"]["Enums"]["personalization_suggestion_status"]
+          target_id: string
+          to_value: number
+          user_id: string
+        }
+        Update: {
+          applied_at?: string | null
+          created_at?: string
+          dismissed_at?: string | null
+          field?: string
+          from_value?: number
+          id?: string
+          rationale?: string
+          scope?: string
+          source_feedback_ids?: string[]
+          status?: Database["public"]["Enums"]["personalization_suggestion_status"]
+          target_id?: string
+          to_value?: number
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "personalization_suggestions_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           created_at: string
@@ -732,9 +788,11 @@ export type Database = {
           created_at: string
           default_reminder_lead_minutes: number
           email_reminders_enabled: boolean
+          hands_free_voice_enabled: boolean
           id: string
           quiet_hours_end: string | null
           quiet_hours_start: string | null
+          speak_suggestions_aloud: boolean
           timezone: string
           updated_at: string
           user_id: string
@@ -744,9 +802,11 @@ export type Database = {
           created_at?: string
           default_reminder_lead_minutes?: number
           email_reminders_enabled?: boolean
+          hands_free_voice_enabled?: boolean
           id?: string
           quiet_hours_end?: string | null
           quiet_hours_start?: string | null
+          speak_suggestions_aloud?: boolean
           timezone?: string
           updated_at?: string
           user_id: string
@@ -756,9 +816,11 @@ export type Database = {
           created_at?: string
           default_reminder_lead_minutes?: number
           email_reminders_enabled?: boolean
+          hands_free_voice_enabled?: boolean
           id?: string
           quiet_hours_end?: string | null
           quiet_hours_start?: string | null
+          speak_suggestions_aloud?: boolean
           timezone?: string
           updated_at?: string
           user_id?: string
@@ -1362,6 +1424,7 @@ export type Database = {
           deadlines_affected: number
           notes_unlinked: number
           reminders_dismissed: number
+          suggestions_dismissed: number
           todo_items_affected: number
         }[]
       }
@@ -1379,6 +1442,7 @@ export type Database = {
         Args: { p_task_id: string }
         Returns: {
           notes_unlinked: number
+          suggestions_dismissed: number
         }[]
       }
       soft_delete_todo_list_cascade: {
@@ -1403,6 +1467,7 @@ export type Database = {
         | "Cancelled"
       knowledge_source_status: "Pending" | "Processing" | "Ready" | "Failed"
       knowledge_source_type: "url" | "pasted_text" | "image" | "video" | "audio"
+      personalization_suggestion_status: "pending" | "applied" | "dismissed"
       reminder_status:
         | "Scheduled"
         | "Delivered"
@@ -1560,6 +1625,7 @@ export const Constants = {
       ],
       knowledge_source_status: ["Pending", "Processing", "Ready", "Failed"],
       knowledge_source_type: ["url", "pasted_text", "image", "video", "audio"],
+      personalization_suggestion_status: ["pending", "applied", "dismissed"],
       reminder_status: [
         "Scheduled",
         "Delivered",

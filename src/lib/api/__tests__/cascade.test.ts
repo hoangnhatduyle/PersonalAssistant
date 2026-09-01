@@ -35,7 +35,13 @@ describe("cascadeDeleteCourse", () => {
 
     const result = await cascadeDeleteCourse(user.client, courseId);
 
-    expect(result).toEqual({ deadlinesAffected: 2, remindersDismissed: 2, notesUnlinked: 1 });
+    expect(result).toEqual({
+      deadlinesAffected: 2,
+      remindersDismissed: 2,
+      notesUnlinked: 1,
+      todoItemsAffected: 0,
+      suggestionsDismissed: 0,
+    });
 
     const { data: course } = await admin.from("courses").select("deleted_at").eq("id", courseId).single();
     expect(course?.deleted_at).not.toBeNull();
@@ -64,7 +70,13 @@ describe("cascadeDeleteCourse", () => {
     const otherCourseId = await createCourse(admin, otherUser!.user!.id, { name: "Not yours" });
 
     const result = await cascadeDeleteCourse(user.client, otherCourseId);
-    expect(result).toEqual({ deadlinesAffected: 0, remindersDismissed: 0, notesUnlinked: 0 });
+    expect(result).toEqual({
+      deadlinesAffected: 0,
+      remindersDismissed: 0,
+      notesUnlinked: 0,
+      todoItemsAffected: 0,
+      suggestionsDismissed: 0,
+    });
 
     const { data: course } = await admin.from("courses").select("deleted_at").eq("id", otherCourseId).single();
     expect(course?.deleted_at).toBeNull();
@@ -90,7 +102,7 @@ describe("cascadeDeleteTask", () => {
       .single();
 
     const result = await cascadeDeleteTask(user.client, taskId);
-    expect(result).toEqual({ notesUnlinked: 1 });
+    expect(result).toEqual({ notesUnlinked: 1, suggestionsDismissed: 0 });
 
     const { data: task } = await admin.from("tasks").select("deleted_at").eq("id", taskId).single();
     expect(task?.deleted_at).not.toBeNull();

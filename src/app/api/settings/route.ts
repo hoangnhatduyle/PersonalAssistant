@@ -4,7 +4,7 @@ import { successResponse, validationErrorResponse, serverErrorResponse } from "@
 import { DEFAULT_USER_PREFERENCES, type UserPreferences } from "@/lib/api/entity-types";
 
 const USER_PREFERENCES_PUBLIC_COLUMNS =
-  "default_reminder_lead_minutes, quiet_hours_start, quiet_hours_end, timezone, voice_capture_enabled, email_reminders_enabled, updated_at";
+  "default_reminder_lead_minutes, quiet_hours_start, quiet_hours_end, timezone, voice_capture_enabled, email_reminders_enabled, hands_free_voice_enabled, speak_suggestions_aloud, updated_at";
 
 /** GET /api/settings — SPEC-API-009 AC-1: column defaults (updated_at: null) when no row has ever been saved; never creates one. */
 export async function GET() {

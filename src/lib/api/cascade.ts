@@ -6,6 +6,7 @@ export interface CourseDeleteCascadeResult {
   remindersDismissed: number;
   notesUnlinked: number;
   todoItemsAffected: number;
+  suggestionsDismissed: number;
 }
 
 /**
@@ -29,11 +30,13 @@ export async function cascadeDeleteCourse(
     remindersDismissed: data.reminders_dismissed ?? 0,
     notesUnlinked: data.notes_unlinked ?? 0,
     todoItemsAffected: data.todo_items_affected ?? 0,
+    suggestionsDismissed: data.suggestions_dismissed ?? 0,
   };
 }
 
 export interface TaskDeleteCascadeResult {
   notesUnlinked: number;
+  suggestionsDismissed: number;
 }
 
 export interface TodoListDeleteCascadeResult {
@@ -75,7 +78,7 @@ export async function cascadeDeleteTask(
   const { data, error } = await supabase.rpc("soft_delete_task_cascade", { p_task_id: taskId }).single();
   if (error) throw error;
 
-  return { notesUnlinked: data.notes_unlinked ?? 0 };
+  return { notesUnlinked: data.notes_unlinked ?? 0, suggestionsDismissed: data.suggestions_dismissed ?? 0 };
 }
 
 /**

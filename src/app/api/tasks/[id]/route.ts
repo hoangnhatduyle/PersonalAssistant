@@ -126,7 +126,10 @@ export async function DELETE(_request: Request, { params }: RouteParams) {
 
   try {
     const cascade = await cascadeDeleteTask(supabase, id);
-    return successResponse({ id, cascade: { notesUnlinked: cascade.notesUnlinked } });
+    return successResponse({
+      id,
+      cascade: { notesUnlinked: cascade.notesUnlinked, suggestionsDismissed: cascade.suggestionsDismissed },
+    });
   } catch (error) {
     return serverErrorResponse("task delete failed", error);
   }

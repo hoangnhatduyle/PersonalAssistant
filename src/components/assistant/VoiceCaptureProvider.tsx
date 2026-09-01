@@ -22,6 +22,7 @@ export type VoiceCaptureState =
       message: string;
       citations?: VoiceTurnResult["citations"];
       extractionLabel?: VoiceTurnResult["extractionLabel"];
+      queryKind?: VoiceTurnResult["queryKind"];
       origin: VoiceTurnOrigin;
     };
 
@@ -32,6 +33,7 @@ type VoiceCaptureAction =
       message: string;
       citations?: VoiceTurnResult["citations"];
       extractionLabel?: VoiceTurnResult["extractionLabel"];
+      queryKind?: VoiceTurnResult["queryKind"];
       origin: VoiceTurnOrigin;
     }
   | { type: "reset" };
@@ -52,6 +54,7 @@ function voiceCaptureReducer(_state: VoiceCaptureState, action: VoiceCaptureActi
         message: action.message,
         citations: action.citations,
         extractionLabel: action.extractionLabel,
+        queryKind: action.queryKind,
         origin: action.origin,
       };
     case "reset":
@@ -83,6 +86,7 @@ export function VoiceCaptureProvider({ children }: { children: ReactNode }) {
       message: result.message,
       citations: result.citations,
       extractionLabel: result.extractionLabel,
+      queryKind: result.queryKind,
       origin,
     });
   }, []);

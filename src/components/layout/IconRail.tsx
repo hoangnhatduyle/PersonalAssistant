@@ -10,6 +10,11 @@ type NavItem = {
   icon: ReactNode;
 };
 
+type Props = {
+  /** Shown in the mobile drawer only — the header hides it below md to avoid crowding. */
+  email: string;
+};
+
 // Small hand-rolled stroke icons (no icon library dependency for 7 glyphs).
 const icons = {
   today: (
@@ -72,7 +77,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/settings", label: "Settings", icon: icons.settings },
 ];
 
-export function IconRail() {
+export function IconRail({ email }: Props) {
   const pathname = usePathname();
   const [isMobileOpen, setIsMobileOpen] = useState(false);
 
@@ -122,6 +127,10 @@ export function IconRail() {
               <path d="M6 6l12 12M18 6 6 18" strokeLinecap="round" />
             </svg>
           </button>
+        </div>
+        <div className="mb-2 flex items-center gap-2 border-b border-panel-border px-2 pb-3 md:hidden">
+          <span className="h-2 w-2 shrink-0 rounded-full bg-status-ok" aria-hidden="true" />
+          <span className="truncate font-mono text-xs uppercase tracking-wide text-text-eyebrow">Signed in as {email}</span>
         </div>
         {NAV_ITEMS.map((item) => {
           // Segment boundary, not a bare prefix — a future sibling route like

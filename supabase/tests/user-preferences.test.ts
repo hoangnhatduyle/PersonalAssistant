@@ -13,7 +13,7 @@ describe("user_preferences schema", () => {
     const { data, error } = await admin
       .from("user_preferences")
       .select(
-        "default_reminder_lead_minutes, quiet_hours_start, quiet_hours_end, timezone, voice_capture_enabled, email_reminders_enabled",
+        "default_reminder_lead_minutes, quiet_hours_start, quiet_hours_end, timezone, voice_capture_enabled, email_reminders_enabled, hands_free_voice_enabled, speak_suggestions_aloud",
       )
       .eq("id", id)
       .single();
@@ -25,6 +25,8 @@ describe("user_preferences schema", () => {
       timezone: "UTC",
       voice_capture_enabled: true,
       email_reminders_enabled: true,
+      hands_free_voice_enabled: false,
+      speak_suggestions_aloud: false,
     });
   });
 
@@ -39,7 +41,7 @@ describe("user_preferences schema", () => {
     const { data, error } = await admin
       .from("user_preferences")
       .select(
-        "default_reminder_lead_minutes, quiet_hours_start, quiet_hours_end, timezone, voice_capture_enabled, email_reminders_enabled",
+        "default_reminder_lead_minutes, quiet_hours_start, quiet_hours_end, timezone, voice_capture_enabled, email_reminders_enabled, hands_free_voice_enabled, speak_suggestions_aloud",
       )
       .eq("id", id)
       .single();
@@ -51,6 +53,8 @@ describe("user_preferences schema", () => {
       timezone: DEFAULT_USER_PREFERENCES.timezone,
       voice_capture_enabled: DEFAULT_USER_PREFERENCES.voice_capture_enabled,
       email_reminders_enabled: DEFAULT_USER_PREFERENCES.email_reminders_enabled,
+      hands_free_voice_enabled: DEFAULT_USER_PREFERENCES.hands_free_voice_enabled,
+      speak_suggestions_aloud: DEFAULT_USER_PREFERENCES.speak_suggestions_aloud,
     });
   });
 

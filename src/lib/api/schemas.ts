@@ -227,6 +227,8 @@ export const userPreferencesPatchSchema = z
     timezone: z.string().refine(isValidTimeZone, "Not a recognized IANA time zone name"),
     voice_capture_enabled: z.boolean(),
     email_reminders_enabled: z.boolean(),
+    hands_free_voice_enabled: z.boolean(),
+    speak_suggestions_aloud: z.boolean(),
   })
   .partial()
   .superRefine((value, ctx) => {

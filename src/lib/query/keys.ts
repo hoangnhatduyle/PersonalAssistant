@@ -61,3 +61,8 @@ export const knowledgeKeys = {
 export const settingsKeys = {
   all: ["settings"] as const,
 };
+
+export const personalizationSuggestionKeys = {
+  all: ["personalization-suggestions"] as const,
+  list: (filters?: object) => [...personalizationSuggestionKeys.all, "list", filters ?? {}] as const,
+};

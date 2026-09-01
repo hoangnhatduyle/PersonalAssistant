@@ -8,6 +8,7 @@ import { NowWidget } from "@/components/dashboard/NowWidget";
 import { MomentumCard } from "@/components/dashboard/MomentumCard";
 import { NextSequenceQueue } from "@/components/dashboard/NextSequenceQueue";
 import { SuggestionBanner } from "@/components/dashboard/SuggestionBanner";
+import { PersonalizationSuggestionsPanel } from "@/components/dashboard/PersonalizationSuggestionsPanel";
 import { Skeleton } from "@/components/ui/Skeleton";
 
 /** No /api/dashboard route exists — composes already-fetched entity hooks client-side. */
@@ -36,6 +37,7 @@ export function DashboardContainer() {
       ) : (
         <>
           <SuggestionBanner deadlines={deadlines?.rows ?? []} tasks={tasks?.rows ?? []} />
+          <PersonalizationSuggestionsPanel />
 
           <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
             <div className="flex flex-col gap-6">

@@ -181,6 +181,18 @@ describe("llmResponseSchema", () => {
     expect(result.success).toBe(true);
   });
 
+  // Third supported read-only query_kind, added alongside upcoming_schedule/knowledge_lookup.
+  it("accepts a well-formed personalization_suggestions response", () => {
+    const result = llmResponseSchema.safeParse({
+      confidence: 0.98,
+      read_only: true,
+      summary: "check for suggestions",
+      query_kind: "personalization_suggestions",
+      mutation: null,
+    });
+    expect(result.success).toBe(true);
+  });
+
   it("rejects an unrecognized query_kind", () => {
     const result = llmResponseSchema.safeParse({
       confidence: 0.98,

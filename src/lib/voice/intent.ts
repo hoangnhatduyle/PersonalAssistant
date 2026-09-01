@@ -10,7 +10,7 @@ export interface ResolvedIntent {
   readOnly: boolean;
   /** Short human-readable description of the resolved action, spoken/shown back to the user. */
   summary: string;
-  queryKind?: "upcoming_schedule" | "knowledge_lookup";
+  queryKind?: "upcoming_schedule" | "knowledge_lookup" | "personalization_suggestions";
   mutation?: PendingMutation;
 }
 
@@ -101,7 +101,7 @@ export const llmResponseSchema = z
     confidence: z.number().min(0).max(1),
     read_only: z.boolean(),
     summary: z.string(),
-    query_kind: z.enum(["upcoming_schedule", "knowledge_lookup"]).nullable(),
+    query_kind: z.enum(["upcoming_schedule", "knowledge_lookup", "personalization_suggestions"]).nullable(),
     mutation: mutationSchema.nullable(),
   })
   .superRefine((value, ctx) => {
@@ -123,7 +123,7 @@ and respond with ONLY a JSON object matching this shape:
   "confidence": number,        // 0-1, your genuine confidence this is the right resolution
   "read_only": boolean,
   "summary": string,           // one sentence describing the action, for the user
-  "query_kind": "upcoming_schedule" | "knowledge_lookup" | null,   // set when read_only
+  "query_kind": "upcoming_schedule" | "knowledge_lookup" | "personalization_suggestions" | null,   // set when read_only
   "mutation": {                // set when !read_only, else null
     "target_type": "course" | "deadline" | "task" | "note" | "reminder",
     "operation": "create" | "update" | "delete" | "acknowledge",
@@ -139,7 +139,11 @@ schedule (read-only); look up tips/advice/background info from the user's
 personal knowledge base of imported reference material (read-only,
 query_kind "knowledge_lookup" — use this whenever the request is a factual
 or advice question rather than a request about the user's own Courses/
-Deadlines/Tasks). Nothing else is supported.
+Deadlines/Tasks); check for personalization suggestions (read-only,
+query_kind "personalization_suggestions" — use this whenever the request
+asks for recommendations/suggestions/"anything I should change", e.g.
+"check my suggestions", "any recommendations for me?", "what should I
+adjust?"). Nothing else is supported.
 
 The request's "now" field is the current server timestamp (UTC, ISO 8601)
 and "timezone" is the user's IANA time zone — use both as the anchor for any
@@ -171,6 +175,8 @@ Examples:
 - "Remind me to review notes before Friday" (no exact time) -> task create,
   title "Review notes", due_at resolved to end-of-day Friday in the user's
   timezone, reminder_lead_minutes: null.
+- "Do I have any suggestions?" / "Check for recommendations" -> read_only
+  true, query_kind "personalization_suggestions", mutation null.
 
 If the request doesn't map confidently to one of these, or names an entity
 not in the provided context list, set confidence below 0.95 rather than
