@@ -7,6 +7,11 @@ export type Json =
   | Json[]
 
 export type Database = {
+  // Allows to automatically instantiate createClient with right options
+  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
+  __InternalSupabase: {
+    PostgrestVersion: "14.5"
+  }
   graphql_public: {
     Tables: {
       [_ in never]: never
@@ -930,7 +935,6 @@ export type Database = {
           deleted_at: string | null
           due_at: string | null
           id: string | null
-          person_id: string | null
           priority: string | null
           status: Database["public"]["Enums"]["deadline_status"] | null
           title: string | null
@@ -943,7 +947,6 @@ export type Database = {
           deleted_at?: string | null
           due_at?: string | null
           id?: string | null
-          person_id?: string | null
           priority?: string | null
           status?: Database["public"]["Enums"]["deadline_status"] | null
           title?: string | null
@@ -956,7 +959,6 @@ export type Database = {
           deleted_at?: string | null
           due_at?: string | null
           id?: string | null
-          person_id?: string | null
           priority?: string | null
           status?: Database["public"]["Enums"]["deadline_status"] | null
           title?: string | null
@@ -976,20 +978,6 @@ export type Database = {
             columns: ["course_id"]
             isOneToOne: false
             referencedRelation: "courses"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "deadlines_person_id_fkey"
-            columns: ["person_id"]
-            isOneToOne: false
-            referencedRelation: "active_people"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "deadlines_person_id_fkey"
-            columns: ["person_id"]
-            isOneToOne: false
-            referencedRelation: "people"
             referencedColumns: ["id"]
           },
           {
@@ -1114,7 +1102,6 @@ export type Database = {
           deleted_at: string | null
           due_at: string | null
           id: string | null
-          person_id: string | null
           reminder_lead_minutes: number | null
           reminders_enabled: boolean | null
           status: Database["public"]["Enums"]["task_status"] | null
@@ -1128,7 +1115,6 @@ export type Database = {
           deleted_at?: string | null
           due_at?: string | null
           id?: string | null
-          person_id?: string | null
           reminder_lead_minutes?: number | null
           reminders_enabled?: boolean | null
           status?: Database["public"]["Enums"]["task_status"] | null
@@ -1142,7 +1128,6 @@ export type Database = {
           deleted_at?: string | null
           due_at?: string | null
           id?: string | null
-          person_id?: string | null
           reminder_lead_minutes?: number | null
           reminders_enabled?: boolean | null
           status?: Database["public"]["Enums"]["task_status"] | null
@@ -1152,20 +1137,6 @@ export type Database = {
           user_id?: string | null
         }
         Relationships: [
-          {
-            foreignKeyName: "tasks_person_id_fkey"
-            columns: ["person_id"]
-            isOneToOne: false
-            referencedRelation: "active_people"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "tasks_person_id_fkey"
-            columns: ["person_id"]
-            isOneToOne: false
-            referencedRelation: "people"
-            referencedColumns: ["id"]
-          },
           {
             foreignKeyName: "tasks_user_id_fkey"
             columns: ["user_id"]
@@ -1366,10 +1337,12 @@ export type Database = {
         }
         Returns: {
           chunk_text: string
-          // `supabase gen types` can't see that this column is nullable on
-          // a `returns table(...)` SQL function -- corrected by hand to
-          // match knowledge_sources.origin_url's actual `string | null`
-          // column type (non-url sources have no origin_url).
+          // Generator quirk, hand-corrected: `supabase gen types` infers this
+          // `returns table (...)` column as non-null, but it's selected from
+          // knowledge_sources.origin_url, which is nullable (see the
+          // `knowledge_sources` Table Row below) — see
+          // supabase/migrations/0009_knowledge_retrieval.sql. Consuming code
+          // (src/lib/knowledge/retrieval.ts) already treats it as nullable.
           origin_url: string | null
           similarity: number
           source_id: string
@@ -1609,4 +1582,3 @@ export const Constants = {
     },
   },
 } as const
-
