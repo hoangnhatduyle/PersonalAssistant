@@ -61,7 +61,8 @@ export function NextSequenceQueue({ deadlines, tasks, todoItems, todoLists, cour
     return result;
   }, [todoItems, todoLists, courses]);
   const now = new Date();
-  const items = filterUpcomingItemsByTimeWindow(allItems, timeWindow, now).slice(0, QUEUE_LIMIT);
+  const filtered = filterUpcomingItemsByTimeWindow(allItems, timeWindow, now);
+  const items = timeWindow === "all" ? filtered : filtered.slice(0, QUEUE_LIMIT);
   const emptyCopy = EMPTY_COPY[timeWindow];
 
   return (
