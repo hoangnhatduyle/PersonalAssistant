@@ -14,11 +14,23 @@ type Props = {
 };
 
 const RING_ITEM_LIMIT = 5;
-const CLOCK_TICK_MS = 30_000;
+const CLOCK_TICK_MS = 1_000;
 const CENTER = 150;
 const RING_RADIUS = 108;
 const DOT_RADIUS = 128;
 const LABEL_RADIUS = 148;
+const HOUR_HAND_LENGTH = 58;
+const MINUTE_HAND_LENGTH = 84;
+
+function clockHandAngles(now: Date): { hour: number; minute: number } {
+  const hours = now.getHours() % 12;
+  const minutes = now.getMinutes();
+  const seconds = now.getSeconds();
+  return {
+    hour: (hours + minutes / 60 + seconds / 3600) * 30,
+    minute: (minutes + seconds / 60) * 6,
+  };
+}
 
 function polarPoint(radius: number, angleDeg: number): { x: number; y: number } {
   const angleRad = ((angleDeg - 90) * Math.PI) / 180;
@@ -79,6 +91,9 @@ export function NowWidget({ deadlines, tasks, reminders }: Props) {
 
   const items = buildUpcomingItems({ deadlines, tasks, reminders }).slice(0, RING_ITEM_LIMIT);
   const tickAngles = Array.from({ length: 12 }, (_, index) => index * 30);
+  const hands = now ? clockHandAngles(now) : null;
+  const hourTip = hands ? polarPoint(HOUR_HAND_LENGTH, hands.hour) : null;
+  const minuteTip = hands ? polarPoint(MINUTE_HAND_LENGTH, hands.minute) : null;
 
   return (
     <GlassPanel variant="glow-ok" className="flex flex-col items-center gap-6 p-6 sm:flex-row sm:items-start">
@@ -100,10 +115,35 @@ export function NowWidget({ deadlines, tasks, reminders }: Props) {
           );
         })}
 
-        <text x={CENTER} y={CENTER - 8} textAnchor="middle" className="fill-text-primary font-display text-2xl font-semibold">
+        {hourTip && minuteTip && (
+          <g>
+            <line
+              x1={CENTER}
+              y1={CENTER}
+              x2={hourTip.x}
+              y2={hourTip.y}
+              className="stroke-text-primary"
+              strokeWidth={3.5}
+              strokeLinecap="round"
+            />
+            <line
+              x1={CENTER}
+              y1={CENTER}
+              x2={minuteTip.x}
+              y2={minuteTip.y}
+              className="stroke-accent-teal"
+              strokeWidth={2}
+              strokeLinecap="round"
+            />
+            <circle cx={CENTER} cy={CENTER} r={5} className="fill-bg-void stroke-accent-teal" strokeWidth={1.5} />
+          </g>
+        )}
+
+        <circle cx={CENTER} cy={CENTER} r={34} className="fill-bg-void/80" />
+        <text x={CENTER} y={CENTER - 6} textAnchor="middle" className="fill-text-primary font-display text-xl font-semibold">
           {now ? now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "--:--"}
         </text>
-        <text x={CENTER} y={CENTER + 16} textAnchor="middle" className="fill-text-secondary font-mono text-[10px] uppercase tracking-wide">
+        <text x={CENTER} y={CENTER + 14} textAnchor="middle" className="fill-text-secondary font-mono text-[9px] uppercase tracking-wide">
           {now ? now.toLocaleDateString([], { weekday: "long", month: "short", day: "numeric" }) : ""}
         </text>
 
