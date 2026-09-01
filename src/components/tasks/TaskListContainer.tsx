@@ -12,7 +12,7 @@ import type { TaskPayload } from "@/lib/api/schemas";
 
 export function TaskListContainer() {
   const [isCreateOpen, setCreateOpen] = useState(false);
-  const { data, isLoading } = useTasks();
+  const { data, isLoading } = useTasks({ limit: 100 });
   const createTask = useCreateTask();
   const { showToast } = useToast();
 

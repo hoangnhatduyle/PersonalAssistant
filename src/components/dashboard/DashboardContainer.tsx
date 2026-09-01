@@ -4,6 +4,8 @@ import { useDeadlines } from "@/hooks/useDeadlines";
 import { useTasks } from "@/hooks/useTasks";
 import { useReminders } from "@/hooks/useReminders";
 import { useTodoItems } from "@/hooks/useTodoItems";
+import { useTodoLists } from "@/hooks/useTodoLists";
+import { useCourses } from "@/hooks/useCourses";
 import { NowWidget } from "@/components/dashboard/NowWidget";
 import { MomentumCard } from "@/components/dashboard/MomentumCard";
 import { NextSequenceQueue } from "@/components/dashboard/NextSequenceQueue";
@@ -14,9 +16,11 @@ import { Skeleton } from "@/components/ui/Skeleton";
 /** No /api/dashboard route exists — composes already-fetched entity hooks client-side. */
 export function DashboardContainer() {
   const { data: deadlines, isLoading: deadlinesLoading } = useDeadlines();
-  const { data: tasks, isLoading: tasksLoading } = useTasks();
+  const { data: tasks, isLoading: tasksLoading } = useTasks({ limit: 100 });
   const { data: reminders, isLoading: remindersLoading } = useReminders({ state: ["Delivered", "Snoozed"] });
-  const { data: todoItems, isLoading: todoItemsLoading } = useTodoItems();
+  const { data: todoItems, isLoading: todoItemsLoading } = useTodoItems({ limit: 100 });
+  const { data: todoLists } = useTodoLists({ limit: 100 });
+  const { data: courses } = useCourses({ limit: 100 });
 
   const isLoading = deadlinesLoading || tasksLoading || remindersLoading || todoItemsLoading;
 
@@ -42,7 +46,7 @@ export function DashboardContainer() {
           <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
             <div className="flex flex-col gap-6">
               <NowWidget deadlines={deadlines?.rows ?? []} tasks={tasks?.rows ?? []} reminders={reminders?.rows ?? []} />
-              <NextSequenceQueue deadlines={deadlines?.rows ?? []} tasks={tasks?.rows ?? []} todoItems={todoItems?.rows ?? []} />
+              <NextSequenceQueue deadlines={deadlines?.rows ?? []} tasks={tasks?.rows ?? []} todoItems={todoItems?.rows ?? []} todoLists={todoLists?.rows ?? []} courses={courses?.rows ?? []} />
             </div>
             <MomentumCard deadlines={deadlines?.rows ?? []} tasks={tasks?.rows ?? []} todoItems={todoItems?.rows ?? []} />
           </div>

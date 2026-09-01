@@ -18,8 +18,8 @@ import type { TodoItemRow } from "@/lib/api/entity-types";
 
 export function CourseTodoBoardContainer() {
   const { data: courses } = useCourses();
-  const { data: lists, isLoading: listsLoading } = useTodoLists();
-  const { data: items, isLoading: itemsLoading } = useTodoItems();
+  const { data: lists, isLoading: listsLoading } = useTodoLists({ limit: 100 });
+  const { data: items, isLoading: itemsLoading } = useTodoItems({ limit: 100 });
   const createList = useCreateTodoList();
   const { showToast } = useToast();
   const queryClient = useQueryClient();

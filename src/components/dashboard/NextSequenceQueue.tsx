@@ -1,19 +1,22 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { GlassPanel } from "@/components/ui/GlassPanel";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { StatusPill } from "@/components/ui/StatusPill";
+import { Badge } from "@/components/ui/Badge";
 import { buildUpcomingItems, filterUpcomingItemsByTimeWindow, type TimeWindowFilter } from "@/lib/dashboard/upcoming-items";
 import { formatRelativeTime } from "@/lib/format-relative-time";
 import { DEADLINE_STATUS_TONE, TASK_STATUS_TONE } from "@/lib/status-colors";
-import type { DeadlineRow, TaskRow, TodoItemRow } from "@/lib/api/entity-types";
+import type { CourseRow, DeadlineRow, TaskRow, TodoItemRow, TodoListRow } from "@/lib/api/entity-types";
 
 type Props = {
   deadlines: DeadlineRow[];
   tasks: TaskRow[];
   todoItems: TodoItemRow[];
+  todoLists: TodoListRow[];
+  courses: CourseRow[];
 };
 
 const QUEUE_LIMIT = 8;
@@ -35,11 +38,28 @@ const EMPTY_COPY: Record<TimeWindowFilter, { title: string; description: string 
 };
 
 /** Flat chronological Deadlines+Tasks+course To-Do items list — no Reminders (those live in the Signal Inbox, not a due-date queue). */
-export function NextSequenceQueue({ deadlines, tasks, todoItems }: Props) {
+export function NextSequenceQueue({ deadlines, tasks, todoItems, todoLists, courses }: Props) {
   const [timeWindow, setTimeWindow] = useState<TimeWindowFilter>("today");
   const allItems = buildUpcomingItems({ deadlines, tasks, todoItems });
   const deadlineById = new Map(deadlines.map((deadline) => [deadline.id, deadline]));
   const taskById = new Map(tasks.map((task) => [task.id, task]));
+
+  const todoItemCourseNameMap = useMemo(() => {
+    const courseNameById = new Map(courses.map((c) => [c.id, c.name]));
+    const listCourseMap = new Map<string, string>();
+    for (const list of todoLists) {
+      if (list.course_id) {
+        const name = courseNameById.get(list.course_id);
+        if (name) listCourseMap.set(list.id, name);
+      }
+    }
+    const result = new Map<string, string>();
+    for (const item of todoItems) {
+      const courseName = listCourseMap.get(item.list_id);
+      if (courseName) result.set(item.id, courseName);
+    }
+    return result;
+  }, [todoItems, todoLists, courses]);
   const now = new Date();
   const items = filterUpcomingItemsByTimeWindow(allItems, timeWindow, now).slice(0, QUEUE_LIMIT);
   const emptyCopy = EMPTY_COPY[timeWindow];
@@ -82,22 +102,33 @@ export function NextSequenceQueue({ deadlines, tasks, todoItems }: Props) {
             const showPastDueTag = item.urgent && item.kind !== "deadline";
             const kindLabel = item.kind === "deadline" ? "Deadline" : item.kind === "task" ? "Task" : "To-Do";
 
+            const courseName = item.kind === "todo" ? todoItemCourseNameMap.get(item.id) : undefined;
+            const taskTags = item.kind === "task" ? taskById.get(item.id)?.tags ?? [] : [];
+
             return (
               <li key={`${item.kind}-${item.id}`} className="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0">
-                <div className="flex min-w-0 flex-col">
+                <div className="flex min-w-0 flex-col gap-1">
                   <Link href={item.href ?? "#"} className="truncate text-sm text-text-primary hover:underline">
                     {item.title}
                   </Link>
-                  <span className="font-mono text-xs text-text-secondary">
-                    {kindLabel} · {formatRelativeTime(item.at, now)}
-                  </span>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="font-mono text-xs text-text-secondary">
+                      {kindLabel} · {formatRelativeTime(item.at, now)}
+                    </span>
+                    {courseName && <Badge tone="accent">{courseName}</Badge>}
+                    {taskTags.map((tag) => (
+                      <Badge key={tag} tone="neutral">{tag}</Badge>
+                    ))}
+                  </div>
                 </div>
-                {showPastDueTag && (
-                  <span className="shrink-0 rounded-full bg-status-urgent/15 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide text-status-urgent">
-                    Past due
-                  </span>
-                )}
-                {status && <StatusPill status={status} tone={tone!} />}
+                <div className="flex shrink-0 items-center gap-2">
+                  {showPastDueTag && (
+                    <span className="rounded-full bg-status-urgent/15 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide text-status-urgent">
+                      Past due
+                    </span>
+                  )}
+                  {status && <StatusPill status={status} tone={tone!} />}
+                </div>
               </li>
             );
           })}
