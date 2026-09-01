@@ -16,11 +16,14 @@ type Props = {
 const RING_ITEM_LIMIT = 5;
 const CLOCK_TICK_MS = 1_000;
 const CENTER = 150;
+const FACE_RADIUS = 100;
 const RING_RADIUS = 108;
 const DOT_RADIUS = 128;
 const LABEL_RADIUS = 148;
-const HOUR_HAND_LENGTH = 58;
-const MINUTE_HAND_LENGTH = 84;
+const HOUR_HAND_LENGTH = 54;
+const MINUTE_HAND_LENGTH = 80;
+const HOUR_TICK_INNER = FACE_RADIUS - 12;
+const MINUTE_TICK_INNER = FACE_RADIUS - 5;
 
 function clockHandAngles(now: Date): { hour: number; minute: number } {
   const hours = now.getHours() % 12;
@@ -90,64 +93,61 @@ export function NowWidget({ deadlines, tasks, reminders }: Props) {
   const now = isMounted ? new Date() : null;
 
   const items = buildUpcomingItems({ deadlines, tasks, reminders }).slice(0, RING_ITEM_LIMIT);
-  const tickAngles = Array.from({ length: 12 }, (_, index) => index * 30);
+  const minuteIndices = Array.from({ length: 60 }, (_, index) => index * 6);
   const hands = now ? clockHandAngles(now) : null;
   const hourTip = hands ? polarPoint(HOUR_HAND_LENGTH, hands.hour) : null;
   const minuteTip = hands ? polarPoint(MINUTE_HAND_LENGTH, hands.minute) : null;
 
   return (
     <GlassPanel variant="glow-ok" className="flex flex-col items-center gap-6 p-6 sm:flex-row sm:items-start">
-      <svg viewBox="0 0 300 300" aria-hidden="true" className="h-64 w-64 flex-shrink-0">
-        <circle cx={CENTER} cy={CENTER} r={RING_RADIUS} className="fill-none stroke-panel-border" strokeWidth={1.5} />
-        {tickAngles.map((angle) => {
-          const inner = polarPoint(RING_RADIUS - 6, angle);
-          const outer = polarPoint(RING_RADIUS + 6, angle);
-          return (
-            <line
-              key={angle}
-              x1={inner.x}
-              y1={inner.y}
-              x2={outer.x}
-              y2={outer.y}
-              className="stroke-panel-border-hover"
-              strokeWidth={1}
-            />
-          );
-        })}
+      <div className="flex flex-shrink-0 flex-col items-center gap-3">
+        <svg viewBox="0 0 300 300" aria-hidden="true" className="h-64 w-64">
+          <circle cx={CENTER} cy={CENTER} r={FACE_RADIUS} className="fill-panel/30 stroke-panel-border/60" strokeWidth={1} />
+          <circle cx={CENTER} cy={CENTER} r={RING_RADIUS} className="fill-none stroke-panel-border" strokeWidth={1} />
 
-        {hourTip && minuteTip && (
-          <g>
-            <line
-              x1={CENTER}
-              y1={CENTER}
-              x2={hourTip.x}
-              y2={hourTip.y}
-              className="stroke-text-primary"
-              strokeWidth={3.5}
-              strokeLinecap="round"
-            />
-            <line
-              x1={CENTER}
-              y1={CENTER}
-              x2={minuteTip.x}
-              y2={minuteTip.y}
-              className="stroke-accent-teal"
-              strokeWidth={2}
-              strokeLinecap="round"
-            />
-            <circle cx={CENTER} cy={CENTER} r={5} className="fill-bg-void stroke-accent-teal" strokeWidth={1.5} />
-          </g>
-        )}
+          {minuteIndices.map((angle) => {
+            const isHour = angle % 30 === 0;
+            const inner = polarPoint(isHour ? HOUR_TICK_INNER : MINUTE_TICK_INNER, angle);
+            const outer = polarPoint(FACE_RADIUS, angle);
+            return (
+              <line
+                key={angle}
+                x1={inner.x}
+                y1={inner.y}
+                x2={outer.x}
+                y2={outer.y}
+                className={isHour ? "stroke-text-secondary" : "stroke-text-eyebrow/80"}
+                strokeWidth={isHour ? 1.5 : 0.75}
+                strokeLinecap="round"
+              />
+            );
+          })}
 
-        <circle cx={CENTER} cy={CENTER} r={34} className="fill-bg-void/80" />
-        <text x={CENTER} y={CENTER - 6} textAnchor="middle" className="fill-text-primary font-display text-xl font-semibold">
-          {now ? now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "--:--"}
-        </text>
-        <text x={CENTER} y={CENTER + 14} textAnchor="middle" className="fill-text-secondary font-mono text-[9px] uppercase tracking-wide">
-          {now ? now.toLocaleDateString([], { weekday: "long", month: "short", day: "numeric" }) : ""}
-        </text>
+          {hourTip && minuteTip && (
+            <g>
+              <line
+                x1={CENTER}
+                y1={CENTER}
+                x2={hourTip.x}
+                y2={hourTip.y}
+                className="stroke-text-primary"
+                strokeWidth={3.5}
+                strokeLinecap="round"
+              />
+              <line
+                x1={CENTER}
+                y1={CENTER}
+                x2={minuteTip.x}
+                y2={minuteTip.y}
+                className="stroke-accent-teal"
+                strokeWidth={2}
+                strokeLinecap="round"
+              />
+              <circle cx={CENTER} cy={CENTER} r={4} className="fill-bg-void stroke-accent-teal" strokeWidth={1.5} />
+            </g>
+          )}
 
-        {items.map((item, index) => {
+          {items.map((item, index) => {
           const angle = (360 / items.length) * index;
           const dot = polarPoint(DOT_RADIUS, angle);
           const label = polarPoint(LABEL_RADIUS, angle);
@@ -168,7 +168,17 @@ export function NowWidget({ deadlines, tasks, reminders }: Props) {
             </g>
           );
         })}
-      </svg>
+        </svg>
+
+        <div className="text-center" role="timer" aria-live="off">
+          <p className="font-display text-2xl font-semibold text-text-primary">
+            {now ? now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "--:--"}
+          </p>
+          <p className="font-mono text-[10px] uppercase tracking-wide text-text-secondary">
+            {now ? now.toLocaleDateString([], { weekday: "long", month: "short", day: "numeric" }) : ""}
+          </p>
+        </div>
+      </div>
 
       <div className="flex w-full flex-col gap-2">
         <p className="font-mono text-xs uppercase tracking-wide text-text-eyebrow">Next up</p>
