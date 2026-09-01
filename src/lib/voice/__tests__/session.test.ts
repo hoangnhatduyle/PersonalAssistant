@@ -312,4 +312,64 @@ describe("intakeVoiceTurn / confirmVoiceSession / declineVoiceSession", () => {
       ).rejects.toThrow("embedding vendor call failed");
     });
   });
+
+  describe("general_conversation", () => {
+    it("executes immediately without confirmation and returns an uncited response", async () => {
+      const resolveIntent = fakeResolver({
+        confidence: 0.98,
+        readOnly: true,
+        summary: "weigh attending the meeting against resting",
+        queryKind: "general_conversation",
+      });
+      const generalConversation = vi.fn().mockResolvedValue({
+        message: "Protect the coffee conversation, then decide based on your energy and ask IEEE for notes if you skip.",
+      });
+      const transcript = "Should I rush from coffee to the IEEE meeting when I am tired?";
+
+      const result = await intakeVoiceTurn(
+        user.client,
+        userId,
+        { transcript },
+        { transcribe: vi.fn(), resolveIntent, generalConversation },
+      );
+
+      expect(result.state).toBe("Responding");
+      expect(result.executed).toBe(true);
+      expect(result.message).toMatch(/ask IEEE for notes/i);
+      expect(result.citations).toBeUndefined();
+      expect(generalConversation).toHaveBeenCalledWith(user.client, userId, transcript);
+
+      const row = await sessionRow(result.sessionId);
+      expect(row.state).toBe("Responding");
+      expect(row.pending_mutation).toBeNull();
+    });
+
+    it("lands the session in Responding via execution_failed when conversation generation fails", async () => {
+      const resolveIntent = fakeResolver({
+        confidence: 0.98,
+        readOnly: true,
+        summary: "give advice",
+        queryKind: "general_conversation",
+      });
+      const transcript = "general conversation failure canary";
+      const generalConversation = vi.fn().mockRejectedValue(new Error("conversation model call failed"));
+
+      await expect(
+        intakeVoiceTurn(
+          user.client,
+          userId,
+          { transcript },
+          { transcribe: vi.fn(), resolveIntent, generalConversation },
+        ),
+      ).rejects.toThrow("conversation model call failed");
+
+      const { data: row } = await admin
+        .from("voice_sessions")
+        .select("state")
+        .eq("user_id", userId)
+        .eq("transcript", transcript)
+        .single();
+      expect(row?.state).toBe("Responding");
+    });
+  });
 });

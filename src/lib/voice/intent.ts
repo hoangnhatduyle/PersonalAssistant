@@ -10,7 +10,7 @@ export interface ResolvedIntent {
   readOnly: boolean;
   /** Short human-readable description of the resolved action, spoken/shown back to the user. */
   summary: string;
-  queryKind?: "upcoming_schedule" | "knowledge_lookup" | "personalization_suggestions";
+  queryKind?: "upcoming_schedule" | "knowledge_lookup" | "personalization_suggestions" | "general_conversation";
   mutation?: PendingMutation;
 }
 
@@ -101,7 +101,7 @@ export const llmResponseSchema = z
     confidence: z.number().min(0).max(1),
     read_only: z.boolean(),
     summary: z.string(),
-    query_kind: z.enum(["upcoming_schedule", "knowledge_lookup", "personalization_suggestions"]).nullable(),
+    query_kind: z.enum(["upcoming_schedule", "knowledge_lookup", "personalization_suggestions", "general_conversation"]).nullable(),
     mutation: mutationSchema.nullable(),
   })
   .superRefine((value, ctx) => {
@@ -123,7 +123,7 @@ and respond with ONLY a JSON object matching this shape:
   "confidence": number,        // 0-1, your genuine confidence this is the right resolution
   "read_only": boolean,
   "summary": string,           // one sentence describing the action, for the user
-  "query_kind": "upcoming_schedule" | "knowledge_lookup" | "personalization_suggestions" | null,   // set when read_only
+  "query_kind": "upcoming_schedule" | "knowledge_lookup" | "personalization_suggestions" | "general_conversation" | null,   // set when read_only
   "mutation": {                // set when !read_only, else null
     "target_type": "course" | "deadline" | "task" | "note" | "reminder",
     "operation": "create" | "update" | "delete" | "acknowledge",
@@ -135,15 +135,30 @@ and respond with ONLY a JSON object matching this shape:
 
 Supported operations: create/update/delete a Deadline, Task, or Note;
 delete a Course; acknowledge/dismiss/snooze a Reminder; query the upcoming
-schedule (read-only); look up tips/advice/background info from the user's
-personal knowledge base of imported reference material (read-only,
-query_kind "knowledge_lookup" — use this whenever the request is a factual
-or advice question rather than a request about the user's own Courses/
-Deadlines/Tasks); check for personalization suggestions (read-only,
-query_kind "personalization_suggestions" — use this whenever the request
-asks for recommendations/suggestions/"anything I should change", e.g.
-"check my suggestions", "any recommendations for me?", "what should I
-adjust?"). Nothing else is supported.
+schedule (read-only); look up information from the user's personal knowledge
+base of imported reference material (read-only, query_kind
+"knowledge_lookup"); check for app-generated reminder-timing personalization
+suggestions based on the user's feedback history (read-only, query_kind
+"personalization_suggestions"); or answer an open-ended conversational
+question (read-only, query_kind "general_conversation"). Nothing else is
+supported.
+
+Choose among the read-only query kinds using these boundaries:
+- "knowledge_lookup": the user explicitly asks about material they imported,
+  saved, uploaded, captured, or previously provided, such as "what did that
+  article say about research paths?" or "summarize the notes I saved."
+- "personalization_suggestions": the user explicitly asks to check the app's
+  generated personalization/reminder-timing suggestions, such as "check my
+  suggestions" or "did the app recommend changing my reminder timing?"
+- "upcoming_schedule": the user only wants a factual listing of their upcoming
+  Tasks or Deadlines, such as "what is due this week?"
+- "general_conversation": open-ended advice, opinions, trade-off analysis,
+  scheduling guidance, wellbeing questions, or other conversation that does
+  not require imported reference material, such as "should I attend this
+  meeting or rest?", "what do you think about my schedule?", or "help me weigh
+  these two options." Use this even when the request mentions the user's own
+  Tasks, Deadlines, or Courses, unless the user is asking only for a factual
+  schedule listing or requesting a supported mutation.
 
 The request's "now" field is the current server timestamp (UTC, ISO 8601)
 and "timezone" is the user's IANA time zone — use both as the anchor for any

@@ -13,6 +13,7 @@ import { executePendingMutation, type MutationExecutionResult, type PendingMutat
 import type { ResolveIntentFn, ResolvedIntent } from "@/lib/voice/intent";
 import { runKnowledgeLookup, type KnowledgeCitation, type KnowledgeLookupFn } from "@/lib/knowledge/retrieval";
 import { runSuggestionsLookup, type SuggestionsLookupFn } from "@/lib/voice/suggestions-lookup";
+import { runGeneralConversation, type GeneralConversationFn } from "@/lib/voice/general-conversation";
 
 export class VoiceSessionNotFoundError extends Error {}
 export class VoiceSessionInvalidStateError extends Error {}
@@ -30,6 +31,8 @@ export interface VoiceTurnDeps {
   knowledgeLookup?: KnowledgeLookupFn;
   /** Defaults to src/lib/voice/suggestions-lookup.ts's runSuggestionsLookup when omitted. */
   suggestionsLookup?: SuggestionsLookupFn;
+  /** Defaults to src/lib/voice/general-conversation.ts's runGeneralConversation when omitted. */
+  generalConversation?: GeneralConversationFn;
 }
 
 export type VoiceTurnInput = { audio: Buffer; mimetype?: string } | { transcript: string };
@@ -186,7 +189,8 @@ export async function intakeVoiceTurn(
     intent.readOnly &&
     intent.queryKind !== "upcoming_schedule" &&
     intent.queryKind !== "knowledge_lookup" &&
-    intent.queryKind !== "personalization_suggestions";
+    intent.queryKind !== "personalization_suggestions" &&
+    intent.queryKind !== "general_conversation";
   if (!meetsConfidenceBar(intent.confidence) || unsupportedReadOnlyQuery) {
     await transition(supabase, userId, sessionId, "Transcribing", "intent_ambiguous_or_low_confidence", {
       resolved_intent: intent.summary,
@@ -229,6 +233,21 @@ export async function intakeVoiceTurn(
           data: result.message,
           citations: result.citations,
           ...(result.extractionLabel ? { extractionLabel: result.extractionLabel } : {}),
+        };
+      }
+
+      if (intent.queryKind === "general_conversation") {
+        const converse = deps.generalConversation ?? runGeneralConversation;
+        const result = await converse(supabase, userId, transcript);
+        await transition(supabase, userId, sessionId, "Executing", "execution_completed", {
+          ended_at: new Date().toISOString(),
+        });
+        return {
+          sessionId,
+          state: "Responding",
+          message: result.message,
+          executed: true,
+          data: result.message,
         };
       }
 

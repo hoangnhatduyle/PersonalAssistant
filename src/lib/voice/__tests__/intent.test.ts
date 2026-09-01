@@ -193,6 +193,17 @@ describe("llmResponseSchema", () => {
     expect(result.success).toBe(true);
   });
 
+  it("accepts a well-formed general_conversation response", () => {
+    const result = llmResponseSchema.safeParse({
+      confidence: 0.98,
+      read_only: true,
+      summary: "weigh attending the meeting against resting",
+      query_kind: "general_conversation",
+      mutation: null,
+    });
+    expect(result.success).toBe(true);
+  });
+
   it("rejects an unrecognized query_kind", () => {
     const result = llmResponseSchema.safeParse({
       confidence: 0.98,
