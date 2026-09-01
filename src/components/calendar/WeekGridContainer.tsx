@@ -60,7 +60,7 @@ export function WeekGridContainer() {
       </div>
 
       {!weekGrid ? (
-        <Skeleton className="h-[640px] w-full" />
+        <Skeleton className="h-[75vh] min-h-96 w-full" />
       ) : (
         <GlassPanel className="p-4">
           <WeekGrid days={weekGrid.days} hourMarks={weekGrid.hourMarks} windowStart={weekGrid.windowStart} windowEnd={weekGrid.windowEnd} />

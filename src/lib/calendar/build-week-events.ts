@@ -6,13 +6,12 @@ import type { CourseRow, DeadlineRow, TaskRow, PersonRow } from "@/lib/api/entit
 export interface CalendarEvent {
   id: string;
   title: string;
-  /** Set only for course blocks — the meeting's start–end time range (e.g. "12:30–1:50 PM"). */
-  timeLabel?: string;
-  subtitle?: string;
-  /** Percent (0-100) from the top of the day column. */
-  top: number;
-  /** Percent (0-100) of the day column's height. */
-  height: number;
+  /** The meeting's start–end time range (e.g. "12:30–1:50 PM") or a due-time marker. */
+  timeLabel: string;
+  /** Course location, or a Deadline/Task label for non-course markers. */
+  subtitle: string;
+  startMinutes: number;
+  endMinutes: number;
   tone: StatusTone;
   href: string;
   /** null for the account owner's own event; a People row's id otherwise (People feature). */
@@ -148,8 +147,6 @@ export function buildWeekGridData(
   windowEnd = Math.min(24 * HOUR, Math.ceil((windowEnd + WINDOW_PADDING) / HOUR) * HOUR);
   if (windowEnd - windowStart < MIN_WINDOW_SPAN) windowEnd = Math.min(24 * HOUR, windowStart + MIN_WINDOW_SPAN);
 
-  const span = windowEnd - windowStart;
-
   const days: DayColumn[] = DAY_LABELS.map((label, dayOfWeek) => {
     const date = new Date(weekStart);
     date.setDate(date.getDate() + dayOfWeek);
@@ -161,9 +158,9 @@ export function buildWeekGridData(
         id: `course-${occurrence.course.id}-${occurrence.blockIndex}-${dayOfWeek}`,
         title: occurrence.course.name,
         timeLabel: `${formatMinutesOfDay(occurrence.startMinutes)}–${formatMinutesOfDay(occurrence.endMinutes)}`,
-        subtitle: occurrence.course.location ?? undefined,
-        top: ((occurrence.startMinutes - windowStart) / span) * 100,
-        height: ((occurrence.endMinutes - occurrence.startMinutes) / span) * 100,
+        subtitle: occurrence.course.location ?? "—",
+        startMinutes: occurrence.startMinutes,
+        endMinutes: occurrence.endMinutes,
         tone: "accent",
         href: `/courses/${occurrence.course.id}`,
         ...personInfo(occurrence.course.person_id),
@@ -177,9 +174,10 @@ export function buildWeekGridData(
       events.push({
         id: `deadline-${deadline.id}`,
         title: deadline.title,
+        timeLabel: formatMinutesOfDay(minutesOfDay),
         subtitle: "Deadline",
-        top: ((minutesOfDay - windowStart) / span) * 100,
-        height: (DEADLINE_MARKER_MINUTES / span) * 100,
+        startMinutes: minutesOfDay,
+        endMinutes: minutesOfDay + DEADLINE_MARKER_MINUTES,
         tone: DEADLINE_STATUS_TONE[deadline.status],
         href: `/deadlines/${deadline.id}`,
         ...personInfo(deadline.person_id),
@@ -193,9 +191,10 @@ export function buildWeekGridData(
       events.push({
         id: `task-${task.id}`,
         title: task.title,
+        timeLabel: formatMinutesOfDay(minutesOfDay),
         subtitle: "Task",
-        top: ((minutesOfDay - windowStart) / span) * 100,
-        height: (TASK_MARKER_MINUTES / span) * 100,
+        startMinutes: minutesOfDay,
+        endMinutes: minutesOfDay + TASK_MARKER_MINUTES,
         tone: TASK_STATUS_TONE[task.status],
         href: `/tasks/${task.id}`,
         ...personInfo(task.person_id),

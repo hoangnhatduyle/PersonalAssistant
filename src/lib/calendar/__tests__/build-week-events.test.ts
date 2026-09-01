@@ -21,6 +21,9 @@ describe("buildWeekGridData", () => {
       id: "course-c-1-0-1",
       title: "Algorithms",
       timeLabel: "10 AM–10:50 AM",
+      subtitle: "—",
+      startMinutes: 600,
+      endMinutes: 650,
       tone: "accent",
       href: "/courses/c-1",
       personId: null,
@@ -113,7 +116,14 @@ describe("buildWeekGridData", () => {
     const data = buildWeekGridData([], [makeDeadline({ id: "d-1", status: "Overdue", due_at: "2026-01-08T15:00:00" })], [], [], REFERENCE);
     const thursday = data.days.find((day) => day.dayOfWeek === 4)!;
     expect(thursday.events).toHaveLength(1);
-    expect(thursday.events[0]).toMatchObject({ title: "Deadline", tone: "urgent", href: "/deadlines/d-1", personLabel: "Me" });
+    expect(thursday.events[0]).toMatchObject({
+      title: "Deadline",
+      timeLabel: "3 PM",
+      subtitle: "Deadline",
+      tone: "urgent",
+      href: "/deadlines/d-1",
+      personLabel: "Me",
+    });
   });
 
   it("excludes a deadline outside the displayed week", () => {
@@ -157,7 +167,13 @@ describe("buildWeekGridData", () => {
     const data = buildWeekGridData([], [], [makeTask({ id: "t-1", status: "Open", due_at: "2026-01-08T15:00:00" })], [], REFERENCE);
     const thursday = data.days.find((day) => day.dayOfWeek === 4)!;
     expect(thursday.events).toHaveLength(1);
-    expect(thursday.events[0]).toMatchObject({ title: "Task", subtitle: "Task", tone: "accent", href: "/tasks/t-1" });
+    expect(thursday.events[0]).toMatchObject({
+      title: "Task",
+      timeLabel: "3 PM",
+      subtitle: "Task",
+      tone: "accent",
+      href: "/tasks/t-1",
+    });
   });
 
   it("excludes a Done task and a task with no due_at", () => {
