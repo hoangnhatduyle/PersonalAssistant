@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { GlassPanel } from "@/components/ui/GlassPanel";
 import { Button } from "@/components/ui/Button";
-import { Input } from "@/components/ui/Input";
+import { Textarea } from "@/components/ui/Textarea";
 import { useToast } from "@/components/ui/Toast";
 import { TranscriptBubble } from "@/components/assistant/TranscriptBubble";
 import { AssistantResponse } from "@/components/assistant/AssistantResponse";
@@ -119,9 +119,15 @@ export function CaptureChannel({ compact = false }: Props) {
             }
             // generateSuggestionsForUser already ran server-side (src/lib/
             // voice/suggestions-lookup.ts) — refetch to see what it created.
-            const { data: fresh } = await refetchSuggestions();
-            if (fresh && fresh.rows.length > 0) {
-              await reviewAloud.start(fresh.rows);
+            // The detailed per-suggestion spoken review loop is gated by the
+            // speak_suggestions_aloud preference — without it, the initial
+            // count response above is still spoken, but we skip reading each
+            // suggestion and listening for yes/no.
+            if (settings?.speak_suggestions_aloud) {
+              const { data: fresh } = await refetchSuggestions();
+              if (fresh && fresh.rows.length > 0) {
+                await reviewAloud.start(fresh.rows);
+              }
             }
             if (handsFree) void startRecordingRef.current();
           } else {
@@ -192,13 +198,21 @@ export function CaptureChannel({ compact = false }: Props) {
         {displayStatus !== "idle" && <TranscriptBubble status={displayStatus} />}
       </div>
 
-      <form onSubmit={handleTextSubmit} className="flex gap-2">
-        <Input
+      <form onSubmit={handleTextSubmit} className="flex items-end gap-2">
+        <Textarea
           value={textInput}
           onChange={(event) => setTextInput(event.target.value)}
+          onKeyDown={(event) => {
+            if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+              event.preventDefault();
+              event.currentTarget.form?.requestSubmit();
+            }
+          }}
           placeholder="Or type a request…"
           disabled={isBusy}
           aria-label="Text fallback for voice capture"
+          rows={compact ? 3 : 5}
+          className="min-h-24 resize-y"
         />
         <Button type="submit" size="sm" variant="secondary" disabled={isBusy || textInput.trim().length === 0}>
           Send

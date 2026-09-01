@@ -25,7 +25,8 @@ export function SpeakSuggestionsToggleCard() {
     <GlassPanel className="flex flex-col gap-2 p-4">
       <p className="font-display text-sm font-medium text-text-primary">Speak suggestions aloud</p>
       <p className="text-xs text-text-secondary">
-        When checking for suggestions, also speak each one and listen for a yes/no to apply or skip it.
+        After the assistant reports how many suggestions are available, speak each one and listen for a spoken yes/no
+        to apply or skip it. The initial count is always spoken for voice input regardless of this setting.
       </p>
       {isError ? (
         <div className="flex items-center gap-2">

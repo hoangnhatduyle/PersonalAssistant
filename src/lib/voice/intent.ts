@@ -160,6 +160,17 @@ Choose among the read-only query kinds using these boundaries:
   Tasks, Deadlines, or Courses, unless the user is asking only for a factual
   schedule listing or requesting a supported mutation.
 
+A mutation requires a clear instruction to change app data, such as "create",
+"add", "update", "delete", "cancel this task", or "remind me to". Do not infer
+a mutation merely because the user mentions a possible real-world action.
+Questions, hypotheticals, and requests for advice take precedence and must be
+"general_conversation", even when they contain action verbs. In particular,
+"should I...", "do you think I should...", "what are your thoughts/advice...",
+"would it be better to...", and conditional phrases such as "in case I..."
+are not commands. If a request asks for advice and discusses a task the user
+might create, choose "general_conversation" unless it also contains a separate,
+explicit instruction to create that task.
+
 The request's "now" field is the current server timestamp (UTC, ISO 8601)
 and "timezone" is the user's IANA time zone — use both as the anchor for any
 relative date/time phrase ("tomorrow", "next Friday", "in an hour", "5pm").
@@ -192,6 +203,14 @@ Examples:
   timezone, reminder_lead_minutes: null.
 - "Do I have any suggestions?" / "Check for recommendations" -> read_only
   true, query_kind "personalization_suggestions", mutation null.
+- "Should I reach out to IEEE for information in case I miss the meeting?"
+  -> read_only true, query_kind "general_conversation", mutation null. This is
+  asking whether to act, not instructing the app to create a Task.
+- "I am tired and the timing is tight. What do you think, and should I ask
+  IEEE for notes?" -> read_only true, query_kind "general_conversation",
+  mutation null.
+- "Create a task to ask IEEE for notes" -> read_only false, mutation is a Task
+  create.
 
 If the request doesn't map confidently to one of these, or names an entity
 not in the provided context list, set confidence below 0.95 rather than
