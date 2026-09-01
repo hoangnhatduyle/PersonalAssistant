@@ -9,6 +9,16 @@ jobs:
   send:
     runs-on: ubuntu-latest
     steps:
+      - name: Validate required secrets
+        run: |
+          if [ -z "${{ secrets.REMINDER_EMAIL_URL }}" ]; then
+            echo "::error::REMINDER_EMAIL_URL secret is not set. Add your production app URL (e.g. https://your-app.vercel.app) in Settings → Secrets and variables → Actions."
+            exit 1
+          fi
+          if [ -z "${{ secrets.CRON_SECRET }}" ]; then
+            echo "::error::CRON_SECRET secret is not set. Add a shared bearer token in Settings → Secrets and variables → Actions (must match the CRON_SECRET env var on your deployed app)."
+            exit 1
+          fi
       - name: Call reminder email endpoint
         run: |
           curl -sf -X POST "${{ secrets.REMINDER_EMAIL_URL }}/api/cron/send-reminder-emails" \

@@ -66,16 +66,20 @@ export function buildUpcomingItems({ deadlines, tasks, reminders = [], todoItems
     });
   }
 
+  const today = new Date().toISOString().slice(0, 10);
+
   for (const item of todoItems) {
     if (item.is_done || !item.due_date) continue;
-    const at = new Date(item.due_date);
+    // due_date is a calendar day (YYYY-MM-DD), not an instant — compare dates
+    // like CourseTodoListCard, and use end-of-local-day for sorting/relative time.
+    const at = new Date(`${item.due_date}T23:59:59.999`);
     items.push({
       id: item.id,
       kind: "todo",
       title: item.title,
       at,
       href: "/courses/todos",
-      urgent: at.getTime() < now,
+      urgent: item.due_date < today,
     });
   }
 

@@ -1,13 +1,20 @@
 import Link from "next/link";
 import { GlassPanel } from "@/components/ui/GlassPanel";
 import { buildUpcomingItems } from "@/lib/dashboard/upcoming-items";
-import { buildCompletionTrend, buildCompletedThisWeek } from "@/lib/dashboard/completion-trend";
+import { buildCompletionTrend, buildCompletedThisWeek, type CompletedItem } from "@/lib/dashboard/completion-trend";
 import { formatRelativeTime } from "@/lib/format-relative-time";
-import type { DeadlineRow, TaskRow } from "@/lib/api/entity-types";
+import type { DeadlineRow, TaskRow, TodoItemRow } from "@/lib/api/entity-types";
 
 type Props = {
   deadlines: DeadlineRow[];
   tasks: TaskRow[];
+  todoItems: TodoItemRow[];
+};
+
+const KIND_LABEL: Record<CompletedItem["kind"], string> = {
+  deadline: "Deadline",
+  task: "Task",
+  todo: "To-Do",
 };
 
 const SPARKLINE_WIDTH = 140;
@@ -17,23 +24,19 @@ const SPARKLINE_TOP = 4;
 const SPARKLINE_BASELINE = 36;
 
 /**
- * "Focus hours remaining" until the nearest hard deadline (tasks don't
- * count — they're not hard commitments). Course-meeting time isn't factored
- * in: meeting_pattern has no parser until the Calendar step. The sparkline
- * is a real trend (resolved Deadlines+Tasks per day, from updated_at), not
- * a decorative fabrication.
+ * "Focus hours remaining" until the nearest upcoming Deadline, Task, or
+ * course To-Do item with a due date. Course-meeting time isn't factored in:
+ * meeting_pattern has no parser until the Calendar step. The sparkline is a
+ * real trend (resolved Deadlines+Tasks+To-Do items per day, from updated_at),
+ * not a decorative fabrication.
  */
-export function MomentumCard({ deadlines, tasks }: Props) {
+export function MomentumCard({ deadlines, tasks, todoItems }: Props) {
   const now = new Date();
-  // A deadline whose due_at has already passed but isn't (yet) marked
-  // Overdue still sorts earliest by buildUpcomingItems — skip past-due items
-  // so "focus hours remaining" only ever counts down to something actually
-  // still ahead, matching SuggestionBanner's same future-only filter.
-  const nearestDeadline = buildUpcomingItems({ deadlines, tasks: [] }).find((item) => item.at.getTime() > now.getTime());
-  const hoursRemaining = nearestDeadline ? Math.round((nearestDeadline.at.getTime() - now.getTime()) / 3_600_000) : null;
+  const nearestItem = buildUpcomingItems({ deadlines, tasks, todoItems }).find((item) => item.at.getTime() > now.getTime());
+  const hoursRemaining = nearestItem ? Math.round((nearestItem.at.getTime() - now.getTime()) / 3_600_000) : null;
 
-  const trend = buildCompletionTrend(deadlines, tasks);
-  const completedItems = buildCompletedThisWeek(deadlines, tasks);
+  const trend = buildCompletionTrend(deadlines, tasks, todoItems);
+  const completedItems = buildCompletedThisWeek(deadlines, tasks, todoItems);
   const max = Math.max(1, ...trend);
   const step = trend.length > 1 ? (SPARKLINE_WIDTH - SPARKLINE_PAD * 2) / (trend.length - 1) : 0;
   const points = trend
@@ -49,18 +52,18 @@ export function MomentumCard({ deadlines, tasks }: Props) {
     <GlassPanel className="flex flex-col gap-4 p-6">
       <p className="font-mono text-xs uppercase tracking-wide text-text-eyebrow">Momentum</p>
 
-      {nearestDeadline ? (
+      {nearestItem ? (
         <div>
           <p className="font-display text-3xl font-semibold text-text-primary">
             {hoursRemaining}
             <span className="ml-1 text-base font-normal text-text-secondary">focus hrs left</span>
           </p>
-          <Link href={nearestDeadline.href ?? "#"} className="text-xs text-text-secondary hover:text-accent-indigo hover:underline">
-            until &quot;{nearestDeadline.title}&quot;
+          <Link href={nearestItem.href ?? "#"} className="text-xs text-text-secondary hover:text-accent-indigo hover:underline">
+            until &quot;{nearestItem.title}&quot;
           </Link>
         </div>
       ) : (
-        <p className="text-sm text-text-secondary">No hard deadlines on the horizon.</p>
+        <p className="text-sm text-text-secondary">No upcoming deadlines, tasks, or to-dos on the horizon.</p>
       )}
 
       <div>
@@ -80,7 +83,7 @@ export function MomentumCard({ deadlines, tasks }: Props) {
                 {item.title}
               </Link>
               <span className="font-mono text-[10px] text-text-secondary">
-                {item.kind === "deadline" ? "Deadline" : "Task"} · {formatRelativeTime(item.at, now)}
+                {KIND_LABEL[item.kind]} · {formatRelativeTime(item.at, now)}
               </span>
             </li>
           ))}

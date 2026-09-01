@@ -61,6 +61,16 @@ describe("buildUpcomingItems", () => {
     expect(items[0].title).toBe("Reminder");
   });
 
+  it("does not mark a todo item urgent on its due date — due_date is a calendar day, not midnight UTC", () => {
+    const today = new Date().toISOString().slice(0, 10);
+    const items = buildUpcomingItems({
+      deadlines: [],
+      tasks: [],
+      todoItems: [makeTodoItem({ id: "todo-today", due_date: today })],
+    });
+    expect(items.find((item) => item.id === "todo-today")?.urgent).toBe(false);
+  });
+
   it("marks a task or todo item urgent once its due date is in the past, even without a status field to carry it", () => {
     const items = buildUpcomingItems({
       deadlines: [],

@@ -44,7 +44,7 @@ export function DashboardContainer() {
               <NowWidget deadlines={deadlines?.rows ?? []} tasks={tasks?.rows ?? []} reminders={reminders?.rows ?? []} />
               <NextSequenceQueue deadlines={deadlines?.rows ?? []} tasks={tasks?.rows ?? []} todoItems={todoItems?.rows ?? []} />
             </div>
-            <MomentumCard deadlines={deadlines?.rows ?? []} tasks={tasks?.rows ?? []} />
+            <MomentumCard deadlines={deadlines?.rows ?? []} tasks={tasks?.rows ?? []} todoItems={todoItems?.rows ?? []} />
           </div>
         </>
       )}
