@@ -6,6 +6,8 @@ import {
   createDeadline,
   createReminder,
   createTask,
+  createTodoItem,
+  createTodoList,
   walkTransitions,
   type TestUser,
 } from "../../../../supabase/tests/helpers";
@@ -114,6 +116,12 @@ describe("intakeVoiceTurn / confirmVoiceSession / declineVoiceSession", () => {
     expect(row.state).toBe("Responding");
     expect(row.resolved_intent).toBeNull();
     expect(row.confidence_score).toBeNull();
+    // supabase/migrations/0022_voice_session_diagnostics.sql: a silent
+    // capture is a deliberate short-circuit, not a failure -- error_message
+    // stays null (distinct from the genuine-failure case below).
+    expect(row.query_kind).toBeNull();
+    expect(row.schedule_time_window).toBeNull();
+    expect(row.error_message).toBeNull();
   });
 
   it("an all-whitespace transcript transcribed from audio also asks the user to repeat", async () => {
@@ -129,6 +137,37 @@ describe("intakeVoiceTurn / confirmVoiceSession / declineVoiceSession", () => {
 
     expect(resolveIntent).not.toHaveBeenCalled();
     expect(result.message).toBe("I didn't catch that — could you try again?");
+  });
+
+  // Previously a bare `catch {}` discarded the actual error entirely -- a
+  // failed turn left resolved_intent/confidence_score both NULL with no way
+  // to tell why from the DB (this is exactly what a real production incident
+  // looked like when investigating a different report).
+  it("a resolveIntent failure logs and persists the actual error, distinct from silence", async () => {
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const resolveIntent = vi.fn().mockRejectedValue(new Error("OpenAI request timed out"));
+
+    const result = await intakeVoiceTurn(
+      user.client,
+      userId,
+      { transcript: "what should I do this afternoon" },
+      { transcribe: vi.fn(), resolveIntent },
+    );
+
+    expect(result.message).toBe("Sorry, I had trouble processing that — could you try again?");
+    // Distinct wording from the silence-guard message above, and from the
+    // low-confidence "could you rephrase" message.
+    expect(result.message).not.toBe("I didn't catch that — could you try again?");
+    expect(consoleErrorSpy).toHaveBeenCalledWith("intakeVoiceTurn: transcribe/resolveIntent failed", expect.any(Error));
+
+    const row = await sessionRow(result.sessionId);
+    expect(row.resolved_intent).toBeNull();
+    expect(row.confidence_score).toBeNull();
+    expect(row.query_kind).toBeNull();
+    expect(row.schedule_time_window).toBeNull();
+    expect(row.error_message).toBe("OpenAI request timed out");
+
+    consoleErrorSpy.mockRestore();
   });
 
   // AC-4, NC-VOICE-003
@@ -418,12 +457,16 @@ describe("intakeVoiceTurn / confirmVoiceSession / declineVoiceSession", () => {
   // never be read back as still due) and time-window scoping (a query
   // scoped to "today" must not pull in items due on other days).
   describe("upcoming_schedule", () => {
-    it("excludes completed/done items and items outside the requested 'today' window, and reads back as plain sentences", async () => {
+    it("excludes completed/done items and items outside the requested 'today' window, includes open Course To-Do items, and reads back as plain sentences", async () => {
       const courseId = await createCourse(admin, userId, { name: "Schedule scoping course" });
+      const listId = await createTodoList(admin, userId, { name: "Project: Scoping canary" });
 
       const now = new Date();
       const todayNoonUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 12, 0, 0)).toISOString();
       const tomorrowNoonUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1, 12, 0, 0)).toISOString();
+      const todayDateKey = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}-${String(now.getUTCDate()).padStart(2, "0")}`;
+      const tomorrowDate = new Date(now.getTime() + 86_400_000);
+      const tomorrowDateKey = `${tomorrowDate.getUTCFullYear()}-${String(tomorrowDate.getUTCMonth() + 1).padStart(2, "0")}-${String(tomorrowDate.getUTCDate()).padStart(2, "0")}`;
 
       await createDeadline(admin, userId, courseId, { title: "Open deadline due today", due_at: todayNoonUtc });
 
@@ -440,6 +483,14 @@ describe("intakeVoiceTurn / confirmVoiceSession / declineVoiceSession", () => {
 
       await createDeadline(admin, userId, courseId, { title: "Deadline due tomorrow", due_at: tomorrowNoonUtc });
 
+      // Previously invisible to this query entirely (only Deadlines/Tasks
+      // were queried) -- a Course To-Do / custom-project item due today
+      // must now show up just like a Deadline or Task would.
+      await createTodoItem(admin, userId, listId, { title: "Open todo item due today", due_date: todayDateKey });
+      const doneTodoItemId = await createTodoItem(admin, userId, listId, { title: "Done todo item due today", due_date: todayDateKey });
+      await admin.from("todo_items").update({ is_done: true }).eq("id", doneTodoItemId);
+      await createTodoItem(admin, userId, listId, { title: "Todo item due tomorrow", due_date: tomorrowDateKey });
+
       const resolveIntent = fakeResolver({
         confidence: 0.99,
         readOnly: true,
@@ -452,12 +503,23 @@ describe("intakeVoiceTurn / confirmVoiceSession / declineVoiceSession", () => {
 
       expect(result.message).toContain("Open deadline due today");
       expect(result.message).toContain("Open task due today");
+      expect(result.message).toContain("Open todo item due today");
       expect(result.message).not.toContain("Completed deadline due today");
       expect(result.message).not.toContain("Done task due today");
+      expect(result.message).not.toContain("Done todo item due today");
       expect(result.message).not.toContain("Deadline due tomorrow");
+      expect(result.message).not.toContain("Todo item due tomorrow");
       // Human-readable ("today at ..."), not a raw ISO timestamp.
       expect(result.message).toMatch(/today at \d{1,2}:\d{2} [AP]M/);
       expect(result.message).not.toMatch(/\d{4}-\d{2}-\d{2}T/);
+
+      // Diagnostics (supabase/migrations/0022_voice_session_diagnostics.sql):
+      // the resolved query_kind/schedule_time_window are now persisted so a
+      // turn's actual routing is provable from the DB, not inferred.
+      const row = await sessionRow(result.sessionId);
+      expect(row.query_kind).toBe("upcoming_schedule");
+      expect(row.schedule_time_window).toBe("today");
+      expect(row.error_message).toBeNull();
     });
 
     it("falls back to the unscoped next-N behavior when no time window is resolved", async () => {

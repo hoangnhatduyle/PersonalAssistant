@@ -107,6 +107,35 @@ export async function createTask(
   return data.id as string;
 }
 
+export async function createTodoList(
+  admin: SupabaseClient,
+  userId: string,
+  overrides: Record<string, unknown> = {},
+): Promise<string> {
+  const { data, error } = await admin
+    .from("todo_lists")
+    .insert({ user_id: userId, name: "Test List", ...overrides })
+    .select("id")
+    .single();
+  if (error) throw new Error(`failed to create todo list: ${error.message}`, { cause: error });
+  return data.id as string;
+}
+
+export async function createTodoItem(
+  admin: SupabaseClient,
+  userId: string,
+  listId: string,
+  overrides: Record<string, unknown> = {},
+): Promise<string> {
+  const { data, error } = await admin
+    .from("todo_items")
+    .insert({ user_id: userId, list_id: listId, title: "Test To-Do Item", ...overrides })
+    .select("id")
+    .single();
+  if (error) throw new Error(`failed to create todo item: ${error.message}`, { cause: error });
+  return data.id as string;
+}
+
 export async function createPerson(
   admin: SupabaseClient,
   userId: string,

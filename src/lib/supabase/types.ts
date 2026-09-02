@@ -905,10 +905,13 @@ export type Database = {
         Row: {
           confidence_score: number | null
           ended_at: string | null
+          error_message: string | null
           expires_at: string | null
           id: string
           pending_mutation: Json | null
+          query_kind: string | null
           resolved_intent: string | null
+          schedule_time_window: string | null
           started_at: string
           state: Database["public"]["Enums"]["voice_session_state"]
           transcript: string | null
@@ -917,10 +920,13 @@ export type Database = {
         Insert: {
           confidence_score?: number | null
           ended_at?: string | null
+          error_message?: string | null
           expires_at?: string | null
           id?: string
           pending_mutation?: Json | null
+          query_kind?: string | null
           resolved_intent?: string | null
+          schedule_time_window?: string | null
           started_at?: string
           state?: Database["public"]["Enums"]["voice_session_state"]
           transcript?: string | null
@@ -929,10 +935,13 @@ export type Database = {
         Update: {
           confidence_score?: number | null
           ended_at?: string | null
+          error_message?: string | null
           expires_at?: string | null
           id?: string
           pending_mutation?: Json | null
+          query_kind?: string | null
           resolved_intent?: string | null
+          schedule_time_window?: string | null
           started_at?: string
           state?: Database["public"]["Enums"]["voice_session_state"]
           transcript?: string | null

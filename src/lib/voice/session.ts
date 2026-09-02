@@ -14,7 +14,7 @@ import { loadUserTimezone, type ResolveIntentFn, type ResolvedIntent } from "@/l
 import { runKnowledgeLookup, type KnowledgeCitation, type KnowledgeLookupFn } from "@/lib/knowledge/retrieval";
 import { runSuggestionsLookup, type SuggestionsLookupFn } from "@/lib/voice/suggestions-lookup";
 import { runGeneralConversation, type GeneralConversationFn } from "@/lib/voice/general-conversation";
-import { resolveScheduleWindowBounds, type ScheduleTimeWindow } from "@/lib/voice/schedule-time-window";
+import { resolveScheduleWindowBounds, resolveScheduleWindowDateKeys, type ScheduleTimeWindow } from "@/lib/voice/schedule-time-window";
 import { rankScheduleItems, formatScheduleAnswer, type ScheduleItem } from "@/lib/voice/schedule-formatting";
 
 export class VoiceSessionNotFoundError extends Error {}
@@ -110,6 +110,10 @@ async function runUpcomingScheduleQuery(
   const now = new Date();
   const timezone = await loadUserTimezone(supabase, userId);
   const bounds = resolveScheduleWindowBounds(timeWindow, timezone, now);
+  // todo_items.due_date is a plain `date` column (no time-of-day), so it
+  // can't be filtered against the timestamp bounds above -- resolved
+  // separately as calendar-date strings.
+  const dateKeys = resolveScheduleWindowDateKeys(timeWindow, timezone, now);
 
   let deadlinesQuery = supabase
     .from("deadlines")
@@ -124,23 +128,45 @@ async function runUpcomingScheduleQuery(
     .is("deleted_at", null)
     .not("due_at", "is", null)
     .eq("status", "Open");
+  // Previously never queried at all here -- a Course To-Do / custom-project
+  // item (e.g. on a freestanding "Project: X" list) due today was
+  // structurally invisible to "what is due today," even though it's exactly
+  // as due as a Deadline or Task.
+  let todoItemsQuery = supabase
+    .from("todo_items")
+    .select("id, title, due_date, priority")
+    .eq("user_id", userId)
+    .is("deleted_at", null)
+    .not("due_date", "is", null)
+    .eq("is_done", false);
 
-  if (bounds) {
+  if (bounds && dateKeys) {
     // A single day/week window is naturally small -- a generous sanity
     // ceiling, not a "top N" cap like the unscoped branch below.
     deadlinesQuery = deadlinesQuery.gte("due_at", bounds.startUtcIso).lt("due_at", bounds.endUtcIsoExclusive).order("due_at", { ascending: true }).limit(20);
     tasksQuery = tasksQuery.gte("due_at", bounds.startUtcIso).lt("due_at", bounds.endUtcIsoExclusive).order("due_at", { ascending: true }).limit(20);
+    todoItemsQuery = todoItemsQuery
+      .gte("due_date", dateKeys.startDateKey)
+      .lt("due_date", dateKeys.endDateKeyExclusive)
+      .order("due_date", { ascending: true })
+      .limit(20);
   } else {
-    // "unscoped": preserve the original next-5-of-each behavior.
+    // "unscoped": preserve the original next-5-of-each behavior, anchored
+    // to "today" for the date-only todo_items column.
+    const todayKey = resolveScheduleWindowDateKeys("today", timezone, now)!.startDateKey;
     deadlinesQuery = deadlinesQuery.gte("due_at", now.toISOString()).order("due_at", { ascending: true }).limit(5);
     tasksQuery = tasksQuery.gte("due_at", now.toISOString()).order("due_at", { ascending: true }).limit(5);
+    todoItemsQuery = todoItemsQuery.gte("due_date", todayKey).order("due_date", { ascending: true }).limit(5);
   }
 
-  const [{ data: deadlines }, { data: tasks }] = await Promise.all([deadlinesQuery, tasksQuery]);
+  const [{ data: deadlines }, { data: tasks }, { data: todoItems }] = await Promise.all([deadlinesQuery, tasksQuery, todoItemsQuery]);
 
   const items: ScheduleItem[] = [
     ...(deadlines ?? []).map((d): ScheduleItem => ({ id: d.id, title: d.title, dueAt: new Date(d.due_at), kind: "deadline", priority: d.priority })),
     ...(tasks ?? []).map((t): ScheduleItem => ({ id: t.id, title: t.title, dueAt: new Date(t.due_at!), kind: "task", priority: t.priority })),
+    ...(todoItems ?? []).map(
+      (item): ScheduleItem => ({ id: item.id, title: item.title, dueAt: new Date(`${item.due_date}T23:59:59.999`), kind: "todo", priority: item.priority }),
+    ),
   ];
 
   const groups = rankScheduleItems(items, timezone);
@@ -153,13 +179,26 @@ async function runUpcomingScheduleQuery(
  * unsupported intent) — all three follow the same Transcribing ->
  * IntentAmbiguous -> Responding transition sequence, differing only in the
  * resolved-intent fields recorded and the message spoken back.
+ *
+ * query_kind/schedule_time_window/error_message (supabase/migrations/
+ * 0022_voice_session_diagnostics.sql) exist purely for diagnosing what a
+ * given turn actually did after the fact -- e.g. telling apart "the LLM
+ * resolved upcoming_schedule but confidence was too low" from "resolveIntent
+ * threw" from "the transcript was blank," none of which were distinguishable
+ * from the DB before this.
  */
 async function respondWithClarification(
   supabase: SupabaseClient<Database>,
   userId: string,
   sessionId: string,
   message: string,
-  resolvedIntentFields: { resolved_intent: string | null; confidence_score: number | null },
+  resolvedIntentFields: {
+    resolved_intent: string | null;
+    confidence_score: number | null;
+    query_kind: string | null;
+    schedule_time_window: string | null;
+    error_message: string | null;
+  },
 ): Promise<VoiceTurnResult> {
   await transition(supabase, userId, sessionId, "Transcribing", "intent_ambiguous_or_low_confidence", resolvedIntentFields);
   await transition(supabase, userId, sessionId, "IntentAmbiguous", "clarification_requested", {
@@ -229,14 +268,27 @@ export async function intakeVoiceTurn(
       return respondWithClarification(supabase, userId, sessionId, "I didn't catch that — could you try again?", {
         resolved_intent: null,
         confidence_score: null,
+        query_kind: null,
+        schedule_time_window: null,
+        error_message: null,
       });
     }
 
     intent = await deps.resolveIntent(supabase, userId, transcript);
-  } catch {
+  } catch (error) {
+    // Previously discarded entirely -- a failed turn left resolved_intent/
+    // confidence_score both NULL with no way to tell why from the DB.
+    // console.error matches this codebase's established server-side error
+    // logging convention (see src/lib/api/response.ts, src/lib/voice/
+    // elevenlabs.ts, etc. -- no dedicated logger module exists).
+    console.error("intakeVoiceTurn: transcribe/resolveIntent failed", error);
+    const errorMessage = (error instanceof Error ? error.message : String(error)).slice(0, 500);
     return respondWithClarification(supabase, userId, sessionId, "Sorry, I had trouble processing that — could you try again?", {
       resolved_intent: null,
       confidence_score: null,
+      query_kind: null,
+      schedule_time_window: null,
+      error_message: errorMessage,
     });
   }
 
@@ -258,12 +310,17 @@ export async function intakeVoiceTurn(
     return respondWithClarification(supabase, userId, sessionId, message, {
       resolved_intent: intent.summary,
       confidence_score: intent.confidence,
+      query_kind: intent.queryKind ?? null,
+      schedule_time_window: intent.scheduleTimeWindow ?? null,
+      error_message: null,
     });
   }
 
   await transition(supabase, userId, sessionId, "Transcribing", "intent_resolved_high_confidence", {
     resolved_intent: intent.summary,
     confidence_score: intent.confidence,
+    query_kind: intent.queryKind ?? null,
+    schedule_time_window: intent.scheduleTimeWindow ?? null,
   });
 
   if (intent.readOnly) {

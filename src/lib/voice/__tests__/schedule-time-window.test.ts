@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveScheduleWindowBounds } from "../schedule-time-window";
+import { resolveScheduleWindowBounds, resolveScheduleWindowDateKeys } from "../schedule-time-window";
 
 describe("resolveScheduleWindowBounds", () => {
   it("returns null for 'unscoped' (no filtering)", () => {
@@ -65,5 +65,56 @@ describe("resolveScheduleWindowBounds", () => {
     expect(bounds).not.toBeNull();
     expect(new Date(bounds!.startUtcIso).getTime()).toBeLessThanOrEqual(Date.now());
     expect(new Date(bounds!.endUtcIsoExclusive).getTime()).toBeGreaterThan(Date.now());
+  });
+});
+
+describe("resolveScheduleWindowDateKeys", () => {
+  it("returns null for 'unscoped'", () => {
+    expect(resolveScheduleWindowDateKeys("unscoped", "America/Chicago", new Date("2026-09-02T20:00:00Z"))).toBeNull();
+  });
+
+  it("computes today's date-key bounds against the user's real timezone", () => {
+    // 8pm UTC = 3pm CDT, still Sep 2 locally.
+    const now = new Date("2026-09-02T20:00:00Z");
+    expect(resolveScheduleWindowDateKeys("today", "America/Chicago", now)).toEqual({
+      startDateKey: "2026-09-02",
+      endDateKeyExclusive: "2026-09-03",
+    });
+  });
+
+  it("agrees with resolveScheduleWindowBounds's calendar day near a timezone that would differ from UTC's own date", () => {
+    // 2am UTC on Sep 3 is still 9pm CDT on Sep 2 -- a case where the UTC
+    // calendar date and the user's local calendar date disagree, the exact
+    // scenario this date-key resolver exists to get right for a `date`
+    // column that has no timezone of its own.
+    const now = new Date("2026-09-03T02:00:00Z");
+    expect(resolveScheduleWindowDateKeys("today", "America/Chicago", now)).toEqual({
+      startDateKey: "2026-09-02",
+      endDateKeyExclusive: "2026-09-03",
+    });
+  });
+
+  it("computes tomorrow's date-key bounds as the next single day", () => {
+    const now = new Date("2026-09-02T20:00:00Z");
+    expect(resolveScheduleWindowDateKeys("tomorrow", "America/Chicago", now)).toEqual({
+      startDateKey: "2026-09-03",
+      endDateKeyExclusive: "2026-09-04",
+    });
+  });
+
+  it("computes a 7-day week date-key span starting today", () => {
+    const now = new Date("2026-09-02T20:00:00Z");
+    expect(resolveScheduleWindowDateKeys("week", "America/Chicago", now)).toEqual({
+      startDateKey: "2026-09-02",
+      endDateKeyExclusive: "2026-09-09",
+    });
+  });
+
+  it("is unaffected by a DST transition (pure calendar-day arithmetic, no instant conversion)", () => {
+    const now = new Date("2026-10-30T15:00:00Z"); // Oct 30, before the Nov 1 DST transition
+    expect(resolveScheduleWindowDateKeys("week", "America/Chicago", now)).toEqual({
+      startDateKey: "2026-10-30",
+      endDateKeyExclusive: "2026-11-06",
+    });
   });
 });

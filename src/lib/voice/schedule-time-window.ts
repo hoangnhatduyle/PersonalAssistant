@@ -75,6 +75,21 @@ function localMidnightUtc(year: number, month: number, day: number, timeZone: st
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+/** How many days after today's local midnight a window starts, and how many days it spans. Shared by both the instant-based and date-key-based resolvers below. */
+function windowOffsetAndSpanDays(window: "today" | "tomorrow" | "week"): { offsetDays: number; spanDays: number } {
+  switch (window) {
+    case "today":
+      return { offsetDays: 0, spanDays: 1 };
+    case "tomorrow":
+      return { offsetDays: 1, spanDays: 1 };
+    case "week":
+      // Matches the dashboard's own 7days semantics (today through 6 days
+      // from now, inclusive) -- computed here against the user's real
+      // timezone instead of client-local time.
+      return { offsetDays: 0, spanDays: 7 };
+  }
+}
+
 /** Returns null for "unscoped" (no filtering — the legacy/default behavior). */
 export function resolveScheduleWindowBounds(
   window: ScheduleTimeWindow,
@@ -85,29 +100,52 @@ export function resolveScheduleWindowBounds(
 
   const nowParts = partsInZone(now, timezone);
   const todayMidnight = localMidnightUtc(nowParts.year, nowParts.month, nowParts.day, timezone);
-
-  let startMs: number;
-  let spanDays: number;
-  switch (window) {
-    case "today":
-      startMs = todayMidnight.getTime();
-      spanDays = 1;
-      break;
-    case "tomorrow":
-      startMs = todayMidnight.getTime() + DAY_MS;
-      spanDays = 1;
-      break;
-    case "week":
-      // Matches the dashboard's own 7days semantics (today through 6 days
-      // from now, inclusive) -- computed here against the user's real
-      // timezone instead of client-local time.
-      startMs = todayMidnight.getTime();
-      spanDays = 7;
-      break;
-  }
+  const { offsetDays, spanDays } = windowOffsetAndSpanDays(window);
+  const startMs = todayMidnight.getTime() + offsetDays * DAY_MS;
 
   return {
     startUtcIso: new Date(startMs).toISOString(),
     endUtcIsoExclusive: new Date(startMs + spanDays * DAY_MS).toISOString(),
+  };
+}
+
+export interface ScheduleWindowDateKeys {
+  /** Inclusive lower bound, calendar date (YYYY-MM-DD) in the caller's timezone. */
+  startDateKey: string;
+  /** Exclusive upper bound, calendar date (YYYY-MM-DD) in the caller's timezone. */
+  endDateKeyExclusive: string;
+}
+
+function dateKey(year: number, month: number, day: number): string {
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+/**
+ * Same window semantics as resolveScheduleWindowBounds, expressed as plain
+ * calendar-date strings instead of UTC instants -- for filtering a `date`
+ * column (e.g. todo_items.due_date), which has no time-of-day/timezone
+ * component to convert. Pure calendar-day arithmetic (never converts back
+ * through a real timezone), so unlike the instant-based resolver above this
+ * has no DST edge case at all. Returns null for "unscoped".
+ */
+export function resolveScheduleWindowDateKeys(
+  window: ScheduleTimeWindow,
+  timezone: string,
+  now: Date = new Date(),
+): ScheduleWindowDateKeys | null {
+  if (window === "unscoped") return null;
+
+  const { year, month, day } = partsInZone(now, timezone);
+  // Date.UTC/getUTC* here are pure calendar-day arithmetic on a Y-M-D
+  // triple, not a real timezone conversion -- "UTC" is just an arbitrary
+  // fixed-offset clock used so adding days never crosses a DST boundary.
+  const todayAsUtcMidnight = Date.UTC(year, month - 1, day);
+  const { offsetDays, spanDays } = windowOffsetAndSpanDays(window);
+  const start = new Date(todayAsUtcMidnight + offsetDays * DAY_MS);
+  const end = new Date(start.getTime() + spanDays * DAY_MS);
+
+  return {
+    startDateKey: dateKey(start.getUTCFullYear(), start.getUTCMonth() + 1, start.getUTCDate()),
+    endDateKeyExclusive: dateKey(end.getUTCFullYear(), end.getUTCMonth() + 1, end.getUTCDate()),
   };
 }

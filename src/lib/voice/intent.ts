@@ -188,7 +188,8 @@ Choose among the read-only query kinds using these boundaries:
   generated personalization/reminder-timing suggestions, such as "check my
   suggestions" or "did the app recommend changing my reminder timing?"
 - "upcoming_schedule": the user only wants a factual listing of their upcoming
-  Tasks or Deadlines, such as "what is due this week?" Also set
+  Tasks, Deadlines, or Course To-Do/custom-project items, such as "what is
+  due this week?" Also set
   schedule_time_window to the calendar window the wording implies:
   "today"/"due today"/"this afternoon"/"this evening" (as a plain factual
   listing, not advice — see the general_conversation boundary below for the
