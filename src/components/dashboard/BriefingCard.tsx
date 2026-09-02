@@ -63,10 +63,8 @@ export function BriefingCard() {
     const cached = getCachedBriefing();
     if (cached) {
       setBriefing(cached.briefing);
-      return;
     }
-    fetchBriefing();
-  }, [fetchBriefing]);
+  }, []);
 
   if (dismissed) return null;
 
@@ -113,7 +111,14 @@ export function BriefingCard() {
             </Button>
           </div>
         </>
-      ) : null}
+      ) : (
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-sm text-text-secondary">Tap to generate today&apos;s briefing.</p>
+          <Button size="sm" variant="secondary" onClick={fetchBriefing}>
+            Generate Briefing
+          </Button>
+        </div>
+      )}
     </GlassPanel>
   );
 }

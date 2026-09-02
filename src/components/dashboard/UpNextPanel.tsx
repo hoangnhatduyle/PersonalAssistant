@@ -115,19 +115,17 @@ export function UpNextPanel({ deadlines, tasks, reminders, todoItems, todoLists,
   const deadlineById = new Map(deadlines.map((d) => [d.id, d]));
   const taskById = new Map(tasks.map((t) => [t.id, t]));
 
-  const todoItemCourseNameMap = useMemo(() => {
+  const todoItemLabelMap = useMemo(() => {
     const courseNameById = new Map(courses.map((c) => [c.id, c.name]));
-    const listCourseMap = new Map<string, string>();
+    const listInfoMap = new Map<string, { listName: string; courseName?: string }>();
     for (const list of todoLists) {
-      if (list.course_id) {
-        const name = courseNameById.get(list.course_id);
-        if (name) listCourseMap.set(list.id, name);
-      }
+      const courseName = list.course_id ? courseNameById.get(list.course_id) : undefined;
+      listInfoMap.set(list.id, { listName: list.name, courseName: courseName ?? undefined });
     }
-    const result = new Map<string, string>();
+    const result = new Map<string, { listName: string; courseName?: string }>();
     for (const item of todoItems) {
-      const courseName = listCourseMap.get(item.list_id);
-      if (courseName) result.set(item.id, courseName);
+      const info = listInfoMap.get(item.list_id);
+      if (info) result.set(item.id, info);
     }
     return result;
   }, [todoItems, todoLists, courses]);
@@ -142,10 +140,10 @@ export function UpNextPanel({ deadlines, tasks, reminders, todoItems, todoLists,
   const minuteTip = hands ? polarPoint(MINUTE_HAND_LENGTH, hands.minute) : null;
 
   return (
-    <GlassPanel variant="glow-ok" className="flex flex-col gap-6 p-6 lg:flex-row lg:items-start">
+    <GlassPanel variant="glow-ok" className="flex flex-col gap-6 p-6 lg:flex-row lg:items-stretch">
       {/* Clock */}
-      <div className="flex flex-shrink-0 flex-col items-center gap-3">
-        <svg viewBox="0 0 300 300" aria-hidden="true" className="h-56 w-56">
+      <div className="flex flex-shrink-0 flex-col items-center justify-center gap-3">
+        <svg viewBox="0 0 300 300" aria-hidden="true" className="h-64 w-64">
           <circle cx={CENTER} cy={CENTER} r={FACE_RADIUS} className="fill-panel/30 stroke-panel-border/60" strokeWidth={1} />
           <circle cx={CENTER} cy={CENTER} r={RING_RADIUS} className="fill-none stroke-panel-border" strokeWidth={1} />
 
@@ -266,6 +264,7 @@ export function UpNextPanel({ deadlines, tasks, reminders, todoItems, todoLists,
                     ? TASK_STATUS_TONE[status as TaskRow["status"]]
                     : undefined;
               const showPastDueTag = item.urgent && item.kind !== "deadline";
+              const todoInfo = item.kind === "todo" ? todoItemLabelMap.get(item.id) : undefined;
               const kindLabel =
                 item.kind === "deadline"
                   ? "Deadline"
@@ -273,9 +272,9 @@ export function UpNextPanel({ deadlines, tasks, reminders, todoItems, todoLists,
                     ? "Task"
                     : item.kind === "reminder"
                       ? "Reminder"
-                      : "To-Do";
+                      : todoInfo?.listName ?? "To-Do";
 
-              const courseName = item.kind === "todo" ? todoItemCourseNameMap.get(item.id) : undefined;
+              const courseName = todoInfo?.courseName;
               const taskTags = item.kind === "task" ? taskById.get(item.id)?.tags ?? [] : [];
 
               return (

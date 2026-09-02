@@ -13,6 +13,7 @@ import { useVoiceCapture, type VoiceTurnOrigin } from "@/components/assistant/Vo
 import { useVoiceTurn, type VoiceTurnClientInput } from "@/hooks/useVoiceTurn";
 import { useSpeakVoiceResponse } from "@/hooks/useSpeakVoiceResponse";
 import { useAutoStopRecorder } from "@/hooks/useAutoStopRecorder";
+import { unlockAudioPlayback } from "@/lib/voice/play-audio";
 import { useSettings } from "@/hooks/useSettings";
 import { usePersonalizationSuggestions } from "@/hooks/usePersonalizationSuggestions";
 import { useReviewSuggestionsAloud } from "@/hooks/useReviewSuggestionsAloud";
@@ -74,21 +75,20 @@ export function CaptureChannel({ compact = false }: Props) {
   const startRecordingRef = useRef<() => Promise<void>>(async () => {});
 
   /**
-   * The one place "what happens after any spoken message finishes" lives —
-   * used both for a plain (non-confirmation) response below, and passed to
-   * ConfirmationBar for its Confirm/Decline outcome message. Awaits full
-   * playback (useSpeakVoiceResponse's mutation resolves once
-   * playBase64Audio's audio.onended fires) so hands-free re-arming the mic
-   * never overlaps the assistant still talking.
+   * Speaks text aloud and optionally re-arms the mic for hands-free.
+   * Re-arm only happens when `shouldResume` is true AND audio actually
+   * played (mobile autoplay blocks silently resolve with played=false).
    */
   const speakAndMaybeResume = useCallback(
-    async (text: string) => {
+    async (text: string, shouldResume = false) => {
+      let played = false;
       try {
-        await speakResponse.mutateAsync(text);
+        const result = await speakResponse.mutateAsync(text);
+        played = result?.played ?? false;
       } catch {
         // Toast already surfaced by useSpeakVoiceResponse's onError.
       }
-      if (handsFree) void startRecordingRef.current();
+      if (handsFree && shouldResume && played) void startRecordingRef.current();
     },
     [speakResponse, handsFree],
   );
@@ -112,26 +112,22 @@ export function CaptureChannel({ compact = false }: Props) {
             }
             setConfirmationReady(true);
           } else if (result.queryKind === "personalization_suggestions") {
+            let played = false;
             try {
-              await speakResponse.mutateAsync(result.message);
+              const speakResult = await speakResponse.mutateAsync(result.message);
+              played = speakResult?.played ?? false;
             } catch {
               // Toast already surfaced by useSpeakVoiceResponse's onError.
             }
-            // generateSuggestionsForUser already ran server-side (src/lib/
-            // voice/suggestions-lookup.ts) — refetch to see what it created.
-            // The detailed per-suggestion spoken review loop is gated by the
-            // speak_suggestions_aloud preference — without it, the initial
-            // count response above is still spoken, but we skip reading each
-            // suggestion and listening for yes/no.
             if (settings?.speak_suggestions_aloud) {
               const { data: fresh } = await refetchSuggestions();
               if (fresh && fresh.rows.length > 0) {
                 await reviewAloud.start(fresh.rows);
               }
             }
-            if (handsFree) void startRecordingRef.current();
+            if (handsFree && played) void startRecordingRef.current();
           } else {
-            void speakAndMaybeResume(result.message);
+            void speakAndMaybeResume(result.message, result.needsFollowUp === true);
           }
         }
       } catch {
@@ -155,6 +151,7 @@ export function CaptureChannel({ compact = false }: Props) {
       stopRecording();
       return;
     }
+    unlockAudioPlayback();
     try {
       await startRecording();
     } catch {

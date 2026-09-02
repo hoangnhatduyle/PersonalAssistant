@@ -8,6 +8,21 @@
 let currentAudio: HTMLAudioElement | null = null;
 let currentFinish: ((played: boolean) => void) | null = null;
 
+/**
+ * Call during a user gesture (e.g. mic tap) to unlock audio playback on
+ * mobile browsers. Without this, `audio.play()` after an async pipeline
+ * (transcribe + TTS) is blocked because the original gesture chain expired.
+ */
+let audioContext: AudioContext | null = null;
+export function unlockAudioPlayback(): void {
+  try {
+    audioContext ??= new AudioContext();
+    if (audioContext.state === "suspended") void audioContext.resume();
+  } catch {
+    // AudioContext unavailable — playback will rely on direct gesture chain
+  }
+}
+
 function releaseCurrent(): void {
   if (currentAudio) {
     currentAudio.onended = null;

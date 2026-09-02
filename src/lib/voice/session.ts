@@ -48,6 +48,8 @@ export interface VoiceTurnResult {
   extractionLabel?: "machine_extracted";
   /** Set only for a personalization_suggestions response — tells the client to kick off the review-aloud loop (src/hooks/useReviewSuggestionsAloud.ts) once this message has been spoken. */
   queryKind?: "personalization_suggestions";
+  /** When true, the response expects further user input (clarification, retry). Hands-free mic should only re-arm when this is true and audio playback succeeded. */
+  needsFollowUp?: boolean;
 }
 
 /**
@@ -177,7 +179,7 @@ export async function intakeVoiceTurn(
     await transition(supabase, userId, sessionId, "IntentAmbiguous", "clarification_requested", {
       ended_at: new Date().toISOString(),
     });
-    return { sessionId, state: "Responding", message: "Sorry, I had trouble processing that — could you try again?" };
+    return { sessionId, state: "Responding", message: "Sorry, I had trouble processing that — could you try again?", needsFollowUp: true };
   }
 
   // A read-only intent this app can't actually answer (queryKind unset/
@@ -202,7 +204,7 @@ export async function intakeVoiceTurn(
     const message = unsupportedReadOnlyQuery
       ? "I can't help with that kind of question yet — I can tell you what's coming up, though."
       : `I'm not sure I understood — could you rephrase that? (heard: "${transcript}")`;
-    return { sessionId, state: "Responding", message };
+    return { sessionId, state: "Responding", message, needsFollowUp: true };
   }
 
   await transition(supabase, userId, sessionId, "Transcribing", "intent_resolved_high_confidence", {

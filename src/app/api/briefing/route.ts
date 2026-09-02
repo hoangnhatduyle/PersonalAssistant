@@ -36,11 +36,13 @@ export async function POST() {
         .from("courses")
         .select("name, code, meeting_blocks, location")
         .eq("user_id", user.id)
+        .is("person_id", null)
         .is("deleted_at", null),
       supabase
         .from("deadlines")
         .select("title, due_at, status, priority")
         .eq("user_id", user.id)
+        .is("person_id", null)
         .is("deleted_at", null)
         .or(`due_at.lte.${todayEnd},status.eq.Overdue`)
         .in("status", ["Not Started", "In Progress", "Submitted", "Overdue"]),
@@ -48,6 +50,7 @@ export async function POST() {
         .from("tasks")
         .select("title, due_at, status, tags")
         .eq("user_id", user.id)
+        .is("person_id", null)
         .is("deleted_at", null)
         .eq("status", "Open")
         .lte("due_at", todayEnd),
