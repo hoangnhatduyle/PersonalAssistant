@@ -5,8 +5,13 @@ import { useCreateTodoItem, useUpdateTodoItem, useDeleteTodoItem } from "@/hooks
 import { GlassPanel } from "@/components/ui/GlassPanel";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
+import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
-import type { TodoItemRow, TodoListRow } from "@/lib/api/entity-types";
+import { ITEM_PRIORITY_TONE } from "@/lib/status-colors";
+import type { ItemPriority, TodoItemRow, TodoListRow } from "@/lib/api/entity-types";
+
+const PRIORITY_OPTIONS: ItemPriority[] = ["Low", "Medium", "High", "Urgent"];
 
 type Props = {
   list: TodoListRow;
@@ -24,19 +29,21 @@ function TodoItemLine({ item }: { item: TodoItemRow }) {
   const [editing, setEditing] = useState(false);
   const [editTitle, setEditTitle] = useState(item.title);
   const [editDueDate, setEditDueDate] = useState(item.due_date ?? "");
+  const [editPriority, setEditPriority] = useState<ItemPriority | "">(item.priority ?? "");
 
   const isOverdue = !item.is_done && Boolean(item.due_date) && item.due_date! < localDateKey(new Date());
 
   const handleSave = () => {
     const trimmed = editTitle.trim();
     if (!trimmed) return;
-    updateItem.mutate({ title: trimmed, due_date: editDueDate || null });
+    updateItem.mutate({ title: trimmed, due_date: editDueDate || null, priority: editPriority || null });
     setEditing(false);
   };
 
   const handleCancel = () => {
     setEditTitle(item.title);
     setEditDueDate(item.due_date ?? "");
+    setEditPriority(item.priority ?? "");
     setEditing(false);
   };
 
@@ -66,6 +73,18 @@ function TodoItemLine({ item }: { item: TodoItemRow }) {
           onKeyDown={handleKeyDown}
           className="w-36"
         />
+        <Select
+          value={editPriority}
+          onChange={(event) => setEditPriority(event.target.value as ItemPriority | "")}
+          className="w-28"
+        >
+          <option value="">No priority</option>
+          {PRIORITY_OPTIONS.map((option) => (
+            <option key={option} value={option}>
+              {option}
+            </option>
+          ))}
+        </Select>
         <Button size="sm" onClick={handleSave} disabled={!editTitle.trim()}>Save</Button>
         <Button size="sm" variant="ghost" onClick={handleCancel}>Cancel</Button>
       </li>
@@ -81,6 +100,7 @@ function TodoItemLine({ item }: { item: TodoItemRow }) {
         className={item.is_done ? "text-text-secondary line-through" : ""}
       />
       <div className="flex shrink-0 items-center gap-1.5">
+        {item.priority && <Badge tone={ITEM_PRIORITY_TONE[item.priority]}>{item.priority}</Badge>}
         {item.due_date && (
           <span className={`font-mono text-[11px] ${isOverdue ? "text-status-urgent" : "text-text-secondary"}`}>
             due {new Date(`${item.due_date}T00:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
@@ -115,15 +135,17 @@ export function CourseTodoListCard({ list, items, courseName }: Props) {
   const createItem = useCreateTodoItem();
   const [title, setTitle] = useState("");
   const [dueDate, setDueDate] = useState("");
+  const [priority, setPriority] = useState<ItemPriority | "">("");
 
   const doneCount = items.filter((item) => item.is_done).length;
 
   const handleAdd = async () => {
     const trimmed = title.trim();
     if (!trimmed) return;
-    await createItem.mutateAsync({ list_id: list.id, title: trimmed, due_date: dueDate || null });
+    await createItem.mutateAsync({ list_id: list.id, title: trimmed, due_date: dueDate || null, priority: priority || null });
     setTitle("");
     setDueDate("");
+    setPriority("");
   };
 
   return (
@@ -160,6 +182,18 @@ export function CourseTodoListCard({ list, items, courseName }: Props) {
           className="min-w-0 flex-1"
         />
         <Input type="date" value={dueDate} onChange={(event) => setDueDate(event.target.value)} className="w-36" />
+        <Select
+          value={priority}
+          onChange={(event) => setPriority(event.target.value as ItemPriority | "")}
+          className="w-28"
+        >
+          <option value="">No priority</option>
+          {PRIORITY_OPTIONS.map((option) => (
+            <option key={option} value={option}>
+              {option}
+            </option>
+          ))}
+        </Select>
         <Button type="submit" size="sm" isLoading={createItem.isPending} disabled={!title.trim()}>
           +
         </Button>

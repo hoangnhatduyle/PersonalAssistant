@@ -18,9 +18,9 @@ type Props = {
   submitLabel?: string;
 };
 
-// priority is `.min(1).optional()` — an untouched uncontrolled input reports
-// "" (not undefined), which fails that check. Normalize at submit time so
-// leaving it blank actually omits the key.
+// priority is a nullable/optional enum — an untouched <select> reports ""
+// (not undefined), which isn't a valid enum value. Normalize at submit time
+// so leaving it on "Unset" actually omits the key.
 const emptyToUndefined = (value: string) => (value === "" ? undefined : value);
 
 export function DeadlineForm({ deadline, onSubmit, onCancel, submitLabel = "Save" }: Props) {
@@ -80,12 +80,17 @@ export function DeadlineForm({ deadline, onSubmit, onCancel, submitLabel = "Save
       </FormField>
 
       <FormField label="Priority" htmlFor="priority" error={errors.priority?.message}>
-        <Input
+        <Select
           id="priority"
-          placeholder="e.g. High"
           invalid={Boolean(errors.priority)}
           {...register("priority", { setValueAs: emptyToUndefined })}
-        />
+        >
+          <option value="">Unset</option>
+          <option value="Low">Low</option>
+          <option value="Medium">Medium</option>
+          <option value="High">High</option>
+          <option value="Urgent">Urgent</option>
+        </Select>
       </FormField>
 
       <div className="flex justify-end gap-2">

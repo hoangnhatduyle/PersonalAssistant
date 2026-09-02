@@ -104,6 +104,7 @@ export const DEFAULT_USER_PREFERENCES: UserPreferences = {
 export type DeadlineStatus = Database["public"]["Enums"]["deadline_status"];
 export type TaskStatus = Database["public"]["Enums"]["task_status"];
 export type ReminderStatus = Database["public"]["Enums"]["reminder_status"];
+export type ItemPriority = Database["public"]["Enums"]["item_priority"];
 
 export type PersonalizationSuggestionRow = Database["public"]["Tables"]["personalization_suggestions"]["Row"];
 export type PersonalizationSuggestionStatus = Database["public"]["Enums"]["personalization_suggestion_status"];

@@ -11,12 +11,20 @@ export interface ResolvedIntent {
   /** Short human-readable description of the resolved action, spoken/shown back to the user. */
   summary: string;
   queryKind?: "upcoming_schedule" | "knowledge_lookup" | "personalization_suggestions" | "general_conversation";
+  /** Set only when queryKind is "upcoming_schedule" — which calendar window the factual listing should be scoped to. */
+  scheduleTimeWindow?: "today" | "tomorrow" | "week" | "unscoped";
   mutation?: PendingMutation;
 }
 
 export interface ResolveIntentFn {
   (supabase: SupabaseClient<Database>, userId: string, transcript: string): Promise<ResolvedIntent>;
 }
+
+// Shared across the deadline/task mutation variants below — mirrors
+// supabase/migrations/0021_item_priority.sql's item_priority enum. A bare
+// z.string() previously let the LLM emit any free text, which could fail
+// the DB insert/update once the column became a strict enum.
+const itemPriorityMutationSchema = z.enum(["Low", "Medium", "High", "Urgent"]).nullable();
 
 const mutationSchemaBase = z.discriminatedUnion("target_type", [
   z.object({ target_type: z.literal("course"), operation: z.literal("delete"), target_id: z.uuid() }),
@@ -27,7 +35,7 @@ const mutationSchemaBase = z.discriminatedUnion("target_type", [
     course_id: z.uuid().nullable(),
     title: z.string().nullable(),
     due_at: z.iso.datetime({ offset: true }).nullable(),
-    priority: z.string().nullable(),
+    priority: itemPriorityMutationSchema,
   }),
   z.object({
     target_type: z.literal("task"),
@@ -40,6 +48,7 @@ const mutationSchemaBase = z.discriminatedUnion("target_type", [
     // "remind me AT <time>" phrasing, meaning the reminder should fire
     // exactly at due_at rather than some minutes before it.
     reminder_lead_minutes: z.number().int().min(0).max(1440).nullable(),
+    priority: itemPriorityMutationSchema,
   }),
   z.object({
     target_type: z.literal("note"),
@@ -102,6 +111,11 @@ export const llmResponseSchema = z
     read_only: z.boolean(),
     summary: z.string(),
     query_kind: z.enum(["upcoming_schedule", "knowledge_lookup", "personalization_suggestions", "general_conversation"]).nullable(),
+    // Set exactly when query_kind is "upcoming_schedule" (enforced below) —
+    // which calendar window a factual "what's due" listing should be scoped
+    // to, so runUpcomingScheduleQuery doesn't always return the same
+    // unscoped next-N items regardless of what the user actually asked.
+    schedule_time_window: z.enum(["today", "tomorrow", "week", "unscoped"]).nullable(),
     mutation: mutationSchema.nullable(),
   })
   .superRefine((value, ctx) => {
@@ -110,6 +124,20 @@ export const llmResponseSchema = z
     }
     if (!value.read_only && value.mutation === null) {
       ctx.addIssue({ code: "custom", message: "mutation is required when read_only is false", path: ["mutation"] });
+    }
+    if (value.query_kind === "upcoming_schedule" && value.schedule_time_window === null) {
+      ctx.addIssue({
+        code: "custom",
+        message: "schedule_time_window is required when query_kind is \"upcoming_schedule\"",
+        path: ["schedule_time_window"],
+      });
+    }
+    if (value.query_kind !== "upcoming_schedule" && value.schedule_time_window !== null) {
+      ctx.addIssue({
+        code: "custom",
+        message: "schedule_time_window must be null unless query_kind is \"upcoming_schedule\"",
+        path: ["schedule_time_window"],
+      });
     }
   });
 
@@ -124,6 +152,7 @@ supported operation and respond with ONLY a JSON object matching this shape:
   "read_only": boolean,
   "summary": string,           // one sentence describing the action, for the user
   "query_kind": "upcoming_schedule" | "knowledge_lookup" | "personalization_suggestions" | "general_conversation" | null,   // set when read_only
+  "schedule_time_window": "today" | "tomorrow" | "week" | "unscoped" | null,   // set only when query_kind is "upcoming_schedule", else null
   "mutation": {                // set when !read_only, else null
     "target_type": "course" | "deadline" | "task" | "note" | "reminder",
     "operation": "create" | "update" | "delete" | "acknowledge",
@@ -159,7 +188,14 @@ Choose among the read-only query kinds using these boundaries:
   generated personalization/reminder-timing suggestions, such as "check my
   suggestions" or "did the app recommend changing my reminder timing?"
 - "upcoming_schedule": the user only wants a factual listing of their upcoming
-  Tasks or Deadlines, such as "what is due this week?"
+  Tasks or Deadlines, such as "what is due this week?" Also set
+  schedule_time_window to the calendar window the wording implies:
+  "today"/"due today"/"this afternoon"/"this evening" (as a plain factual
+  listing, not advice — see the general_conversation boundary below for the
+  advice-flavored version of "this afternoon") -> "today"; "tomorrow" ->
+  "tomorrow"; "this week"/"coming up"/"next few days" -> "week"; no time
+  phrase at all, or a vague ask like "what's on my plate"/"what's due soon"
+  -> "unscoped".
 - "general_conversation": open-ended advice, opinions, trade-off analysis,
   scheduling guidance, wellbeing questions, or other conversation that does
   not require imported reference material, such as "should I attend this
@@ -210,6 +246,11 @@ sets it to 0; "remind me N minutes/hours before" sets it to that many
 minutes; no reminder-timing phrasing at all leaves it null (the task's own
 default lead time applies).
 
+A Task's priority is settable the same way a Deadline's is: set it to one of
+"Low", "Medium", "High", or "Urgent" only when the user states a priority
+level explicitly on a task create/update (e.g. "add a high priority task to
+call the bank", "mark my dentist task as urgent"); leave it null otherwise.
+
 Examples:
 - "Remind me to submit my assignment tomorrow at 5pm" -> task create, title
   "Submit my assignment", due_at resolved from "tomorrow at 5pm" using now/
@@ -229,6 +270,12 @@ Examples:
   mutation null.
 - "Create a task to ask IEEE for notes" -> read_only false, mutation is a Task
   create.
+- "What is due today?" -> read_only true, query_kind "upcoming_schedule",
+  schedule_time_window "today".
+- "What's coming up this week?" -> read_only true, query_kind
+  "upcoming_schedule", schedule_time_window "week".
+- "What's on my plate?" (no explicit time phrase) -> read_only true,
+  query_kind "upcoming_schedule", schedule_time_window "unscoped".
 - "Test the bucket list" / "Check out the bucket list" against a Knowledge
   Source titled "My Girlfriend (Tien) Bucket List" -> read_only true,
   query_kind "knowledge_lookup", mutation null. NOT a Task create — "test"
@@ -316,6 +363,7 @@ export function toPendingMutation(raw: RawMutation): PendingMutation {
             title: raw.title!,
             due_at: raw.due_at,
             ...(raw.reminder_lead_minutes !== null ? { reminder_lead_minutes: raw.reminder_lead_minutes } : {}),
+            priority: raw.priority ?? undefined,
           },
         };
       }
@@ -330,6 +378,7 @@ export function toPendingMutation(raw: RawMutation): PendingMutation {
           ...(raw.title ? { title: raw.title } : {}),
           ...(raw.due_at !== null ? { due_at: raw.due_at } : {}),
           ...(raw.reminder_lead_minutes !== null ? { reminder_lead_minutes: raw.reminder_lead_minutes } : {}),
+          ...(raw.priority ? { priority: raw.priority } : {}),
         },
       };
     }
@@ -387,6 +436,7 @@ export async function resolveIntent(
     readOnly: parsed.read_only,
     summary: parsed.summary,
     queryKind: parsed.query_kind ?? undefined,
+    scheduleTimeWindow: parsed.schedule_time_window ?? undefined,
     mutation: parsed.mutation ? toPendingMutation(parsed.mutation) : undefined,
   };
 }

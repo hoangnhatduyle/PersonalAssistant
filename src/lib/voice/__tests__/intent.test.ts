@@ -52,6 +52,7 @@ describe("mutationSchema", () => {
       title: null,
       due_at: null,
       reminder_lead_minutes: null,
+      priority: null,
     });
     expect(result.success).toBe(false);
   });
@@ -105,6 +106,7 @@ describe("mutationSchema", () => {
       title: "Submit assignment",
       due_at: "2026-09-01T17:00:00.000Z",
       reminder_lead_minutes: 0,
+      priority: null,
     });
     expect(result.success).toBe(true);
   });
@@ -117,6 +119,7 @@ describe("mutationSchema", () => {
       title: "Buy milk",
       due_at: null,
       reminder_lead_minutes: null,
+      priority: null,
     });
     expect(result.success).toBe(true);
   });
@@ -129,8 +132,22 @@ describe("mutationSchema", () => {
       title: "Submit assignment",
       due_at: "2026-09-01T17:00:00.000Z",
       reminder_lead_minutes: 1500,
+      priority: null,
     });
     expect(result.success).toBe(false);
+  });
+
+  it("accepts a task create with an explicit priority", () => {
+    const result = mutationSchema.safeParse({
+      target_type: "task",
+      operation: "create",
+      target_id: null,
+      title: "Call the bank",
+      due_at: null,
+      reminder_lead_minutes: null,
+      priority: "High",
+    });
+    expect(result.success).toBe(true);
   });
 });
 
@@ -141,6 +158,7 @@ describe("llmResponseSchema", () => {
       read_only: true,
       summary: "ok",
       query_kind: "upcoming_schedule",
+      schedule_time_window: "unscoped",
       mutation: { target_type: "course", operation: "delete", target_id: VALID_TARGET_ID },
     });
     expect(result.success).toBe(false);
@@ -152,6 +170,7 @@ describe("llmResponseSchema", () => {
       read_only: false,
       summary: "ok",
       query_kind: null,
+      schedule_time_window: null,
       mutation: null,
     });
     expect(result.success).toBe(false);
@@ -163,9 +182,34 @@ describe("llmResponseSchema", () => {
       read_only: true,
       summary: "your upcoming schedule",
       query_kind: "upcoming_schedule",
+      schedule_time_window: "today",
       mutation: null,
     });
     expect(result.success).toBe(true);
+  });
+
+  it("rejects an upcoming_schedule response with a null schedule_time_window", () => {
+    const result = llmResponseSchema.safeParse({
+      confidence: 0.99,
+      read_only: true,
+      summary: "your upcoming schedule",
+      query_kind: "upcoming_schedule",
+      schedule_time_window: null,
+      mutation: null,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects a non-upcoming_schedule response with a non-null schedule_time_window", () => {
+    const result = llmResponseSchema.safeParse({
+      confidence: 0.98,
+      read_only: true,
+      summary: "look up financial aid deadlines",
+      query_kind: "knowledge_lookup",
+      schedule_time_window: "today",
+      mutation: null,
+    });
+    expect(result.success).toBe(false);
   });
 
   // SPEC-API-008/SPEC-VOICE-005: knowledge_lookup is the second supported
@@ -176,6 +220,7 @@ describe("llmResponseSchema", () => {
       read_only: true,
       summary: "look up financial aid deadlines",
       query_kind: "knowledge_lookup",
+      schedule_time_window: null,
       mutation: null,
     });
     expect(result.success).toBe(true);
@@ -188,6 +233,7 @@ describe("llmResponseSchema", () => {
       read_only: true,
       summary: "check for suggestions",
       query_kind: "personalization_suggestions",
+      schedule_time_window: null,
       mutation: null,
     });
     expect(result.success).toBe(true);
@@ -199,6 +245,7 @@ describe("llmResponseSchema", () => {
       read_only: true,
       summary: "weigh attending the meeting against resting",
       query_kind: "general_conversation",
+      schedule_time_window: null,
       mutation: null,
     });
     expect(result.success).toBe(true);
@@ -210,6 +257,7 @@ describe("llmResponseSchema", () => {
       read_only: true,
       summary: "something else",
       query_kind: "web_search",
+      schedule_time_window: null,
       mutation: null,
     });
     expect(result.success).toBe(false);
@@ -221,6 +269,7 @@ describe("llmResponseSchema", () => {
       read_only: false,
       summary: "delete the course",
       query_kind: null,
+      schedule_time_window: null,
       mutation: { target_type: "course", operation: "delete", target_id: VALID_TARGET_ID },
     });
     expect(result.success).toBe(true);
@@ -258,12 +307,31 @@ describe("toPendingMutation", () => {
       title: "Renamed",
       due_at: null,
       reminder_lead_minutes: null,
+      priority: null,
     });
     expect(toPendingMutation(raw)).toEqual({
       targetType: "task",
       operation: "update",
       targetId: VALID_TARGET_ID,
       payload: { title: "Renamed" },
+    });
+  });
+
+  it("maps a task update with an explicit priority", () => {
+    const raw = mutationSchema.parse({
+      target_type: "task",
+      operation: "update",
+      target_id: VALID_TARGET_ID,
+      title: null,
+      due_at: null,
+      reminder_lead_minutes: null,
+      priority: "Urgent",
+    });
+    expect(toPendingMutation(raw)).toEqual({
+      targetType: "task",
+      operation: "update",
+      targetId: VALID_TARGET_ID,
+      payload: { priority: "Urgent" },
     });
   });
 
@@ -280,11 +348,12 @@ describe("toPendingMutation", () => {
       title: "Submit assignment",
       due_at: "2026-09-01T17:00:00.000Z",
       reminder_lead_minutes: 0,
+      priority: null,
     });
     expect(toPendingMutation(raw)).toEqual({
       targetType: "task",
       operation: "create",
-      payload: { title: "Submit assignment", due_at: "2026-09-01T17:00:00.000Z", reminder_lead_minutes: 0 },
+      payload: { title: "Submit assignment", due_at: "2026-09-01T17:00:00.000Z", reminder_lead_minutes: 0, priority: undefined },
     });
   });
 
@@ -296,10 +365,32 @@ describe("toPendingMutation", () => {
       title: "Buy milk",
       due_at: null,
       reminder_lead_minutes: null,
+      priority: null,
     });
     const mutation = toPendingMutation(raw);
-    expect(mutation).toEqual({ targetType: "task", operation: "create", payload: { title: "Buy milk", due_at: null } });
+    expect(mutation).toEqual({
+      targetType: "task",
+      operation: "create",
+      payload: { title: "Buy milk", due_at: null, priority: undefined },
+    });
     expect(mutation).not.toHaveProperty("payload.reminder_lead_minutes");
+  });
+
+  it("maps a task create with an explicit priority", () => {
+    const raw = mutationSchema.parse({
+      target_type: "task",
+      operation: "create",
+      target_id: null,
+      title: "Call the bank",
+      due_at: null,
+      reminder_lead_minutes: null,
+      priority: "High",
+    });
+    expect(toPendingMutation(raw)).toEqual({
+      targetType: "task",
+      operation: "create",
+      payload: { title: "Call the bank", due_at: null, priority: "High" },
+    });
   });
 
   it("maps a reminder acknowledge with a snooze", () => {

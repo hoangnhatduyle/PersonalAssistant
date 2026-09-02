@@ -182,7 +182,7 @@ export type Database = {
           due_at: string
           id: string
           person_id: string | null
-          priority: string | null
+          priority: Database["public"]["Enums"]["item_priority"] | null
           status: Database["public"]["Enums"]["deadline_status"]
           title: string
           updated_at: string
@@ -195,7 +195,7 @@ export type Database = {
           due_at: string
           id?: string
           person_id?: string | null
-          priority?: string | null
+          priority?: Database["public"]["Enums"]["item_priority"] | null
           status?: Database["public"]["Enums"]["deadline_status"]
           title: string
           updated_at?: string
@@ -208,7 +208,7 @@ export type Database = {
           due_at?: string
           id?: string
           person_id?: string | null
-          priority?: string | null
+          priority?: Database["public"]["Enums"]["item_priority"] | null
           status?: Database["public"]["Enums"]["deadline_status"]
           title?: string
           updated_at?: string
@@ -666,6 +666,7 @@ export type Database = {
           due_at: string | null
           id: string
           person_id: string | null
+          priority: Database["public"]["Enums"]["item_priority"] | null
           reminder_lead_minutes: number
           reminders_enabled: boolean
           status: Database["public"]["Enums"]["task_status"]
@@ -680,6 +681,7 @@ export type Database = {
           due_at?: string | null
           id?: string
           person_id?: string | null
+          priority?: Database["public"]["Enums"]["item_priority"] | null
           reminder_lead_minutes?: number
           reminders_enabled?: boolean
           status?: Database["public"]["Enums"]["task_status"]
@@ -694,6 +696,7 @@ export type Database = {
           due_at?: string | null
           id?: string
           person_id?: string | null
+          priority?: Database["public"]["Enums"]["item_priority"] | null
           reminder_lead_minutes?: number
           reminders_enabled?: boolean
           status?: Database["public"]["Enums"]["task_status"]
@@ -735,6 +738,7 @@ export type Database = {
           is_done: boolean
           list_id: string
           position: number
+          priority: Database["public"]["Enums"]["item_priority"] | null
           title: string
           updated_at: string
           user_id: string
@@ -747,6 +751,7 @@ export type Database = {
           is_done?: boolean
           list_id: string
           position?: number
+          priority?: Database["public"]["Enums"]["item_priority"] | null
           title: string
           updated_at?: string
           user_id: string
@@ -759,6 +764,7 @@ export type Database = {
           is_done?: boolean
           list_id?: string
           position?: number
+          priority?: Database["public"]["Enums"]["item_priority"] | null
           title?: string
           updated_at?: string
           user_id?: string
@@ -1056,7 +1062,7 @@ export type Database = {
           deleted_at: string | null
           due_at: string | null
           id: string | null
-          priority: string | null
+          priority: Database["public"]["Enums"]["item_priority"] | null
           status: Database["public"]["Enums"]["deadline_status"] | null
           title: string | null
           updated_at: string | null
@@ -1068,7 +1074,7 @@ export type Database = {
           deleted_at?: string | null
           due_at?: string | null
           id?: string | null
-          priority?: string | null
+          priority?: Database["public"]["Enums"]["item_priority"] | null
           status?: Database["public"]["Enums"]["deadline_status"] | null
           title?: string | null
           updated_at?: string | null
@@ -1080,7 +1086,7 @@ export type Database = {
           deleted_at?: string | null
           due_at?: string | null
           id?: string | null
-          priority?: string | null
+          priority?: Database["public"]["Enums"]["item_priority"] | null
           status?: Database["public"]["Enums"]["deadline_status"] | null
           title?: string | null
           updated_at?: string | null
@@ -1226,6 +1232,7 @@ export type Database = {
           deleted_at: string | null
           due_at: string | null
           id: string | null
+          priority: Database["public"]["Enums"]["item_priority"] | null
           reminder_lead_minutes: number | null
           reminders_enabled: boolean | null
           status: Database["public"]["Enums"]["task_status"] | null
@@ -1239,6 +1246,7 @@ export type Database = {
           deleted_at?: string | null
           due_at?: string | null
           id?: string | null
+          priority?: Database["public"]["Enums"]["item_priority"] | null
           reminder_lead_minutes?: number | null
           reminders_enabled?: boolean | null
           status?: Database["public"]["Enums"]["task_status"] | null
@@ -1252,6 +1260,7 @@ export type Database = {
           deleted_at?: string | null
           due_at?: string | null
           id?: string | null
+          priority?: Database["public"]["Enums"]["item_priority"] | null
           reminder_lead_minutes?: number | null
           reminders_enabled?: boolean | null
           status?: Database["public"]["Enums"]["task_status"] | null
@@ -1279,6 +1288,7 @@ export type Database = {
           is_done: boolean | null
           list_id: string | null
           position: number | null
+          priority: Database["public"]["Enums"]["item_priority"] | null
           title: string | null
           updated_at: string | null
           user_id: string | null
@@ -1291,6 +1301,7 @@ export type Database = {
           is_done?: boolean | null
           list_id?: string | null
           position?: number | null
+          priority?: Database["public"]["Enums"]["item_priority"] | null
           title?: string | null
           updated_at?: string | null
           user_id?: string | null
@@ -1303,6 +1314,7 @@ export type Database = {
           is_done?: boolean | null
           list_id?: string | null
           position?: number | null
+          priority?: Database["public"]["Enums"]["item_priority"] | null
           title?: string | null
           updated_at?: string | null
           user_id?: string | null
@@ -1527,6 +1539,7 @@ export type Database = {
         | "Overdue"
         | "Completed"
         | "Cancelled"
+      item_priority: "Low" | "Medium" | "High" | "Urgent"
       knowledge_source_status: "Pending" | "Processing" | "Ready" | "Failed"
       knowledge_source_type: "url" | "pasted_text" | "image" | "video" | "audio"
       personalization_suggestion_status: "pending" | "applied" | "dismissed"
@@ -1685,6 +1698,7 @@ export const Constants = {
         "Completed",
         "Cancelled",
       ],
+      item_priority: ["Low", "Medium", "High", "Urgent"],
       knowledge_source_status: ["Pending", "Processing", "Ready", "Failed"],
       knowledge_source_type: ["url", "pasted_text", "image", "video", "audio"],
       personalization_suggestion_status: ["pending", "applied", "dismissed"],

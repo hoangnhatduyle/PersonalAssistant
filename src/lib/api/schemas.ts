@@ -28,6 +28,13 @@ const meetingBlockSchema = z
 
 const RECURRENCE_DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 
+// Shared across Deadlines, Tasks, and Course To-Do items
+// (supabase/migrations/0021_item_priority.sql's item_priority enum).
+// nullable (not just optional): a client must be able to explicitly clear a
+// previously-set priority back to unset via `null` over JSON, which a plain
+// .optional() enum can't express (undefined can't be sent over the wire).
+const itemPrioritySchema = z.enum(["Low", "Medium", "High", "Urgent"]).nullable().optional();
+
 // person_id: nullable/optional on Courses and Tasks -- null/omitted means
 // "the account owner's own item", a non-null value must reference a People
 // row the caller owns (verified by the route, and backstopped by the
@@ -83,7 +90,7 @@ export const deadlinePayloadSchema = z.object({
   course_id: z.uuid(),
   title: z.string().trim().min(1),
   due_at: z.iso.datetime({ offset: true }),
-  priority: z.string().trim().min(1).optional(),
+  priority: itemPrioritySchema,
 });
 export type DeadlinePayload = z.infer<typeof deadlinePayloadSchema>;
 export const deadlinePatchSchema = deadlinePayloadSchema.omit({ course_id: true }).partial();
@@ -105,12 +112,14 @@ export const todoItemPayloadSchema = z.object({
   list_id: z.uuid(),
   title: z.string().trim().min(1),
   due_date: z.iso.date().nullable().optional(),
+  priority: itemPrioritySchema,
 });
 export type TodoItemPayload = z.infer<typeof todoItemPayloadSchema>;
 export const todoItemPatchSchema = z.object({
   title: z.string().trim().min(1).optional(),
   due_date: z.iso.date().nullable().optional(),
   is_done: z.boolean().optional(),
+  priority: itemPrioritySchema,
 });
 export type TodoItemPatch = z.infer<typeof todoItemPatchSchema>;
 
@@ -135,6 +144,7 @@ export const taskPayloadSchema = z.object({
   reminders_enabled: z.boolean().optional(),
   reminder_lead_minutes: z.number().int().nonnegative().optional(),
   person_id: z.uuid().nullable().optional(),
+  priority: itemPrioritySchema,
 });
 export type TaskPayload = z.infer<typeof taskPayloadSchema>;
 export const taskPatchSchema = taskPayloadSchema.partial();

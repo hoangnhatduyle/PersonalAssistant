@@ -10,10 +10,12 @@ import {
 } from "@/lib/voice/transitions";
 import { formatCascadeDisclosure, previewCourseDeleteCascade } from "@/lib/voice/cascade-preview";
 import { executePendingMutation, type MutationExecutionResult, type PendingMutation } from "@/lib/voice/mutations";
-import type { ResolveIntentFn, ResolvedIntent } from "@/lib/voice/intent";
+import { loadUserTimezone, type ResolveIntentFn, type ResolvedIntent } from "@/lib/voice/intent";
 import { runKnowledgeLookup, type KnowledgeCitation, type KnowledgeLookupFn } from "@/lib/knowledge/retrieval";
 import { runSuggestionsLookup, type SuggestionsLookupFn } from "@/lib/voice/suggestions-lookup";
 import { runGeneralConversation, type GeneralConversationFn } from "@/lib/voice/general-conversation";
+import { resolveScheduleWindowBounds, type ScheduleTimeWindow } from "@/lib/voice/schedule-time-window";
+import { rankScheduleItems, formatScheduleAnswer, type ScheduleItem } from "@/lib/voice/schedule-formatting";
 
 export class VoiceSessionNotFoundError extends Error {}
 export class VoiceSessionInvalidStateError extends Error {}
@@ -91,33 +93,79 @@ async function transition(
   }
 }
 
-async function runUpcomingScheduleQuery(supabase: SupabaseClient<Database>, userId: string): Promise<string> {
-  const now = new Date().toISOString();
-  const [{ data: deadlines }, { data: tasks }] = await Promise.all([
-    supabase
-      .from("deadlines")
-      .select("title, due_at")
-      .eq("user_id", userId)
-      .is("deleted_at", null)
-      .gte("due_at", now)
-      .order("due_at", { ascending: true })
-      .limit(5),
-    supabase
-      .from("tasks")
-      .select("title, due_at")
-      .eq("user_id", userId)
-      .is("deleted_at", null)
-      .not("due_at", "is", null)
-      .gte("due_at", now)
-      .order("due_at", { ascending: true })
-      .limit(5),
-  ]);
+const OPEN_DEADLINE_STATUSES = ["Not Started", "In Progress", "Submitted", "Overdue"] as const;
 
-  const items = [
-    ...(deadlines ?? []).map((d) => `${d.title} (due ${d.due_at})`),
-    ...(tasks ?? []).map((t) => `${t.title} (due ${t.due_at})`),
+const SCHEDULE_EMPTY_MESSAGES: Record<ScheduleTimeWindow, string> = {
+  today: "You have nothing due today.",
+  tomorrow: "You have nothing due tomorrow.",
+  week: "You have nothing due this week.",
+  unscoped: "You have nothing upcoming.",
+};
+
+async function runUpcomingScheduleQuery(
+  supabase: SupabaseClient<Database>,
+  userId: string,
+  timeWindow: ScheduleTimeWindow,
+): Promise<string> {
+  const now = new Date();
+  const timezone = await loadUserTimezone(supabase, userId);
+  const bounds = resolveScheduleWindowBounds(timeWindow, timezone, now);
+
+  let deadlinesQuery = supabase
+    .from("deadlines")
+    .select("id, title, due_at, priority")
+    .eq("user_id", userId)
+    .is("deleted_at", null)
+    .in("status", OPEN_DEADLINE_STATUSES);
+  let tasksQuery = supabase
+    .from("tasks")
+    .select("id, title, due_at, priority")
+    .eq("user_id", userId)
+    .is("deleted_at", null)
+    .not("due_at", "is", null)
+    .eq("status", "Open");
+
+  if (bounds) {
+    // A single day/week window is naturally small -- a generous sanity
+    // ceiling, not a "top N" cap like the unscoped branch below.
+    deadlinesQuery = deadlinesQuery.gte("due_at", bounds.startUtcIso).lt("due_at", bounds.endUtcIsoExclusive).order("due_at", { ascending: true }).limit(20);
+    tasksQuery = tasksQuery.gte("due_at", bounds.startUtcIso).lt("due_at", bounds.endUtcIsoExclusive).order("due_at", { ascending: true }).limit(20);
+  } else {
+    // "unscoped": preserve the original next-5-of-each behavior.
+    deadlinesQuery = deadlinesQuery.gte("due_at", now.toISOString()).order("due_at", { ascending: true }).limit(5);
+    tasksQuery = tasksQuery.gte("due_at", now.toISOString()).order("due_at", { ascending: true }).limit(5);
+  }
+
+  const [{ data: deadlines }, { data: tasks }] = await Promise.all([deadlinesQuery, tasksQuery]);
+
+  const items: ScheduleItem[] = [
+    ...(deadlines ?? []).map((d): ScheduleItem => ({ id: d.id, title: d.title, dueAt: new Date(d.due_at), kind: "deadline", priority: d.priority })),
+    ...(tasks ?? []).map((t): ScheduleItem => ({ id: t.id, title: t.title, dueAt: new Date(t.due_at!), kind: "task", priority: t.priority })),
   ];
-  return items.length === 0 ? "You have nothing upcoming." : `Coming up: ${items.join("; ")}.`;
+
+  const groups = rankScheduleItems(items, timezone);
+  return formatScheduleAnswer(groups, { timezone, now, style: "listing", emptyMessage: SCHEDULE_EMPTY_MESSAGES[timeWindow] });
+}
+
+/**
+ * Shared by every "ask the user to try again" exit out of intakeVoiceTurn
+ * (silence, a transcription/LLM failure, and a genuinely low-confidence/
+ * unsupported intent) — all three follow the same Transcribing ->
+ * IntentAmbiguous -> Responding transition sequence, differing only in the
+ * resolved-intent fields recorded and the message spoken back.
+ */
+async function respondWithClarification(
+  supabase: SupabaseClient<Database>,
+  userId: string,
+  sessionId: string,
+  message: string,
+  resolvedIntentFields: { resolved_intent: string | null; confidence_score: number | null },
+): Promise<VoiceTurnResult> {
+  await transition(supabase, userId, sessionId, "Transcribing", "intent_ambiguous_or_low_confidence", resolvedIntentFields);
+  await transition(supabase, userId, sessionId, "IntentAmbiguous", "clarification_requested", {
+    ended_at: new Date().toISOString(),
+  });
+  return { sessionId, state: "Responding", message, needsFollowUp: true };
 }
 
 /**
@@ -170,16 +218,26 @@ export async function intakeVoiceTurn(
       .eq("user_id", userId);
     if (transcriptError) throw transcriptError;
 
+    // Deterministic guard, checked before the paid resolveIntent() call:
+    // silence (or a transcript Deepgram couldn't get anything from) must
+    // always read back as "I didn't catch that," never depend on the LLM's
+    // own judgment of an empty/blank string — that's what previously let a
+    // silent capture get misclassified as a real query (e.g.
+    // "upcoming_schedule") and read back a full answer instead of asking
+    // the user to repeat themselves.
+    if (transcript.trim().length === 0) {
+      return respondWithClarification(supabase, userId, sessionId, "I didn't catch that — could you try again?", {
+        resolved_intent: null,
+        confidence_score: null,
+      });
+    }
+
     intent = await deps.resolveIntent(supabase, userId, transcript);
   } catch {
-    await transition(supabase, userId, sessionId, "Transcribing", "intent_ambiguous_or_low_confidence", {
+    return respondWithClarification(supabase, userId, sessionId, "Sorry, I had trouble processing that — could you try again?", {
       resolved_intent: null,
       confidence_score: null,
     });
-    await transition(supabase, userId, sessionId, "IntentAmbiguous", "clarification_requested", {
-      ended_at: new Date().toISOString(),
-    });
-    return { sessionId, state: "Responding", message: "Sorry, I had trouble processing that — could you try again?", needsFollowUp: true };
   }
 
   // A read-only intent this app can't actually answer (queryKind unset/
@@ -194,17 +252,13 @@ export async function intakeVoiceTurn(
     intent.queryKind !== "personalization_suggestions" &&
     intent.queryKind !== "general_conversation";
   if (!meetsConfidenceBar(intent.confidence) || unsupportedReadOnlyQuery) {
-    await transition(supabase, userId, sessionId, "Transcribing", "intent_ambiguous_or_low_confidence", {
-      resolved_intent: intent.summary,
-      confidence_score: intent.confidence,
-    });
-    await transition(supabase, userId, sessionId, "IntentAmbiguous", "clarification_requested", {
-      ended_at: new Date().toISOString(),
-    });
     const message = unsupportedReadOnlyQuery
       ? "I can't help with that kind of question yet — I can tell you what's coming up, though."
       : `I'm not sure I understood — could you rephrase that? (heard: "${transcript}")`;
-    return { sessionId, state: "Responding", message, needsFollowUp: true };
+    return respondWithClarification(supabase, userId, sessionId, message, {
+      resolved_intent: intent.summary,
+      confidence_score: intent.confidence,
+    });
   }
 
   await transition(supabase, userId, sessionId, "Transcribing", "intent_resolved_high_confidence", {
@@ -269,7 +323,7 @@ export async function intakeVoiceTurn(
         };
       }
 
-      const message = await runUpcomingScheduleQuery(supabase, userId);
+      const message = await runUpcomingScheduleQuery(supabase, userId, intent.scheduleTimeWindow ?? "unscoped");
       await transition(supabase, userId, sessionId, "Executing", "execution_completed", {
         ended_at: new Date().toISOString(),
       });

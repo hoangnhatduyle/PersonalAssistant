@@ -5,6 +5,8 @@ import {
   createCourse,
   createDeadline,
   createReminder,
+  createTask,
+  walkTransitions,
   type TestUser,
 } from "../../../../supabase/tests/helpers";
 import { confirmVoiceSession, declineVoiceSession, intakeVoiceTurn, VoiceSessionExpiredError, VoiceSessionInvalidStateError } from "../session";
@@ -88,6 +90,45 @@ describe("intakeVoiceTurn / confirmVoiceSession / declineVoiceSession", () => {
     const row = await sessionRow(result.sessionId);
     expect(row.state).toBe("Responding");
     expect(row.pending_mutation).toBeNull();
+  });
+
+  // Silence/no-speech handling: a blank transcript must deterministically ask
+  // the user to repeat themselves rather than reaching the LLM classifier at
+  // all -- previously nothing stopped an empty transcript from being
+  // misclassified as a real query (e.g. "upcoming_schedule") and reading
+  // back a full answer instead.
+  it("a blank transcript asks the user to repeat, without ever calling resolveIntent", async () => {
+    const resolveIntent = vi.fn();
+
+    const result = await intakeVoiceTurn(user.client, userId, { transcript: "   " }, { transcribe: vi.fn(), resolveIntent });
+
+    expect(resolveIntent).not.toHaveBeenCalled();
+    expect(result.state).toBe("Responding");
+    expect(result.needsFollowUp).toBe(true);
+    expect(result.message).toBe("I didn't catch that — could you try again?");
+    // Distinct from the low-confidence message above -- a listener must be
+    // able to tell "nothing was heard" apart from "something unclear was heard".
+    expect(result.message).not.toMatch(/rephrase/i);
+
+    const row = await sessionRow(result.sessionId);
+    expect(row.state).toBe("Responding");
+    expect(row.resolved_intent).toBeNull();
+    expect(row.confidence_score).toBeNull();
+  });
+
+  it("an all-whitespace transcript transcribed from audio also asks the user to repeat", async () => {
+    const transcribe = vi.fn().mockResolvedValue("");
+    const resolveIntent = vi.fn();
+
+    const result = await intakeVoiceTurn(
+      user.client,
+      userId,
+      { audio: Buffer.from("silence"), mimetype: "audio/webm" },
+      { transcribe, resolveIntent },
+    );
+
+    expect(resolveIntent).not.toHaveBeenCalled();
+    expect(result.message).toBe("I didn't catch that — could you try again?");
   });
 
   // AC-4, NC-VOICE-003
@@ -370,6 +411,67 @@ describe("intakeVoiceTurn / confirmVoiceSession / declineVoiceSession", () => {
         .eq("transcript", transcript)
         .single();
       expect(row?.state).toBe("Responding");
+    });
+  });
+
+  // runUpcomingScheduleQuery: status filtering (a completed/done item must
+  // never be read back as still due) and time-window scoping (a query
+  // scoped to "today" must not pull in items due on other days).
+  describe("upcoming_schedule", () => {
+    it("excludes completed/done items and items outside the requested 'today' window, and reads back as plain sentences", async () => {
+      const courseId = await createCourse(admin, userId, { name: "Schedule scoping course" });
+
+      const now = new Date();
+      const todayNoonUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 12, 0, 0)).toISOString();
+      const tomorrowNoonUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1, 12, 0, 0)).toISOString();
+
+      await createDeadline(admin, userId, courseId, { title: "Open deadline due today", due_at: todayNoonUtc });
+
+      const completedDeadlineId = await createDeadline(admin, userId, courseId, {
+        title: "Completed deadline due today",
+        due_at: todayNoonUtc,
+      });
+      await walkTransitions(admin, "deadlines", completedDeadlineId, "status", ["In Progress", "Submitted", "Completed"]);
+
+      await createTask(admin, userId, { title: "Open task due today", due_at: todayNoonUtc });
+
+      const doneTaskId = await createTask(admin, userId, { title: "Done task due today", due_at: todayNoonUtc });
+      await walkTransitions(admin, "tasks", doneTaskId, "status", ["Done"]);
+
+      await createDeadline(admin, userId, courseId, { title: "Deadline due tomorrow", due_at: tomorrowNoonUtc });
+
+      const resolveIntent = fakeResolver({
+        confidence: 0.99,
+        readOnly: true,
+        summary: "what's due today",
+        queryKind: "upcoming_schedule",
+        scheduleTimeWindow: "today",
+      });
+
+      const result = await intakeVoiceTurn(user.client, userId, { transcript: "what is due today" }, { transcribe: vi.fn(), resolveIntent });
+
+      expect(result.message).toContain("Open deadline due today");
+      expect(result.message).toContain("Open task due today");
+      expect(result.message).not.toContain("Completed deadline due today");
+      expect(result.message).not.toContain("Done task due today");
+      expect(result.message).not.toContain("Deadline due tomorrow");
+      // Human-readable ("today at ..."), not a raw ISO timestamp.
+      expect(result.message).toMatch(/today at \d{1,2}:\d{2} [AP]M/);
+      expect(result.message).not.toMatch(/\d{4}-\d{2}-\d{2}T/);
+    });
+
+    it("falls back to the unscoped next-N behavior when no time window is resolved", async () => {
+      const resolveIntent = fakeResolver({
+        confidence: 0.99,
+        readOnly: true,
+        summary: "what's coming up",
+        queryKind: "upcoming_schedule",
+      });
+
+      const result = await intakeVoiceTurn(user.client, userId, { transcript: "what's coming up" }, { transcribe: vi.fn(), resolveIntent });
+
+      expect(result.state).toBe("Responding");
+      expect(result.executed).toBe(true);
     });
   });
 });

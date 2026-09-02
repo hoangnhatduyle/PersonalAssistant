@@ -33,6 +33,7 @@ type DeadlineStatus = Database["public"]["Enums"]["deadline_status"];
 type TaskStatus = Database["public"]["Enums"]["task_status"];
 type ReminderStatus = Database["public"]["Enums"]["reminder_status"];
 type KnowledgeSourceStatus = Database["public"]["Enums"]["knowledge_source_status"];
+type ItemPriority = Database["public"]["Enums"]["item_priority"];
 
 export const DEADLINE_STATUS_TONE: Record<DeadlineStatus, StatusTone> = {
   "Not Started": "neutral",
@@ -63,4 +64,11 @@ export const KNOWLEDGE_STATUS_TONE: Record<KnowledgeSourceStatus, StatusTone> = 
   Processing: "warn",
   Ready: "ok",
   Failed: "urgent",
+};
+
+export const ITEM_PRIORITY_TONE: Record<ItemPriority, StatusTone> = {
+  Low: "neutral",
+  Medium: "accent",
+  High: "warn",
+  Urgent: "urgent",
 };

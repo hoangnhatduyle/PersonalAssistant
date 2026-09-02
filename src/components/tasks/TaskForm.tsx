@@ -21,9 +21,10 @@ type Props = {
   submitLabel?: string;
 };
 
-// person_id is `.uuid().nullable().optional()` — the native <select>'s "Me"
-// option value ("") would otherwise fail that uuid check. Normalize at
-// submit time so "Me" actually omits the key.
+// person_id/priority are nullable/optional (uuid / enum respectively) — a
+// native <select>'s empty sentinel option ("Me" / "Unset") reports "" (not
+// undefined), which fails those checks. Normalize at submit time so the
+// sentinel actually omits the key.
 const emptyToUndefined = (value: string) => (value === "" ? undefined : value);
 
 export function TaskForm({ task, onSubmit, onCancel, submitLabel = "Save" }: Props) {
@@ -45,6 +46,7 @@ export function TaskForm({ task, onSubmit, onCancel, submitLabel = "Save" }: Pro
       reminders_enabled: task?.reminders_enabled ?? true,
       reminder_lead_minutes: task?.reminder_lead_minutes ?? 30,
       person_id: task?.person_id ?? undefined,
+      priority: task?.priority ?? undefined,
     },
   });
 
@@ -94,6 +96,16 @@ export function TaskForm({ task, onSubmit, onCancel, submitLabel = "Save" }: Pro
             <DateTimeField id="due_at" value={field.value} onChange={field.onChange} invalid={Boolean(errors.due_at)} />
           )}
         />
+      </FormField>
+
+      <FormField label="Priority" htmlFor="priority" error={errors.priority?.message}>
+        <Select id="priority" invalid={Boolean(errors.priority)} {...register("priority", { setValueAs: emptyToUndefined })}>
+          <option value="">Unset</option>
+          <option value="Low">Low</option>
+          <option value="Medium">Medium</option>
+          <option value="High">High</option>
+          <option value="Urgent">Urgent</option>
+        </Select>
       </FormField>
 
       <FormField label="Tags" htmlFor="tag-draft">
