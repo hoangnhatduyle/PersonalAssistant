@@ -39,6 +39,62 @@ export type Database = {
   }
   public: {
     Tables: {
+      appointments: {
+        Row: {
+          id: string
+          user_id: string
+          title: string
+          date: string
+          category: string
+          time: string | null
+          location: string | null
+          notes: string[]
+          reminders_enabled: boolean
+          reminder_lead_minutes: number
+          deleted_at: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          title: string
+          date: string
+          category?: string
+          time?: string | null
+          location?: string | null
+          notes?: string[]
+          reminders_enabled?: boolean
+          reminder_lead_minutes?: number
+          deleted_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          title?: string
+          date?: string
+          category?: string
+          time?: string | null
+          location?: string | null
+          notes?: string[]
+          reminders_enabled?: boolean
+          reminder_lead_minutes?: number
+          deleted_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "appointments_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       courses: {
         Row: {
           code: string | null
@@ -375,6 +431,7 @@ export type Database = {
           linked_course_id: string | null
           linked_date: string | null
           linked_task_id: string | null
+          tags: string[]
           user_id: string
         }
         Insert: {
@@ -385,6 +442,7 @@ export type Database = {
           linked_course_id?: string | null
           linked_date?: string | null
           linked_task_id?: string | null
+          tags?: string[]
           user_id: string
         }
         Update: {
@@ -395,6 +453,7 @@ export type Database = {
           linked_course_id?: string | null
           linked_date?: string | null
           linked_task_id?: string | null
+          tags?: string[]
           user_id?: string
         }
         Relationships: [
@@ -1060,6 +1119,7 @@ export type Database = {
           linked_course_id: string | null
           linked_date: string | null
           linked_task_id: string | null
+          tags: string[] | null
           user_id: string | null
         }
         Insert: {
@@ -1070,6 +1130,7 @@ export type Database = {
           linked_course_id?: string | null
           linked_date?: string | null
           linked_task_id?: string | null
+          tags?: string[] | null
           user_id?: string | null
         }
         Update: {
@@ -1080,6 +1141,7 @@ export type Database = {
           linked_course_id?: string | null
           linked_date?: string | null
           linked_task_id?: string | null
+          tags?: string[] | null
           user_id?: string | null
         }
         Relationships: [

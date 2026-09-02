@@ -14,9 +14,7 @@ export type CourseRow = Omit<Database["public"]["Tables"]["courses"]["Row"], "me
 };
 export type DeadlineRow = Database["public"]["Tables"]["deadlines"]["Row"];
 export type TaskRow = Database["public"]["Tables"]["tasks"]["Row"];
-export type NoteRow = Database["public"]["Tables"]["notes"]["Row"] & {
-  tags: string[];
-};
+export type NoteRow = Database["public"]["Tables"]["notes"]["Row"];
 export type ReminderRow = Database["public"]["Tables"]["reminders"]["Row"];
 export type FeedbackRow = Database["public"]["Tables"]["feedback"]["Row"];
 export type PersonRow = Database["public"]["Tables"]["people"]["Row"];
