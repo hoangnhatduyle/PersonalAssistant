@@ -56,6 +56,7 @@ export const knowledgeKeys = {
   all: ["knowledge"] as const,
   list: (filters?: object) => [...knowledgeKeys.all, "list", filters ?? {}] as const,
   detail: (id: string) => [...knowledgeKeys.all, "detail", id] as const,
+  content: (id: string) => [...knowledgeKeys.all, "content", id] as const,
 };
 
 export const settingsKeys = {

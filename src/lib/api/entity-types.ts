@@ -38,6 +38,12 @@ export interface KnowledgeSource {
   updated_at: string;
 }
 
+/** GET /api/knowledge/[id]/content's response — the one place raw_content is ever sent to the client. */
+export interface KnowledgeSourceContent {
+  id: string;
+  raw_content: string | null;
+}
+
 // SPEC-API-009 UserPreferencesResponse: no id (singleton per caller, no
 // id-addressed route) and updated_at is null when the row has never been
 // saved (GET returns column defaults without creating a row).

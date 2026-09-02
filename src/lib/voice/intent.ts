@@ -116,8 +116,8 @@ export const llmResponseSchema = z
 const SYSTEM_PROMPT = `You are the intent-resolution layer for a student personal-assistant app.
 Given a spoken/transcribed user request, the current server time, the user's
 IANA time zone, and a JSON list of that user's current Courses, Deadlines,
-and Tasks (with their ids), resolve it to exactly one supported operation
-and respond with ONLY a JSON object matching this shape:
+Tasks, and Knowledge Sources (with their ids), resolve it to exactly one
+supported operation and respond with ONLY a JSON object matching this shape:
 
 {
   "confidence": number,        // 0-1, your genuine confidence this is the right resolution
@@ -146,7 +146,15 @@ supported.
 Choose among the read-only query kinds using these boundaries:
 - "knowledge_lookup": the user explicitly asks about material they imported,
   saved, uploaded, captured, or previously provided, such as "what did that
-  article say about research paths?" or "summarize the notes I saved."
+  article say about research paths?" or "summarize the notes I saved." This
+  also covers a request that names or clearly refers to one of the provided
+  Knowledge Sources' titles/topics (e.g. a source titled "My Girlfriend
+  (Tien) Bucket List" matches "the bucket list", "her bucket list", "test
+  the bucket list", "check the bucket list") — the wording doesn't need to
+  say "saved" or "imported" once it matches a known source; treat any bare
+  verb in front of it ("test", "check", "look at", "open", "try", "go
+  through") as asking to look the material up, not as an instruction to
+  create/change anything.
 - "personalization_suggestions": the user explicitly asks to check the app's
   generated personalization/reminder-timing suggestions, such as "check my
   suggestions" or "did the app recommend changing my reminder timing?"
@@ -170,6 +178,16 @@ Questions, hypotheticals, and requests for advice take precedence and must be
 are not commands. If a request asks for advice and discusses a task the user
 might create, choose "general_conversation" unless it also contains a separate,
 explicit instruction to create that task.
+
+A bare verb like "test", "check", "look at", "try", or "open" in front of a
+noun phrase, with no new title/date/content actually being specified, is
+never enough on its own to justify creating a Task named after that noun
+phrase — a Task create needs the user asking to add/create/track a real new
+item, not merely to inspect or exercise something. If that noun phrase
+matches a provided Knowledge Source, resolve it as "knowledge_lookup"
+instead (see above); if it matches nothing in the provided context, prefer
+"general_conversation" or a low confidence score over guessing at a new Task
+title.
 
 The request's "now" field is the current server timestamp (UTC, ISO 8601)
 and "timezone" is the user's IANA time zone — use both as the anchor for any
@@ -211,6 +229,10 @@ Examples:
   mutation null.
 - "Create a task to ask IEEE for notes" -> read_only false, mutation is a Task
   create.
+- "Test the bucket list" / "Check out the bucket list" against a Knowledge
+  Source titled "My Girlfriend (Tien) Bucket List" -> read_only true,
+  query_kind "knowledge_lookup", mutation null. NOT a Task create — "test"
+  here is the user exercising the lookup feature, not naming a new Task.
 
 If the request doesn't map confidently to one of these, or names an entity
 not in the provided context list, set confidence below 0.95 rather than
@@ -220,15 +242,25 @@ interface EntityContext {
   courses: Array<{ id: string; name: string }>;
   deadlines: Array<{ id: string; title: string; course_id: string }>;
   tasks: Array<{ id: string; title: string }>;
+  // Bug fix: without this, the classifier had zero visibility into what the
+  // user's knowledge base actually contains, so a request naming a saved
+  // source by its own title/topic (e.g. "test the bucket list" against a
+  // source titled "My Girlfriend (Tien) Bucket List") had no anchor to
+  // recognize it as knowledge_lookup — it fell back to treating the bare
+  // imperative as an instruction to create a task literally titled that.
+  // Titles only (no content) — same shape/cost as the courses/deadlines/
+  // tasks lists above, just enough for the model to match a reference.
+  knowledgeSources: Array<{ id: string; title: string }>;
 }
 
 async function loadEntityContext(supabase: SupabaseClient<Database>, userId: string): Promise<EntityContext> {
-  const [{ data: courses }, { data: deadlines }, { data: tasks }] = await Promise.all([
+  const [{ data: courses }, { data: deadlines }, { data: tasks }, { data: knowledgeSources }] = await Promise.all([
     supabase.from("courses").select("id, name").eq("user_id", userId).is("deleted_at", null),
     supabase.from("deadlines").select("id, title, course_id").eq("user_id", userId).is("deleted_at", null),
     supabase.from("tasks").select("id, title").eq("user_id", userId).is("deleted_at", null),
+    supabase.from("knowledge_sources").select("id, title").eq("user_id", userId).eq("status", "Ready"),
   ]);
-  return { courses: courses ?? [], deadlines: deadlines ?? [], tasks: tasks ?? [] };
+  return { courses: courses ?? [], deadlines: deadlines ?? [], tasks: tasks ?? [], knowledgeSources: knowledgeSources ?? [] };
 }
 
 /**

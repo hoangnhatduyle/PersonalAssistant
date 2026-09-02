@@ -39,14 +39,14 @@ export function PeopleManagementCard() {
 
   return (
     <GlassPanel className="flex flex-col gap-3 p-4">
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
           <p className="font-display text-sm font-medium text-text-primary">People</p>
           <p className="text-xs text-text-secondary">
             Track a family member or partner&apos;s Courses, Deadlines, and Tasks alongside your own.
           </p>
         </div>
-        <Button size="sm" onClick={() => setCreateOpen(true)}>
+        <Button size="sm" className="shrink-0 whitespace-nowrap" onClick={() => setCreateOpen(true)}>
           Add person
         </Button>
       </div>

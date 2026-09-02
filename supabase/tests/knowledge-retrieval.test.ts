@@ -41,11 +41,11 @@ describe("match_knowledge_chunks", () => {
       chunk_text: "close",
       embedding: embeddingAtAngle(Math.acos(0.9)),
     });
-    // cos(60deg) = 0.5 -- below KNOWLEDGE_RELEVANCE_THRESHOLD (0.75), must be excluded
+    // cos(acos(0.1)) = 0.1 -- below KNOWLEDGE_RELEVANCE_THRESHOLD (0.25), must be excluded
     await createKnowledgeChunk(admin, sourceId, user.userId, {
       chunk_index: 2,
       chunk_text: "too far",
-      embedding: embeddingAtAngle(Math.PI / 3),
+      embedding: embeddingAtAngle(Math.acos(0.1)),
     });
 
     const { data, error } = await user.client.rpc("match_knowledge_chunks", {

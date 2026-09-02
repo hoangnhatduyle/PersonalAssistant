@@ -11,6 +11,9 @@ import { MomentumCard } from "@/components/dashboard/MomentumCard";
 import { NextSequenceQueue } from "@/components/dashboard/NextSequenceQueue";
 import { SuggestionBanner } from "@/components/dashboard/SuggestionBanner";
 import { PersonalizationSuggestionsPanel } from "@/components/dashboard/PersonalizationSuggestionsPanel";
+import { WorkloadDensityStrip } from "@/components/dashboard/WorkloadDensityStrip";
+import { StaleItemsCard } from "@/components/dashboard/StaleItemsCard";
+import { CourseProgressList } from "@/components/dashboard/CourseProgressList";
 import { Skeleton } from "@/components/ui/Skeleton";
 
 /** No /api/dashboard route exists — composes already-fetched entity hooks client-side. */
@@ -42,13 +45,18 @@ export function DashboardContainer() {
         <>
           <SuggestionBanner deadlines={deadlines?.rows ?? []} tasks={tasks?.rows ?? []} />
           <PersonalizationSuggestionsPanel />
+          <WorkloadDensityStrip deadlines={deadlines?.rows ?? []} tasks={tasks?.rows ?? []} todoItems={todoItems?.rows ?? []} />
 
           <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
             <div className="flex flex-col gap-6">
               <NowWidget deadlines={deadlines?.rows ?? []} tasks={tasks?.rows ?? []} reminders={reminders?.rows ?? []} />
               <NextSequenceQueue deadlines={deadlines?.rows ?? []} tasks={tasks?.rows ?? []} todoItems={todoItems?.rows ?? []} todoLists={todoLists?.rows ?? []} courses={courses?.rows ?? []} />
+              <StaleItemsCard deadlines={deadlines?.rows ?? []} tasks={tasks?.rows ?? []} todoItems={todoItems?.rows ?? []} />
             </div>
-            <MomentumCard deadlines={deadlines?.rows ?? []} tasks={tasks?.rows ?? []} todoItems={todoItems?.rows ?? []} />
+            <div className="flex flex-col gap-6">
+              <MomentumCard deadlines={deadlines?.rows ?? []} tasks={tasks?.rows ?? []} todoItems={todoItems?.rows ?? []} />
+              <CourseProgressList courses={courses?.rows ?? []} deadlines={deadlines?.rows ?? []} todoItems={todoItems?.rows ?? []} todoLists={todoLists?.rows ?? []} />
+            </div>
           </div>
         </>
       )}

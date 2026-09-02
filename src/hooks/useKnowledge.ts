@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch, toQueryString } from "@/lib/http/client";
 import { knowledgeKeys } from "@/lib/query/keys";
-import type { KnowledgeSource, KnowledgeSourceStatus, KnowledgeSourceType } from "@/lib/api/entity-types";
+import type { KnowledgeSource, KnowledgeSourceContent, KnowledgeSourceStatus, KnowledgeSourceType } from "@/lib/api/entity-types";
 
 export interface KnowledgeListFilters {
   status?: KnowledgeSourceStatus;
@@ -34,6 +34,15 @@ export function useKnowledgeSource(id: string) {
     queryKey: knowledgeKeys.detail(id),
     queryFn: async () => (await apiFetch<KnowledgeSource>(`/api/knowledge/${id}`)).data,
     enabled: Boolean(id),
+  });
+}
+
+/** The one hook that fetches raw_content (GET /api/knowledge/[id]/content) — pass `enabled` so it only fires while a view/edit dialog is actually open. */
+export function useKnowledgeSourceContent(id: string, enabled: boolean) {
+  return useQuery({
+    queryKey: knowledgeKeys.content(id),
+    queryFn: async () => (await apiFetch<KnowledgeSourceContent>(`/api/knowledge/${id}/content`)).data,
+    enabled: enabled && Boolean(id),
   });
 }
 

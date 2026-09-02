@@ -14,6 +14,21 @@ export function toneClasses(tone: StatusTone): string {
   return TONE_CLASSES[tone];
 }
 
+// Solid fills for progress bars/meters, distinct from TONE_CLASSES's
+// translucent badge backgrounds — a badge and a progress bar need opposite
+// contrast (text-on-transparent vs. a filled track).
+const TONE_BAR_CLASSES: Record<StatusTone, string> = {
+  ok: "bg-status-ok",
+  warn: "bg-status-warn",
+  urgent: "bg-status-urgent",
+  neutral: "bg-status-neutral",
+  accent: "bg-accent-indigo",
+};
+
+export function toneBarClasses(tone: StatusTone): string {
+  return TONE_BAR_CLASSES[tone];
+}
+
 type DeadlineStatus = Database["public"]["Enums"]["deadline_status"];
 type TaskStatus = Database["public"]["Enums"]["task_status"];
 type ReminderStatus = Database["public"]["Enums"]["reminder_status"];

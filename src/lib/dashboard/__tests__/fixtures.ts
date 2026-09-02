@@ -1,4 +1,4 @@
-import type { DeadlineRow, ReminderRow, TaskRow, TodoItemRow } from "@/lib/api/entity-types";
+import type { CourseRow, DeadlineRow, ReminderRow, TaskRow, TodoItemRow, TodoListRow } from "@/lib/api/entity-types";
 
 export function makeDeadline(overrides: Partial<DeadlineRow> = {}): DeadlineRow {
   return {
@@ -42,6 +42,42 @@ export function makeTodoItem(overrides: Partial<TodoItemRow> = {}): TodoItemRow 
     title: "To-do item",
     due_date: "2026-01-04",
     is_done: false,
+    position: 0,
+    created_at: "2026-01-01T00:00:00Z",
+    updated_at: "2026-01-01T00:00:00Z",
+    deleted_at: null,
+    user_id: "u-1",
+    ...overrides,
+  };
+}
+
+export function makeCourse(overrides: Partial<CourseRow> = {}): CourseRow {
+  return {
+    id: "c-1",
+    code: "CS101",
+    name: "Course",
+    term: null,
+    instructor: null,
+    location: null,
+    meeting_blocks: [],
+    person_id: null,
+    recurrence_start_date: null,
+    recurrence_end_date: null,
+    reminders_enabled: true,
+    reminder_lead_minutes: 30,
+    created_at: "2026-01-01T00:00:00Z",
+    updated_at: "2026-01-01T00:00:00Z",
+    deleted_at: null,
+    user_id: "u-1",
+    ...overrides,
+  };
+}
+
+export function makeTodoList(overrides: Partial<TodoListRow> = {}): TodoListRow {
+  return {
+    id: "list-1",
+    course_id: "c-1",
+    name: "To-Do List",
     position: 0,
     created_at: "2026-01-01T00:00:00Z",
     updated_at: "2026-01-01T00:00:00Z",

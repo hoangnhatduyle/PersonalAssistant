@@ -62,7 +62,17 @@ export const KNOWLEDGE_STORAGE_BUCKET = "knowledge-uploads";
 // src/lib/voice/transitions.ts) rather than left as an implied threshold —
 // AC-005's citation invariant and AC-006's "no relevant chunks" response are
 // only testable against a concrete cutoff.
-export const KNOWLEDGE_RELEVANCE_THRESHOLD = 0.75;
+//
+// Bug fix: the original 0.75 assumed text-embedding-3-small cosine
+// similarities for genuinely relevant-but-differently-worded text cluster
+// near 1.0, the way some other embedding spaces do — they don't. Measured
+// against a real short pasted-text source, well-phrased relevant queries
+// scored 0.265-0.333, while unrelated queries scored 0.065-0.233 (the high
+// end being a query that shared incidental travel/place vocabulary). 0.75
+// accepted nothing short of a near-duplicate, so knowledge_lookup reported
+// "nothing saved" for essentially every real question. 0.25 sits just below
+// the observed relevant cluster and above the observed unrelated one.
+export const KNOWLEDGE_RELEVANCE_THRESHOLD = 0.25;
 export const KNOWLEDGE_TOP_K = 8;
 
 // SPEC-API-008 shared_schemas KnowledgeSourceResponse: the exact column set
