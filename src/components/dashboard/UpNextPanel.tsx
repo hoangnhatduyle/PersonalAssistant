@@ -141,8 +141,8 @@ export function UpNextPanel({ deadlines, tasks, reminders, todoItems, todoLists,
 
   return (
     <GlassPanel variant="glow-ok" className="flex flex-col gap-6 p-6 lg:flex-row lg:items-stretch">
-      {/* Clock */}
-      <div className="flex flex-shrink-0 flex-col items-center justify-center gap-3">
+      {/* Clock — 40% width on lg */}
+      <div className="flex flex-col items-center justify-center gap-3 lg:w-2/5">
         <svg viewBox="0 0 300 300" aria-hidden="true" className="h-64 w-64">
           <circle cx={CENTER} cy={CENTER} r={FACE_RADIUS} className="fill-panel/30 stroke-panel-border/60" strokeWidth={1} />
           <circle cx={CENTER} cy={CENTER} r={RING_RADIUS} className="fill-none stroke-panel-border" strokeWidth={1} />
@@ -223,7 +223,8 @@ export function UpNextPanel({ deadlines, tasks, reminders, todoItems, todoLists,
       </div>
 
       {/* Filterable queue */}
-      <div className="flex min-w-0 flex-1 flex-col gap-3">
+      {/* Queue — 60% width on lg */}
+      <div className="flex min-w-0 flex-col gap-3 lg:w-3/5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="font-mono text-xs uppercase tracking-wide text-text-eyebrow">Up Next</p>
           <div role="group" aria-label="Filter by due date" className="flex flex-wrap items-center gap-2">
