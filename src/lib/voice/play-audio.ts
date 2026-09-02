@@ -1,17 +1,37 @@
 /**
  * SPEC-API-010: client-only playback for a POST /api/voice/speak response.
- * A module-level singleton Audio instance so a new playback always
+ * A single reusable <audio> element for all playback — NC-PWA-AUDIO-UNLOCK:
+ * iOS standalone PWAs (unlike a Safari tab) don't grant autoplay leniency
+ * that survives the async STT→LLM→TTS round trip, so playback must reuse
+ * the exact element that was unlocked during the tap gesture in
+ * unlockAudioPlayback() below — a freshly constructed `new Audio()` per
+ * call is never activated and gets silently blocked. currentObjectUrl
+ * tracks which playback is "current" so a new call always
  * interrupts/replaces any currently-playing one rather than overlapping —
  * handles two rapid voice turns racing. The object URL is revoked on
  * end/error so it doesn't leak.
  */
-let currentAudio: HTMLAudioElement | null = null;
+let sharedAudio: HTMLAudioElement | null = null;
+let currentObjectUrl: string | null = null;
 let currentFinish: ((played: boolean) => void) | null = null;
 
+function getSharedAudio(): HTMLAudioElement {
+  sharedAudio ??= new Audio();
+  return sharedAudio;
+}
+
+// 44-byte silent WAV — just enough for a real play()/pause() cycle to run
+// during the gesture without any audible blip.
+const SILENT_WAV = "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=";
+
 /**
- * Call during a user gesture (e.g. mic tap) to unlock audio playback on
- * mobile browsers. Without this, `audio.play()` after an async pipeline
- * (transcribe + TTS) is blocked because the original gesture chain expired.
+ * Call synchronously during a user gesture (e.g. mic tap) to unlock audio
+ * playback on mobile browsers. Resumes a WebAudio AudioContext (helps some
+ * Android/Chrome cases), and — the part that matters for iOS standalone
+ * PWAs — plays a silent clip on the actual shared <audio> element so that
+ * element itself carries user-activation into the later async
+ * `playBase64Audio()` call, which reuses it rather than constructing a new,
+ * never-activated element.
  */
 let audioContext: AudioContext | null = null;
 export function unlockAudioPlayback(): void {
@@ -21,13 +41,27 @@ export function unlockAudioPlayback(): void {
   } catch {
     // AudioContext unavailable — playback will rely on direct gesture chain
   }
+
+  try {
+    const audio = getSharedAudio();
+    if (!audio.src) audio.src = SILENT_WAV;
+    const playAttempt = audio.play();
+    void playAttempt
+      ?.then(() => audio.pause())
+      .catch(() => {
+        // Unlock attempt blocked — later play() calls will rely on
+        // whatever gesture leniency the browser grants.
+      });
+  } catch {
+    // Shared <audio> element unavailable in this environment.
+  }
 }
 
 function releaseCurrent(): void {
-  if (currentAudio) {
-    currentAudio.onended = null;
-    currentAudio.onerror = null;
-    currentAudio.pause();
+  if (sharedAudio) {
+    sharedAudio.onended = null;
+    sharedAudio.onerror = null;
+    sharedAudio.pause();
   }
   // Code-review finding: without this, an interrupted playback's own
   // promise (from a still-in-flight earlier playBase64Audio() call) would
@@ -52,9 +86,10 @@ function base64ToBlob(base64: string, mimetype: string): Blob {
 export async function playBase64Audio(base64: string, mimetype: string): Promise<{ played: boolean }> {
   releaseCurrent();
 
+  const audio = getSharedAudio();
   const objectUrl = URL.createObjectURL(base64ToBlob(base64, mimetype));
-  const audio = new Audio(objectUrl);
-  currentAudio = audio;
+  currentObjectUrl = objectUrl;
+  audio.src = objectUrl;
 
   return new Promise((resolve) => {
     const finish = (played: boolean) => {
@@ -62,9 +97,9 @@ export async function playBase64Audio(base64: string, mimetype: string): Promise
       // shared slot for it — by the time a later playBase64Audio() call's
       // releaseCurrent() runs, it already resolved this promise via
       // currentFinish?.(false) above, so this check simply no-ops then.
-      if (currentAudio === audio) {
+      if (currentObjectUrl === objectUrl) {
         URL.revokeObjectURL(objectUrl);
-        currentAudio = null;
+        currentObjectUrl = null;
         currentFinish = null;
       }
       resolve({ played });

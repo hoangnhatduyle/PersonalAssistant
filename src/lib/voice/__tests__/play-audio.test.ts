@@ -1,15 +1,23 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { playBase64Audio } from "../play-audio";
 
 /**
  * jsdom implements neither HTMLMediaElement.play()/pause() nor
  * URL.createObjectURL — both throw "Not implemented". This fake Audio
  * stands in for the real element so play-audio.ts's interrupt/race logic
  * (the thing under test) can be exercised deterministically.
+ *
+ * NC-PWA-AUDIO-UNLOCK: playback now reuses a single module-level <audio>
+ * element (constructed via `new Audio()` with no src, then `.src` is
+ * assigned separately) instead of a fresh `new Audio(src)` per call — that
+ * reuse is exactly what lets unlockAudioPlayback()'s gesture-time unlock
+ * carry into the later async playBase64Audio() call on iOS standalone PWAs.
+ * `vi.resetModules()` + dynamic import in beforeEach gives each test a
+ * fresh module instance, so the shared singleton doesn't leak across tests.
  */
 class FakeAudio {
   onended: (() => void) | null = null;
   onerror: (() => void) | null = null;
+  src = "";
   paused = false;
   playCalls = 0;
   play: () => Promise<void> = () => {
@@ -18,7 +26,7 @@ class FakeAudio {
     return Promise.resolve();
   };
 
-  constructor(public src: string) {
+  constructor() {
     instances.push(this);
   }
 
@@ -28,9 +36,15 @@ class FakeAudio {
 }
 
 let instances: FakeAudio[];
+let playAudio: typeof import("../play-audio");
 
-beforeEach(() => {
+beforeEach(async () => {
   instances = [];
+  vi.resetModules();
+  // Import before stubbing URL — Vite's own dynamic-import resolution uses
+  // the real URL constructor internally, so stubbing it first breaks the
+  // import itself.
+  playAudio = await import("../play-audio");
   vi.stubGlobal("Audio", FakeAudio);
   vi.stubGlobal("URL", {
     ...URL,
@@ -45,13 +59,13 @@ afterEach(() => {
 
 describe("playBase64Audio", () => {
   it("resolves { played: true } when playback ends naturally", async () => {
-    const promise = playBase64Audio("aGVsbG8=", "audio/mpeg");
+    const promise = playAudio.playBase64Audio("aGVsbG8=", "audio/mpeg");
     instances[0].onended?.();
     await expect(promise).resolves.toEqual({ played: true });
   });
 
   it("resolves { played: false } when playback errors", async () => {
-    const promise = playBase64Audio("aGVsbG8=", "audio/mpeg");
+    const promise = playAudio.playBase64Audio("aGVsbG8=", "audio/mpeg");
     instances[0].onerror?.();
     await expect(promise).resolves.toEqual({ played: false });
   });
@@ -61,36 +75,65 @@ describe("playBase64Audio", () => {
       play = () => Promise.reject(new Error("NotAllowedError"));
     }
     vi.stubGlobal("Audio", BlockedAudio);
-    await expect(playBase64Audio("aGVsbG8=", "audio/mpeg")).resolves.toEqual({ played: false });
+    await expect(playAudio.playBase64Audio("aGVsbG8=", "audio/mpeg")).resolves.toEqual({ played: false });
+  });
+
+  it("reuses a single <audio> element across calls instead of constructing a new one each time", async () => {
+    const first = playAudio.playBase64Audio("aGVsbG8=", "audio/mpeg");
+    instances[0].onended?.();
+    await first;
+
+    const second = playAudio.playBase64Audio("d29ybGQ=", "audio/mpeg");
+    instances[0].onended?.();
+    await second;
+
+    expect(instances).toHaveLength(1);
+    expect(instances[0].playCalls).toBe(2);
   });
 
   // Regression test: code-review finding — an interrupted playback's own
   // promise must still resolve (as { played: false }) rather than hang
-  // forever, since its onended/onerror get nulled out by the interrupting
+  // forever, since its onended/onerror get overwritten by the interrupting
   // call before they ever fire.
   it("resolves the interrupted playback's promise as { played: false } when a second call interrupts it", async () => {
-    const firstPromise = playBase64Audio("aGVsbG8=", "audio/mpeg");
-    const secondPromise = playBase64Audio("d29ybGQ=", "audio/mpeg");
+    const firstPromise = playAudio.playBase64Audio("aGVsbG8=", "audio/mpeg");
+    const secondPromise = playAudio.playBase64Audio("d29ybGQ=", "audio/mpeg");
 
     await expect(firstPromise).resolves.toEqual({ played: false });
-    expect(instances[0].paused).toBe(true);
 
-    instances[1].onended?.();
+    instances[0].onended?.();
     await expect(secondPromise).resolves.toEqual({ played: true });
   });
 
-  it("nulls out the superseded playback's onended so a stray late event can't affect the new one", async () => {
-    const firstPromise = playBase64Audio("aGVsbG8=", "audio/mpeg");
-    const secondPromise = playBase64Audio("d29ybGQ=", "audio/mpeg");
+  it("does not let a stray call to the superseded playback's original onended resolve the new promise", async () => {
+    const firstPromise = playAudio.playBase64Audio("aGVsbG8=", "audio/mpeg");
+    const originalOnended = instances[0].onended;
+    const secondPromise = playAudio.playBase64Audio("d29ybGQ=", "audio/mpeg");
     await firstPromise;
 
-    // The first Audio's onended was nulled by the interrupt — calling it
-    // directly here (as if a stray browser event fired late) must not
-    // throw or affect the second playback's still-open promise.
-    expect(instances[0].onended).toBeNull();
-    instances[0].onended?.();
+    // The interrupting call reassigned onended to its own handler — the
+    // closure captured above is orphaned. Invoking it must not resolve or
+    // otherwise affect the still-open second promise.
+    originalOnended?.();
 
-    instances[1].onended?.();
+    instances[0].onended?.();
     await expect(secondPromise).resolves.toEqual({ played: true });
+  });
+});
+
+describe("unlockAudioPlayback", () => {
+  it("primes the shared <audio> element with a play/pause cycle during the gesture", () => {
+    playAudio.unlockAudioPlayback();
+
+    expect(instances).toHaveLength(1);
+    expect(instances[0].src).toContain("data:audio/wav;base64,");
+    expect(instances[0].playCalls).toBe(1);
+  });
+
+  it("does not throw when called repeatedly", () => {
+    expect(() => {
+      playAudio.unlockAudioPlayback();
+      playAudio.unlockAudioPlayback();
+    }).not.toThrow();
   });
 });
