@@ -1,7 +1,7 @@
 import type { CourseRow, TaskRow } from "@/lib/api/entity-types";
 
 /**
- * Shared between PersonalizationSuggestionsPanel's card list and
+ * Shared between DailyIntelligenceCard's suggestion list and
  * useReviewSuggestionsAloud's spoken sentences — both need to turn a
  * suggestion's (scope, target_id) into a human-readable name from
  * already-fetched Course/Task rows.

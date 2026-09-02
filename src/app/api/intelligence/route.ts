@@ -2,13 +2,20 @@ import OpenAI from "openai";
 import { requireAuthenticatedContext } from "@/lib/api/auth";
 import { requireEnv } from "@/lib/env";
 import { successResponse, serverErrorResponse } from "@/lib/api/response";
+import { buildSuggestion, type Suggestion } from "@/lib/dashboard/suggestion";
+import { generateSuggestionsForUser } from "@/lib/personalization/generate-for-user";
+import type { DeadlineRow, TaskRow, PersonalizationSuggestionRow } from "@/lib/api/entity-types";
+import type { StatusTone } from "@/lib/status-colors";
 
-export interface BriefingResponse {
-  briefing: string;
+export interface DailyIntelligenceResponse {
   date: string;
+  narrative: string;
+  workload: { tone: StatusTone; message: string };
+  suggestions: PersonalizationSuggestionRow[];
+  suggestionsGenerated: number;
 }
 
-const BRIEFING_SYSTEM_PROMPT = `You are a friendly personal assistant for a university student. Produce a concise, upbeat morning briefing summarizing their day ahead. Cover:
+const INTELLIGENCE_SYSTEM_PROMPT = `You are a friendly personal assistant for a university student. Produce a concise, upbeat daily overview summarizing their day ahead. Cover:
 1. Today's class meetings (times, locations)
 2. Deadlines due today or overdue
 3. Open tasks due today
@@ -16,9 +23,11 @@ const BRIEFING_SYSTEM_PROMPT = `You are a friendly personal assistant for a univ
 5. Appointments today
 6. A motivational closing line
 
+A separate workload banner already highlights the most urgent deadline, so do NOT repeat that exact message. Instead, weave deadline urgency naturally into the overview if relevant.
+
 Keep it conversational and under 200 words. Do not use markdown — plain text only, with line breaks between sections. If a category has nothing, skip it entirely. Focus on what's actionable.
 
-Respond with ONLY a JSON object: { "briefing": string }`;
+Respond with ONLY a JSON object: { "narrative": string }`;
 
 export async function POST() {
   const ctx = await requireAuthenticatedContext();
@@ -40,20 +49,18 @@ export async function POST() {
         .is("deleted_at", null),
       supabase
         .from("deadlines")
-        .select("title, due_at, status, priority")
+        .select("*")
         .eq("user_id", user.id)
         .is("person_id", null)
         .is("deleted_at", null)
-        .or(`due_at.lte.${todayEnd},status.eq.Overdue`)
         .in("status", ["Not Started", "In Progress", "Submitted", "Overdue"]),
       supabase
         .from("tasks")
-        .select("title, due_at, status, tags")
+        .select("*")
         .eq("user_id", user.id)
         .is("person_id", null)
         .is("deleted_at", null)
-        .eq("status", "Open")
-        .lte("due_at", todayEnd),
+        .eq("status", "Open"),
       supabase
         .from("reminders")
         .select("target_type, target_id, trigger_at, acknowledgment_state")
@@ -68,6 +75,18 @@ export async function POST() {
         .is("deleted_at", null)
         .eq("date", todayStr),
     ]);
+
+    const allDeadlines = (deadlinesRes.data ?? []) as DeadlineRow[];
+    const allTasks = (tasksRes.data ?? []) as TaskRow[];
+
+    // Workload heuristic — deterministic, no LLM cost
+    const workload: Suggestion = buildSuggestion(allDeadlines, allTasks, now);
+
+    // Narrow to today-relevant items for the LLM context
+    const todayDeadlines = allDeadlines.filter(
+      (d) => d.status === "Overdue" || new Date(d.due_at).getTime() <= new Date(todayEnd).getTime(),
+    );
+    const todayTasks = allTasks.filter((t) => t.due_at && new Date(t.due_at).getTime() <= new Date(todayEnd).getTime());
 
     const dayOfWeek = now.getDay();
     const todayMeetings = (coursesRes.data ?? []).flatMap((course) => {
@@ -86,17 +105,17 @@ export async function POST() {
         }));
     });
 
-    const context = {
+    const llmContext = {
       now: now.toISOString(),
       day_of_week: now.toLocaleDateString("en-US", { weekday: "long" }),
       todays_classes: todayMeetings,
-      deadlines: (deadlinesRes.data ?? []).map((d) => ({
+      deadlines: todayDeadlines.map((d) => ({
         title: d.title,
         due_at: d.due_at,
         status: d.status,
         priority: d.priority,
       })),
-      tasks: (tasksRes.data ?? []).map((t) => ({
+      tasks: todayTasks.map((t) => ({
         title: t.title,
         due_at: t.due_at,
         tags: t.tags,
@@ -108,23 +127,46 @@ export async function POST() {
         location: a.location,
         category: a.category,
       })),
+      workload_status: workload.message,
     };
 
+    // Run LLM narrative and personalization generation in parallel
     const openai = new OpenAI({ apiKey: requireEnv("OPENAI_API_KEY") });
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      response_format: { type: "json_object" },
-      messages: [
-        { role: "system", content: BRIEFING_SYSTEM_PROMPT },
-        { role: "user", content: JSON.stringify(context) },
-      ],
-    });
+
+    const [completion, suggestionsResult] = await Promise.all([
+      openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content: INTELLIGENCE_SYSTEM_PROMPT },
+          { role: "user", content: JSON.stringify(llmContext) },
+        ],
+      }),
+      generateSuggestionsForUser(supabase, user.id).catch((error) => {
+        console.error("personalization generation failed (non-fatal)", error);
+        return { candidatesEvaluated: 0, created: 0, skipped: 0 };
+      }),
+    ]);
 
     const raw = JSON.parse(completion.choices[0]?.message.content ?? "{}");
-    const briefing = typeof raw.briefing === "string" ? raw.briefing : "Have a great day!";
+    const narrative = typeof raw.narrative === "string" ? raw.narrative : "Have a great day!";
 
-    return successResponse<BriefingResponse>({ briefing, date: todayStr });
+    // Fetch all pending suggestions (including any just created)
+    const { data: pendingSuggestions } = await supabase
+      .from("personalization_suggestions")
+      .select("*")
+      .eq("user_id", user.id)
+      .eq("status", "pending")
+      .order("created_at", { ascending: false });
+
+    return successResponse<DailyIntelligenceResponse>({
+      date: todayStr,
+      narrative,
+      workload: { tone: workload.tone, message: workload.message },
+      suggestions: (pendingSuggestions ?? []) as PersonalizationSuggestionRow[],
+      suggestionsGenerated: suggestionsResult.created,
+    });
   } catch (error) {
-    return serverErrorResponse("briefing generation failed", error);
+    return serverErrorResponse("intelligence generation failed", error);
   }
 }

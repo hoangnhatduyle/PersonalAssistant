@@ -28,7 +28,7 @@ export interface UseReviewSuggestionsAloudResult {
 
 /**
  * Shared by CaptureChannel (triggered after a voice-originated
- * "personalization_suggestions" query) and PersonalizationSuggestionsPanel
+ * "personalization_suggestions" query) and DailyIntelligenceCard
  * (gated behind the speak_suggestions_aloud setting). A hook so it can call
  * useCourses/useTasks/useQueryClient/useSpeakVoiceResponse at its own top
  * level — `start()` itself is a plain async function, not a hook, since it

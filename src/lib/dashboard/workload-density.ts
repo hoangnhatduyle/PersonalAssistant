@@ -40,7 +40,7 @@ export interface DensityItem {
  * Buckets open Deadlines/Tasks/To-Do items with a due date into a rolling
  * `days`-day-ahead window (today..today+days-1), local-calendar-day
  * granularity. Items outside the window (overdue, or further out) are
- * dropped rather than folded into "today" — SuggestionBanner/NextSequenceQueue
+ * dropped rather than folded into "today" — DailyIntelligenceCard/NextSequenceQueue
  * already surface overdue items, this view is specifically about what's
  * coming up.
  */

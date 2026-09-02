@@ -6,7 +6,7 @@ import { generateSuggestionsForUser } from "@/lib/personalization/generate-for-u
  * POST /api/suggestions/generate — on-demand only, never a scheduled job
  * (each call costs an LLM request, so the user explicitly triggers it via
  * the "Check for suggestions" button, src/components/dashboard/
- * PersonalizationSuggestionsPanel.tsx). Scoped entirely to the caller's own
+ * DailyIntelligenceCard.tsx). Scoped entirely to the caller's own
  * feedback/courses/tasks via requireAuthenticatedContext() + explicit
  * user_id filters inside generateSuggestionsForUser — no service-role
  * client needed.

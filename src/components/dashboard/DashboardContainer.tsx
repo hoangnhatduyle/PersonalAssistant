@@ -8,12 +8,10 @@ import { useTodoLists } from "@/hooks/useTodoLists";
 import { useCourses } from "@/hooks/useCourses";
 import { UpNextPanel } from "@/components/dashboard/UpNextPanel";
 import { MomentumCard } from "@/components/dashboard/MomentumCard";
-import { SuggestionBanner } from "@/components/dashboard/SuggestionBanner";
-import { PersonalizationSuggestionsPanel } from "@/components/dashboard/PersonalizationSuggestionsPanel";
+import { DailyIntelligenceCard } from "@/components/dashboard/DailyIntelligenceCard";
 import { WorkloadDensityStrip } from "@/components/dashboard/WorkloadDensityStrip";
 import { StaleItemsCard } from "@/components/dashboard/StaleItemsCard";
 import { CourseProgressList } from "@/components/dashboard/CourseProgressList";
-import { BriefingCard } from "@/components/dashboard/BriefingCard";
 import { Skeleton } from "@/components/ui/Skeleton";
 
 /** No /api/dashboard route exists — composes already-fetched entity hooks client-side. */
@@ -43,9 +41,7 @@ export function DashboardContainer() {
         </div>
       ) : (
         <>
-          <BriefingCard />
-          <SuggestionBanner deadlines={deadlines?.rows ?? []} tasks={tasks?.rows ?? []} />
-          <PersonalizationSuggestionsPanel />
+          <DailyIntelligenceCard />
           <WorkloadDensityStrip
             deadlines={deadlines?.rows ?? []}
             tasks={tasks?.rows ?? []}
