@@ -14,9 +14,15 @@ type Props = {
   courseName?: string;
 };
 
+function localDateKey(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
 function TodoItemLine({ item }: { item: TodoItemRow }) {
   const updateItem = useUpdateTodoItem(item.id);
-  const isOverdue = !item.is_done && Boolean(item.due_date) && item.due_date! < new Date().toISOString().slice(0, 10);
+  // Local calendar day, not toISOString's UTC day — see upcoming-items.ts's
+  // buildUpcomingItems for the same fix and why it matters in the evening.
+  const isOverdue = !item.is_done && Boolean(item.due_date) && item.due_date! < localDateKey(new Date());
 
   return (
     <li className="flex items-center justify-between gap-2 py-1.5">

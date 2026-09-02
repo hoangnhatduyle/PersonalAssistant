@@ -75,7 +75,13 @@ export function buildUpcomingItems({ deadlines, tasks, reminders = [], todoItems
     });
   }
 
-  const today = new Date().toISOString().slice(0, 10);
+  // toISOString().slice(0, 10) reads the UTC calendar day, not the user's
+  // local one — in the evening in any timezone behind UTC, that's already
+  // "tomorrow" in UTC, which wrongly marked today's items as past due
+  // (urgent). Build the date key from local getFullYear/getMonth/getDate
+  // instead, matching due_date's own local-calendar-day semantics.
+  const todayLocal = new Date();
+  const today = `${todayLocal.getFullYear()}-${String(todayLocal.getMonth() + 1).padStart(2, "0")}-${String(todayLocal.getDate()).padStart(2, "0")}`;
 
   for (const item of todoItems) {
     if (item.is_done || !item.due_date) continue;

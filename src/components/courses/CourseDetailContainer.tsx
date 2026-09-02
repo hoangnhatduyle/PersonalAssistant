@@ -4,17 +4,22 @@ import { useState } from "react";
 import Link from "next/link";
 import { useCourse, useUpdateCourse } from "@/hooks/useCourses";
 import { useDeadlines } from "@/hooks/useDeadlines";
+import { useTodoLists } from "@/hooks/useTodoLists";
+import { useTodoItems } from "@/hooks/useTodoItems";
 import { CourseForm } from "@/components/courses/CourseForm";
 import { DeleteCourseButton } from "@/components/courses/DeleteCourseButton";
+import { CourseTodoListCard } from "@/components/courses/CourseTodoListCard";
 import { DeadlineList } from "@/components/deadlines/DeadlineList";
 import { NotesForTarget } from "@/components/notes/NotesForTarget";
 import { GlassPanel } from "@/components/ui/GlassPanel";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { useToast } from "@/components/ui/Toast";
 import { formatBlocksSummary } from "@/lib/calendar/recurrence";
 import type { CoursePayload } from "@/lib/api/schemas";
+import type { TodoItemRow } from "@/lib/api/entity-types";
 
 type Props = {
   courseId: string;
@@ -23,12 +28,27 @@ type Props = {
 export function CourseDetailContainer({ courseId }: Props) {
   const { data: course, isLoading } = useCourse(courseId);
   const { data: deadlines, isLoading: deadlinesLoading } = useDeadlines({ courseId });
+  const { data: todoLists, isLoading: todoListsLoading } = useTodoLists({ courseId });
+  // No listId filter on useTodoItems for multiple lists at once — fetch all
+  // and group client-side, same pattern CourseTodoBoardContainer uses.
+  const { data: todoItems, isLoading: todoItemsLoading } = useTodoItems({ limit: 100 });
   const updateCourse = useUpdateCourse(courseId);
   const { showToast } = useToast();
   const [isEditing, setIsEditing] = useState(false);
 
   if (isLoading) return <Skeleton className="h-64 w-full" />;
   if (!course) return <p className="text-sm text-text-secondary">Course not found.</p>;
+
+  const lists = todoLists?.rows ?? [];
+  const listIds = new Set(lists.map((list) => list.id));
+  const itemsByListId = new Map<string, TodoItemRow[]>();
+  for (const item of todoItems?.rows ?? []) {
+    if (!listIds.has(item.list_id)) continue;
+    const bucket = itemsByListId.get(item.list_id) ?? [];
+    bucket.push(item);
+    itemsByListId.set(item.list_id, bucket);
+  }
+  const todoLoading = todoListsLoading || todoItemsLoading;
 
   const handleUpdate = async (values: CoursePayload) => {
     try {
@@ -78,6 +98,21 @@ export function CourseDetailContainer({ courseId }: Props) {
           </Link>
         </div>
         {deadlinesLoading ? <Skeleton className="h-24 w-full" /> : <DeadlineList deadlines={deadlines?.rows ?? []} />}
+      </GlassPanel>
+
+      <GlassPanel className="flex flex-col gap-3 p-6">
+        <p className="font-mono text-xs uppercase tracking-wide text-text-eyebrow">To-Do</p>
+        {todoLoading ? (
+          <Skeleton className="h-24 w-full" />
+        ) : lists.length === 0 ? (
+          <EmptyState title="No to-do list yet" description="Create one from the To-Do Lists board." />
+        ) : (
+          <div className="grid gap-3 sm:grid-cols-2">
+            {lists.map((list) => (
+              <CourseTodoListCard key={list.id} list={list} items={itemsByListId.get(list.id) ?? []} />
+            ))}
+          </div>
+        )}
       </GlassPanel>
 
       <NotesForTarget targetType="course" targetId={course.id} />

@@ -45,7 +45,13 @@ export function DashboardContainer() {
         <>
           <SuggestionBanner deadlines={deadlines?.rows ?? []} tasks={tasks?.rows ?? []} />
           <PersonalizationSuggestionsPanel />
-          <WorkloadDensityStrip deadlines={deadlines?.rows ?? []} tasks={tasks?.rows ?? []} todoItems={todoItems?.rows ?? []} />
+          <WorkloadDensityStrip
+            deadlines={deadlines?.rows ?? []}
+            tasks={tasks?.rows ?? []}
+            todoItems={todoItems?.rows ?? []}
+            todoLists={todoLists?.rows ?? []}
+            courses={courses?.rows ?? []}
+          />
 
           <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
             <div className="flex flex-col gap-6">

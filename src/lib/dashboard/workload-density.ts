@@ -1,4 +1,4 @@
-import type { DeadlineRow, TaskRow, TodoItemRow } from "@/lib/api/entity-types";
+import type { CourseRow, DeadlineRow, TaskRow, TodoItemRow, TodoListRow } from "@/lib/api/entity-types";
 import { isOpenDeadline, isOpenTask } from "@/lib/dashboard/upcoming-items";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -30,6 +30,10 @@ export interface DensityItem {
   kind: "deadline" | "task" | "todo";
   title: string;
   href: string;
+  /** To-Do items only — the course their list belongs to, when it has one. */
+  courseName?: string;
+  /** Tasks only. */
+  tags?: string[];
 }
 
 /**
@@ -86,14 +90,26 @@ export function buildWorkloadDensity(
   return buckets;
 }
 
-/** The raw items behind one bucket's counts — feeds a day's expand/detail view. */
+/**
+ * The raw items behind one bucket's counts — feeds a day's expand/detail
+ * view. `todoLists`/`courses` are optional and only used to resolve a To-Do
+ * item's course name (mirrors NextSequenceQueue's courseName enrichment,
+ * which likewise only applies to todos, not deadlines).
+ */
 export function itemsForDensityDay(
   deadlines: DeadlineRow[],
   tasks: TaskRow[],
   todoItems: TodoItemRow[] = [],
   date: string,
+  todoLists: TodoListRow[] = [],
+  courses: CourseRow[] = [],
 ): DensityItem[] {
   const items: DensityItem[] = [];
+
+  const courseNameById = new Map(courses.map((course) => [course.id, course.name]));
+  const courseNameByListId = new Map(
+    todoLists.filter((list) => list.course_id).map((list) => [list.id, courseNameById.get(list.course_id as string)]),
+  );
 
   for (const deadline of deadlines) {
     if (!isOpenDeadline(deadline.status)) continue;
@@ -104,12 +120,18 @@ export function itemsForDensityDay(
   for (const task of tasks) {
     if (!isOpenTask(task.status) || !task.due_at) continue;
     if (toDateKey(new Date(task.due_at)) !== date) continue;
-    items.push({ id: task.id, kind: "task", title: task.title, href: `/tasks/${task.id}` });
+    items.push({ id: task.id, kind: "task", title: task.title, href: `/tasks/${task.id}`, tags: task.tags });
   }
 
   for (const item of todoItems) {
     if (item.is_done || item.due_date !== date) continue;
-    items.push({ id: item.id, kind: "todo", title: item.title, href: "/courses/todos" });
+    items.push({
+      id: item.id,
+      kind: "todo",
+      title: item.title,
+      href: "/courses/todos",
+      courseName: courseNameByListId.get(item.list_id),
+    });
   }
 
   return items;

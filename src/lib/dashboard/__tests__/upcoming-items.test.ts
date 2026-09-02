@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { buildUpcomingItems, filterUpcomingItemsByTimeWindow, isOpenDeadline, isOpenTask } from "../upcoming-items";
 import type { UpcomingItem } from "../upcoming-items";
 import { makeDeadline, makeReminder, makeTask, makeTodoItem } from "./fixtures";
@@ -63,13 +63,37 @@ describe("buildUpcomingItems", () => {
   });
 
   it("does not mark a todo item urgent on its due date — due_date is a calendar day, not midnight UTC", () => {
-    const today = new Date().toISOString().slice(0, 10);
+    // Built from local date parts, not toISOString — using the UTC day here
+    // would make this test tautologically pass against the same bug it's
+    // meant to catch (see the regression test below for why that matters).
+    const now = new Date();
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
     const items = buildUpcomingItems({
       deadlines: [],
       tasks: [],
       todoItems: [makeTodoItem({ id: "todo-today", due_date: today })],
     });
     expect(items.find((item) => item.id === "todo-today")?.urgent).toBe(false);
+  });
+
+  it("does not mark a todo item urgent in the evening in a timezone behind UTC — regression for reading the UTC calendar day instead of the local one", () => {
+    const originalTZ = process.env.TZ;
+    process.env.TZ = "America/Los_Angeles";
+    try {
+      // 9pm Sep 1 in Los Angeles is already Sep 2 in UTC — a UTC-day read of
+      // "today" would wrongly treat a todo due "2026-09-01" as past due.
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date(2026, 8, 1, 21, 0, 0));
+      const items = buildUpcomingItems({
+        deadlines: [],
+        tasks: [],
+        todoItems: [makeTodoItem({ id: "todo-today", due_date: "2026-09-01" })],
+      });
+      expect(items.find((item) => item.id === "todo-today")?.urgent).toBe(false);
+    } finally {
+      process.env.TZ = originalTZ;
+      vi.useRealTimers();
+    }
   });
 
   it("marks a task or todo item urgent once its due date is in the past, even without a status field to carry it", () => {
