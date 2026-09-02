@@ -42,6 +42,12 @@ export const todoItemKeys = {
   detail: (id: string) => [...todoItemKeys.all, "detail", id] as const,
 };
 
+export const appointmentKeys = {
+  all: ["appointments"] as const,
+  list: (filters?: object) => [...appointmentKeys.all, "list", filters ?? {}] as const,
+  detail: (id: string) => [...appointmentKeys.all, "detail", id] as const,
+};
+
 export const reminderKeys = {
   all: ["reminders"] as const,
   list: (filters?: object) => [...reminderKeys.all, "list", filters ?? {}] as const,

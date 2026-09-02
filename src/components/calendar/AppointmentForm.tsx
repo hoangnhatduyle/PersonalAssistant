@@ -5,12 +5,20 @@ import { FormField } from "@/components/ui/FormField";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Button } from "@/components/ui/Button";
-import { APPOINTMENT_CATEGORIES, type Appointment } from "@/lib/appointments/types";
+import { APPOINTMENT_CATEGORIES } from "@/lib/appointments/types";
+import type { AppointmentRow } from "@/lib/api/entity-types";
 
-export type AppointmentFormValues = Omit<Appointment, "id" | "createdAt">;
+export type AppointmentFormValues = {
+  title: string;
+  date: string;
+  category: string;
+  time?: string;
+  location?: string;
+  notes?: string[];
+};
 
 type Props = {
-  appointment?: Appointment;
+  appointment?: AppointmentRow;
   onSubmit: (values: AppointmentFormValues) => void;
   onCancel: () => void;
 };
@@ -83,8 +91,6 @@ export function AppointmentForm({ appointment, onSubmit, onCancel }: Props) {
           className="w-full rounded-control border border-panel-border bg-bg-void-elevated px-3 py-2 text-sm text-text-primary placeholder:text-text-secondary focus:outline-none focus:ring-2 focus:ring-accent-indigo/50 focus:border-panel-border-hover"
         />
       </FormField>
-      <p className="-mt-2 text-xs text-text-secondary">Saved locally in this browser only — not synced anywhere.</p>
-
       <div className="flex justify-end gap-2">
         <Button type="button" variant="secondary" onClick={onCancel}>
           Cancel

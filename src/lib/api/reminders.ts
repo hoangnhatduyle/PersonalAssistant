@@ -3,7 +3,7 @@ import type { Database } from "@/lib/supabase/types";
 
 export interface ReminderSyncInput {
   userId: string;
-  targetType: "deadline" | "task";
+  targetType: "deadline" | "task" | "appointment";
   targetId: string;
   /** A Deadline's due_at is never null; a Task's may be null/cleared. */
   dueAt: string | null;

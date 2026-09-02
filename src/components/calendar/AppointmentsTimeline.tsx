@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useAppointments } from "@/hooks/useAppointments";
+import { useAppointments, useCreateAppointment, useUpdateAppointment, useDeleteAppointment } from "@/hooks/useAppointments";
 import { AppointmentForm, type AppointmentFormValues } from "@/components/calendar/AppointmentForm";
 import { GlassPanel } from "@/components/ui/GlassPanel";
 import { Dialog } from "@/components/ui/Dialog";
@@ -9,14 +9,18 @@ import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Badge } from "@/components/ui/Badge";
-import type { Appointment } from "@/lib/appointments/types";
+import { Skeleton } from "@/components/ui/Skeleton";
+import type { AppointmentRow } from "@/lib/api/entity-types";
 
 function formatDate(date: string): string {
   return new Date(`${date}T00:00:00`).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
 }
 
 export function AppointmentsTimeline() {
-  const { appointments, addAppointment, updateAppointment, deleteAppointment } = useAppointments();
+  const { data, isLoading } = useAppointments({ limit: 100 });
+  const appointments = data?.rows ?? [];
+  const createMutation = useCreateAppointment();
+
   const [isFormOpen, setFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -29,20 +33,31 @@ export function AppointmentsTimeline() {
     setFormOpen(true);
   };
 
-  const openEdit = (appointment: Appointment) => {
+  const openEdit = (appointment: AppointmentRow) => {
     setEditingId(appointment.id);
     setFormOpen(true);
   };
 
   const handleSubmit = (values: AppointmentFormValues) => {
     if (editingId) {
-      updateAppointment(editingId, values);
+      updateMutation.mutate(values, {
+        onSuccess: () => {
+          setFormOpen(false);
+          setEditingId(null);
+        },
+      });
     } else {
-      addAppointment(values);
+      createMutation.mutate(values, {
+        onSuccess: () => {
+          setFormOpen(false);
+          setEditingId(null);
+        },
+      });
     }
-    setFormOpen(false);
-    setEditingId(null);
   };
+
+  const updateMutation = useUpdateAppointment(editingId ?? "");
+  const deleteMutation = useDeleteAppointment(deletingId ?? "");
 
   return (
     <GlassPanel className="flex flex-col gap-3 p-4">
@@ -53,7 +68,9 @@ export function AppointmentsTimeline() {
         </Button>
       </div>
 
-      {appointments.length === 0 ? (
+      {isLoading ? (
+        <Skeleton className="h-20 w-full" />
+      ) : appointments.length === 0 ? (
         <EmptyState title="No appointments yet" description='Click "+ Add Appointment" to create one.' />
       ) : (
         <ul className="flex flex-col divide-y divide-panel-border">
@@ -105,11 +122,14 @@ export function AppointmentsTimeline() {
         open={Boolean(deletingId)}
         onClose={() => setDeletingId(null)}
         onConfirm={() => {
-          if (deletingId) deleteAppointment(deletingId);
-          setDeletingId(null);
+          if (deletingId) {
+            deleteMutation.mutate(undefined, {
+              onSuccess: () => setDeletingId(null),
+            });
+          }
         }}
         title="Delete this appointment?"
-        description={deletingAppointment ? `"${deletingAppointment.title}" will be removed from this browser.` : ""}
+        description={deletingAppointment ? `"${deletingAppointment.title}" will be permanently removed.` : ""}
         confirmLabel="Delete"
       />
     </GlassPanel>

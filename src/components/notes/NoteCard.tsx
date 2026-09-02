@@ -5,6 +5,7 @@ import { GlassPanel } from "@/components/ui/GlassPanel";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { NoteForm } from "@/components/notes/NoteForm";
+import { MarkdownBody } from "@/components/notes/MarkdownBody";
 import { useDeleteNote, useUpdateNote } from "@/hooks/useNotes";
 import { useToast } from "@/components/ui/Toast";
 import type { NoteRow } from "@/lib/api/entity-types";
@@ -49,14 +50,19 @@ export function NoteCard({ note, courseName, taskTitle }: Props) {
     );
   }
 
+  const tags = note.tags ?? [];
+
   return (
     <GlassPanel className="flex flex-col gap-2 p-4">
-      <p className="whitespace-pre-wrap text-sm text-text-primary">{note.body}</p>
-      {(courseName || taskTitle || note.linked_date) && (
+      <MarkdownBody content={note.body} />
+      {(courseName || taskTitle || note.linked_date || tags.length > 0) && (
         <div className="flex flex-wrap items-center gap-1.5">
           {courseName && <Badge tone="accent">{courseName}</Badge>}
           {taskTitle && <Badge tone="accent">{taskTitle}</Badge>}
           {note.linked_date && <Badge>{note.linked_date}</Badge>}
+          {tags.map((tag) => (
+            <Badge key={tag} tone="neutral">{tag}</Badge>
+          ))}
         </div>
       )}
       <div className="flex justify-end gap-2">

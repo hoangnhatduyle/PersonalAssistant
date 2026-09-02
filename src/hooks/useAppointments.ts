@@ -1,27 +1,65 @@
-"use client";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { apiFetch, toQueryString } from "@/lib/http/client";
+import { appointmentKeys, reminderKeys } from "@/lib/query/keys";
+import type { AppointmentPatch, AppointmentPayload } from "@/lib/api/schemas";
+import type { AppointmentRow } from "@/lib/api/entity-types";
 
-import { useLocalStorage } from "@/hooks/useLocalStorage";
-import type { Appointment } from "@/lib/appointments/types";
+export interface AppointmentListFilters {
+  includeDeleted?: boolean;
+  page?: number;
+  limit?: number;
+}
 
-const STORAGE_KEY = "personal-assistant.appointments.v1";
+export function useAppointments(filters?: AppointmentListFilters) {
+  return useQuery({
+    queryKey: appointmentKeys.list(filters),
+    queryFn: async () => {
+      const { data, meta } = await apiFetch<AppointmentRow[]>(`/api/appointments${toQueryString(filters ?? {})}`);
+      return { rows: data, meta };
+    },
+  });
+}
 
-export function useAppointments() {
-  const [appointments, setAppointments] = useLocalStorage<Appointment[]>(STORAGE_KEY, []);
+export function useAppointment(id: string) {
+  return useQuery({
+    queryKey: appointmentKeys.detail(id),
+    queryFn: async () => (await apiFetch<AppointmentRow>(`/api/appointments/${id}`)).data,
+    enabled: Boolean(id),
+  });
+}
 
-  const sorted = [...appointments].sort((a, b) => a.date.localeCompare(b.date));
+export function useCreateAppointment() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: AppointmentPayload) =>
+      (await apiFetch<AppointmentRow>("/api/appointments", { method: "POST", body: payload })).data,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: appointmentKeys.all });
+      queryClient.invalidateQueries({ queryKey: reminderKeys.all });
+    },
+  });
+}
 
-  const addAppointment = (values: Omit<Appointment, "id" | "createdAt">) => {
-    const appointment: Appointment = { ...values, id: crypto.randomUUID(), createdAt: new Date().toISOString() };
-    setAppointments([...appointments, appointment]);
-  };
+export function useUpdateAppointment(id: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: AppointmentPatch) =>
+      (await apiFetch<AppointmentRow>(`/api/appointments/${id}`, { method: "PATCH", body: payload })).data,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: appointmentKeys.all });
+      queryClient.invalidateQueries({ queryKey: reminderKeys.all });
+    },
+  });
+}
 
-  const updateAppointment = (id: string, values: Omit<Appointment, "id" | "createdAt">) => {
-    setAppointments(appointments.map((item) => (item.id === id ? { ...item, ...values } : item)));
-  };
-
-  const deleteAppointment = (id: string) => {
-    setAppointments(appointments.filter((item) => item.id !== id));
-  };
-
-  return { appointments: sorted, addAppointment, updateAppointment, deleteAppointment };
+export function useDeleteAppointment(id: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async () => (await apiFetch<{ id: string }>(`/api/appointments/${id}`, { method: "DELETE" })).data,
+    onSuccess: () => {
+      queryClient.removeQueries({ queryKey: appointmentKeys.detail(id) });
+      queryClient.invalidateQueries({ queryKey: appointmentKeys.all });
+      queryClient.invalidateQueries({ queryKey: reminderKeys.all });
+    },
+  });
 }

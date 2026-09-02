@@ -5,6 +5,8 @@ import { IconRail } from "@/components/layout/IconRail";
 import { SignOutButton } from "@/components/auth/SignOutButton";
 import { VoiceCaptureProvider } from "@/components/assistant/VoiceCaptureProvider";
 import { CaptureQuickAction } from "@/components/assistant/CaptureQuickAction";
+import { CommandPalette } from "@/components/search/CommandPalette";
+import { SearchTrigger } from "@/components/search/SearchTrigger";
 
 /**
  * Defense-in-depth alongside src/proxy.ts's redirect: proxy.ts already
@@ -31,11 +33,13 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
               </span>
             </div>
             <div className="flex items-center gap-3">
+              <SearchTrigger />
               <CaptureQuickAction />
               <SignOutButton />
             </div>
           </header>
           <main className="min-w-0 flex-1 px-6 py-6">{children}</main>
+          <CommandPalette />
         </div>
       </div>
     </VoiceCaptureProvider>

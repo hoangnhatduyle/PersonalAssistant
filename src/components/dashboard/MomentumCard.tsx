@@ -1,3 +1,6 @@
+"use client";
+
+import { useState } from "react";
 import Link from "next/link";
 import { GlassPanel } from "@/components/ui/GlassPanel";
 import { buildUpcomingItems } from "@/lib/dashboard/upcoming-items";
@@ -10,6 +13,8 @@ type Props = {
   tasks: TaskRow[];
   todoItems: TodoItemRow[];
 };
+
+const COLLAPSED_LIMIT = 5;
 
 const KIND_LABEL: Record<CompletedItem["kind"], string> = {
   deadline: "Deadline",
@@ -31,6 +36,7 @@ const SPARKLINE_BASELINE = 36;
  * not a decorative fabrication.
  */
 export function MomentumCard({ deadlines, tasks, todoItems }: Props) {
+  const [expanded, setExpanded] = useState(false);
   const now = new Date();
   const nearestItem = buildUpcomingItems({ deadlines, tasks, todoItems }).find((item) => item.at.getTime() > now.getTime());
   const hoursRemaining = nearestItem ? Math.round((nearestItem.at.getTime() - now.getTime()) / 3_600_000) : null;
@@ -76,18 +82,29 @@ export function MomentumCard({ deadlines, tasks, todoItems }: Props) {
       {completedItems.length === 0 ? (
         <p className="text-xs text-text-secondary">Nothing resolved yet this week.</p>
       ) : (
-        <ul className="flex flex-col divide-y divide-panel-border">
-          {completedItems.map((item) => (
-            <li key={`${item.kind}-${item.id}`} className="flex flex-col py-2 first:pt-0 last:pb-0">
-              <Link href={item.href} className="truncate text-xs text-text-primary hover:underline">
-                {item.title}
-              </Link>
-              <span className="font-mono text-[10px] text-text-secondary">
-                {KIND_LABEL[item.kind]} · {formatRelativeTime(item.at, now)}
-              </span>
-            </li>
-          ))}
-        </ul>
+        <>
+          <ul className="flex flex-col divide-y divide-panel-border">
+            {(expanded ? completedItems : completedItems.slice(0, COLLAPSED_LIMIT)).map((item) => (
+              <li key={`${item.kind}-${item.id}`} className="flex flex-col py-2 first:pt-0 last:pb-0">
+                <Link href={item.href} className="truncate text-xs text-text-primary hover:underline">
+                  {item.title}
+                </Link>
+                <span className="font-mono text-[10px] text-text-secondary">
+                  {KIND_LABEL[item.kind]} · {formatRelativeTime(item.at, now)}
+                </span>
+              </li>
+            ))}
+          </ul>
+          {completedItems.length > COLLAPSED_LIMIT && (
+            <button
+              type="button"
+              onClick={() => setExpanded((prev) => !prev)}
+              className="font-mono text-xs text-text-secondary transition-colors hover:text-text-primary"
+            >
+              {expanded ? "Show less" : `Show all (${completedItems.length})`}
+            </button>
+          )}
+        </>
       )}
     </GlassPanel>
   );

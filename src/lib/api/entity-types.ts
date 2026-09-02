@@ -14,12 +14,31 @@ export type CourseRow = Omit<Database["public"]["Tables"]["courses"]["Row"], "me
 };
 export type DeadlineRow = Database["public"]["Tables"]["deadlines"]["Row"];
 export type TaskRow = Database["public"]["Tables"]["tasks"]["Row"];
-export type NoteRow = Database["public"]["Tables"]["notes"]["Row"];
+export type NoteRow = Database["public"]["Tables"]["notes"]["Row"] & {
+  tags: string[];
+};
 export type ReminderRow = Database["public"]["Tables"]["reminders"]["Row"];
 export type FeedbackRow = Database["public"]["Tables"]["feedback"]["Row"];
 export type PersonRow = Database["public"]["Tables"]["people"]["Row"];
 export type TodoListRow = Database["public"]["Tables"]["todo_lists"]["Row"];
 export type TodoItemRow = Database["public"]["Tables"]["todo_items"]["Row"];
+
+export interface AppointmentRow {
+  id: string;
+  user_id: string;
+  title: string;
+  /** YYYY-MM-DD */
+  date: string;
+  category: string;
+  time: string | null;
+  location: string | null;
+  notes: string[];
+  reminders_enabled: boolean;
+  reminder_lead_minutes: number;
+  deleted_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
 
 // The knowledge list/detail routes select KNOWLEDGE_SOURCE_PUBLIC_COLUMNS,
 // not the full row (raw_content/storage_object_path are deliberately never

@@ -114,6 +114,20 @@ export const todoItemPatchSchema = z.object({
 });
 export type TodoItemPatch = z.infer<typeof todoItemPatchSchema>;
 
+export const appointmentPayloadSchema = z.object({
+  title: z.string().trim().min(1),
+  date: z.iso.date(),
+  category: z.string().trim().min(1).optional(),
+  time: z.string().trim().min(1).nullable().optional(),
+  location: z.string().trim().min(1).nullable().optional(),
+  notes: z.array(z.string()).optional(),
+  reminders_enabled: z.boolean().optional(),
+  reminder_lead_minutes: z.number().int().nonnegative().optional(),
+});
+export type AppointmentPayload = z.infer<typeof appointmentPayloadSchema>;
+export const appointmentPatchSchema = appointmentPayloadSchema.partial();
+export type AppointmentPatch = z.infer<typeof appointmentPatchSchema>;
+
 export const taskPayloadSchema = z.object({
   title: z.string().trim().min(1),
   due_at: z.iso.datetime({ offset: true }).nullable().optional(),
@@ -156,6 +170,7 @@ export const notePayloadSchema = z.object({
   linked_course_id: z.uuid().nullable().optional(),
   linked_task_id: z.uuid().nullable().optional(),
   linked_date: z.iso.date().nullable().optional(),
+  tags: z.array(z.string().trim().min(1)).optional(),
 });
 export type NotePayload = z.infer<typeof notePayloadSchema>;
 export const notePatchSchema = notePayloadSchema.partial();
