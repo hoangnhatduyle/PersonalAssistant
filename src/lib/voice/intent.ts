@@ -110,10 +110,17 @@ export interface EntityContext {
 }
 
 export async function loadEntityContext(supabase: SupabaseClient<Database>, userId: string): Promise<EntityContext> {
+  // person_id IS NULL excludes rows tagged to a tracked Person (0013_people.sql
+  // -- e.g. a family member's courses/tasks/deadlines an account owner tracks
+  // under their own user_id). Without this, a mutation (or, since the 2h
+  // merge, any conversational turn) could reference or target another
+  // tracked person's item by id — mirrors the same filter in
+  // src/lib/voice/schedule-loader.ts's loadSchedule and
+  // src/app/api/intelligence/route.ts.
   const [{ data: courses }, { data: deadlines }, { data: tasks }, { data: knowledgeSources }] = await Promise.all([
-    supabase.from("courses").select("id, name").eq("user_id", userId).is("deleted_at", null),
-    supabase.from("deadlines").select("id, title, course_id").eq("user_id", userId).is("deleted_at", null),
-    supabase.from("tasks").select("id, title").eq("user_id", userId).is("deleted_at", null),
+    supabase.from("courses").select("id, name").eq("user_id", userId).is("person_id", null).is("deleted_at", null),
+    supabase.from("deadlines").select("id, title, course_id").eq("user_id", userId).is("person_id", null).is("deleted_at", null),
+    supabase.from("tasks").select("id, title").eq("user_id", userId).is("person_id", null).is("deleted_at", null),
     supabase.from("knowledge_sources").select("id, title").eq("user_id", userId).eq("status", "Ready"),
   ]);
   return { courses: courses ?? [], deadlines: deadlines ?? [], tasks: tasks ?? [], knowledgeSources: knowledgeSources ?? [] };

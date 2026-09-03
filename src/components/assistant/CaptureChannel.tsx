@@ -20,9 +20,20 @@ import { usePersonalizationSuggestions } from "@/hooks/usePersonalizationSuggest
 import { useReviewSuggestionsAloud } from "@/hooks/useReviewSuggestionsAloud";
 
 type LocalStatus = "idle" | "listening" | "transcribing";
+type MicVisualState = LocalStatus | "speaking";
 
 type Props = {
   compact?: boolean;
+};
+
+// listening's teal (not red) matches this app's existing "listening"
+// semantic elsewhere -- TranscriptBubble's dot, ConfirmationBar's
+// "Listening for yes or no…" text.
+const MIC_STATE_CLASSES: Record<MicVisualState, string> = {
+  idle: "border-accent-indigo/50 bg-accent-indigo/10 text-accent-indigo hover:bg-accent-indigo/20",
+  listening: "animate-mic-listening border-accent-teal/60 bg-accent-teal/10 text-accent-teal",
+  transcribing: "border-accent-indigo/70 bg-accent-indigo/15 text-accent-indigo cursor-progress",
+  speaking: "animate-mic-speaking border-accent-indigo bg-accent-indigo/20 text-accent-indigo",
 };
 
 export function MicIcon() {
@@ -201,9 +212,14 @@ export function CaptureChannel({ compact = false }: Props) {
   const isRecording = recorderStatus === "listening";
   const isBusy = localStatus !== "idle" || isRecording;
   const displayStatus: LocalStatus = isRecording ? "listening" : localStatus;
+  // Reads speakResponse.isPending (already owned by this component, see
+  // above) purely as an additional derived value -- no new data flow or
+  // prop drilling, and no change to AssistantResponse's own isSpeaking/
+  // onReplay contract (SPEC-API-010 gating stays exactly as-is).
+  const micVisualState: MicVisualState = isRecording ? "listening" : speakResponse.isPending ? "speaking" : localStatus;
 
   return (
-    <GlassPanel className={`flex flex-col gap-4 ${compact ? "p-4" : "p-6"}`}>
+    <GlassPanel variant={compact ? "default" : "raised"} className={`flex flex-col gap-4 ${compact ? "p-4" : "p-6"}`}>
       <div className="flex flex-col items-center gap-3 py-2">
         <div className="relative flex items-center gap-2">
           <button
@@ -212,12 +228,14 @@ export function CaptureChannel({ compact = false }: Props) {
             aria-label="Tap to talk"
             disabled={localStatus === "transcribing"}
             onClick={handleMicClick}
-            className={`flex h-16 w-16 items-center justify-center rounded-full border transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
-              isRecording
-                ? "glow-urgent border-status-urgent bg-status-urgent/20 text-status-urgent"
-                : "border-accent-indigo/50 bg-accent-indigo/10 text-accent-indigo hover:bg-accent-indigo/20"
-            }`}
+            className={`relative flex h-16 w-16 items-center justify-center rounded-full border transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${MIC_STATE_CLASSES[micVisualState]}`}
           >
+            {micVisualState === "transcribing" && (
+              <span
+                aria-hidden="true"
+                className="animate-mic-transcribing-ring absolute inset-1 rounded-full border-2 border-transparent border-t-accent-indigo"
+              />
+            )}
             <MicIcon />
           </button>
           <button
@@ -231,7 +249,7 @@ export function CaptureChannel({ compact = false }: Props) {
             <NewConversationIcon />
           </button>
         </div>
-        <p className="font-mono text-xs text-text-secondary">
+        <p className="text-xs text-text-secondary">
           {isRecording ? "Tap to stop" : "Tap to talk"}
           {handsFree && " · Hands-free on"}
         </p>

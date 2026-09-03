@@ -1,6 +1,6 @@
 import type { HTMLAttributes } from "react";
 
-type GlassPanelVariant = "default" | "interactive" | "glow-ok" | "glow-warn" | "glow-urgent";
+type GlassPanelVariant = "default" | "interactive" | "glow-ok" | "glow-warn" | "glow-urgent" | "raised" | "sunken";
 
 type Props = HTMLAttributes<HTMLDivElement> & {
   variant?: GlassPanelVariant;
@@ -12,6 +12,10 @@ const VARIANT_CLASSES: Record<GlassPanelVariant, string> = {
   "glow-ok": "glow-ok",
   "glow-warn": "glow-warn",
   "glow-urgent": "glow-urgent",
+  // The hero panel in a hierarchy — e.g. the full /assistant page's capture channel.
+  raised: "shadow-panel-raised border-panel-border-hover",
+  // Nested/recessed content.
+  sunken: "shadow-panel-sunken bg-bg-void-elevated",
 };
 
 // No backdrop-blur: every usage sits in normal document flow on the flat

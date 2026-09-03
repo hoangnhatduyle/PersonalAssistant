@@ -116,7 +116,7 @@ export function IconRail({ email }: Props) {
         }`}
       >
         <div className="mb-2 flex items-center justify-between px-2 md:hidden">
-          <span className="font-mono text-xs uppercase tracking-wide text-text-eyebrow">Menu</span>
+          <span className="text-xs uppercase tracking-wide text-text-eyebrow">Menu</span>
           <button
             type="button"
             onClick={() => setIsMobileOpen(false)}
@@ -130,7 +130,7 @@ export function IconRail({ email }: Props) {
         </div>
         <div className="mb-2 flex items-center gap-2 border-b border-panel-border px-2 pb-3 md:hidden">
           <span className="h-2 w-2 shrink-0 rounded-full bg-status-ok" aria-hidden="true" />
-          <span className="truncate font-mono text-xs uppercase tracking-wide text-text-eyebrow">Signed in as {email}</span>
+          <span className="truncate text-xs uppercase tracking-wide text-text-eyebrow">Signed in as {email}</span>
         </div>
         {NAV_ITEMS.map((item) => {
           // Segment boundary, not a bare prefix — a future sibling route like

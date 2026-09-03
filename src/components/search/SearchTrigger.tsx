@@ -25,7 +25,7 @@ export function SearchTrigger() {
           clipRule="evenodd"
         />
       </svg>
-      <span className="hidden font-mono text-xs sm:inline">Search</span>
+      <span className="hidden text-xs sm:inline">Search</span>
       <kbd className="hidden rounded border border-panel-border px-1 py-0.5 font-mono text-[10px] sm:inline">
         Ctrl+K
       </kbd>

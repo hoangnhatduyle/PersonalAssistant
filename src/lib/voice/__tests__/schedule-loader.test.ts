@@ -4,6 +4,7 @@ import {
   createAuthenticatedUser,
   createCourse,
   createDeadline,
+  createPerson,
   createTask,
   createTodoItem,
   createTodoList,
@@ -98,5 +99,41 @@ describe("loadSchedule", () => {
     const result = await loadSchedule(client, freshUserId, "unscoped");
 
     expect(result.scheduleItems.map((item) => item.title)).toContain("Some far-future deadline");
+  });
+
+  // Regression: a tracked Person's (0013_people.sql -- e.g. a family
+  // member's) courses/deadlines/tasks are stored under the account owner's
+  // own user_id via a nullable person_id column, so a bare .eq("user_id", ...)
+  // filter alone previously let another tracked person's schedule bleed
+  // into "what should I do today?" answers -- exactly the bug this test
+  // guards against, mirroring the filter already applied in
+  // src/app/api/intelligence/route.ts.
+  it("excludes a tracked Person's courses/deadlines/tasks, keeping only the account owner's own", async () => {
+    const { userId: freshUserId, client } = await createAuthenticatedUser();
+    const personId = await createPerson(admin, freshUserId, { name: "Sister" });
+
+    const myCourseId = await createCourse(admin, freshUserId, { name: "My own course" });
+    await createDeadline(admin, freshUserId, myCourseId, { title: "My own deadline due today", due_at: new Date().toISOString() });
+    await createTask(admin, freshUserId, { title: "My own task due today", due_at: new Date().toISOString() });
+
+    const herCourseId = await createCourse(admin, freshUserId, { name: "Sister's course", person_id: personId });
+    await createDeadline(admin, freshUserId, herCourseId, {
+      title: "Sister's deadline due today",
+      due_at: new Date().toISOString(),
+      person_id: personId,
+    });
+    await createTask(admin, freshUserId, { title: "Sister's task due today", due_at: new Date().toISOString(), person_id: personId });
+
+    const result = await loadSchedule(client, freshUserId, "today");
+
+    const titles = result.scheduleItems.map((item) => item.title);
+    expect(titles).toContain("My own deadline due today");
+    expect(titles).toContain("My own task due today");
+    expect(titles).not.toContain("Sister's deadline due today");
+    expect(titles).not.toContain("Sister's task due today");
+
+    const courseNames = result.courses.map((c) => c.name);
+    expect(courseNames).toContain("My own course");
+    expect(courseNames).not.toContain("Sister's course");
   });
 });

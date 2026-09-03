@@ -123,7 +123,7 @@ export function ConfirmationBar({ sessionId, message, receivedAt, origin, onSpok
     <GlassPanel variant="glow-warn" className="flex flex-col gap-3 p-4">
       <p className="text-sm text-text-primary">{message}</p>
       {listenStatus === "listening" && (
-        <p className="font-mono text-xs text-accent-teal" role="status">
+        <p className="text-xs text-accent-teal" role="status">
           Listening for yes or no…
         </p>
       )}

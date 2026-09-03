@@ -24,6 +24,8 @@
   --radius-panel: var(--token-radius-panel);
   --radius-control: var(--token-radius-control);
   --shadow-panel: var(--token-shadow-panel);
+  --shadow-panel-raised: var(--token-shadow-panel-raised);
+  --shadow-panel-sunken: var(--token-shadow-panel-sunken);
 
   --font-sans: var(--font-body-raw);
   --font-display: var(--font-display-raw);
@@ -41,3 +43,20 @@ body {
 .glow-ok { box-shadow: var(--shadow-panel), var(--glow-ok); }
 .glow-warn { box-shadow: var(--shadow-panel), var(--glow-warn); }
 .glow-urgent { box-shadow: var(--shadow-panel), var(--glow-urgent); }
+
+/* Mic visual state machine — CaptureChannel.tsx. Hand-rolled keyframes
+   rather than a motion library: 4 discrete states on one button doesn't
+   warrant the bundle cost (see GlassPanel.tsx's own backdrop-blur comment
+   for this app's established performance-conscious posture). */
+@keyframes mic-listening-ring {
+  0%, 100% { box-shadow: 0 0 0 0 rgb(45 212 191 / 0.35); }
+  50% { box-shadow: 0 0 0 10px rgb(45 212 191 / 0); }
+}
+@keyframes mic-transcribing-spin { to { transform: rotate(360deg); } }
+@keyframes mic-speaking-pulse {
+  0%, 100% { box-shadow: var(--shadow-panel), 0 0 20px -4px rgb(99 102 241 / 0.5); }
+  50% { box-shadow: var(--shadow-panel), 0 0 32px -4px rgb(99 102 241 / 0.85); }
+}
+.animate-mic-listening { animation: mic-listening-ring 1.6s ease-out infinite; }
+.animate-mic-transcribing-ring { animation: mic-transcribing-spin 1.2s linear infinite; }
+.animate-mic-speaking { animation: mic-speaking-pulse 1.4s ease-in-out infinite; }

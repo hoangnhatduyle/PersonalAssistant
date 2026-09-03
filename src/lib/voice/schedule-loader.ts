@@ -36,6 +36,12 @@ export interface ScheduleLoadResult {
   courses: ScheduleLoadCourse[];
 }
 
+export type ScheduleToolPayload = Pick<ScheduleLoadResult, "rankedSchedule" | "courses">;
+
+export function toScheduleToolPayload(result: ScheduleLoadResult): ScheduleToolPayload {
+  return { rankedSchedule: result.rankedSchedule, courses: result.courses };
+}
+
 /**
  * The one schedule query, merging what were previously two near-duplicate
  * implementations: session.ts's runUpcomingScheduleQuery (window-bounded
@@ -59,16 +65,25 @@ export async function loadSchedule(
   // separately as calendar-date strings.
   const dateKeys = resolveScheduleWindowDateKeys(window, timezone, now);
 
+  // person_id IS NULL excludes rows tagged to a tracked Person (0013_people.sql
+  // -- e.g. a family member's courses/tasks/deadlines an account owner tracks
+  // under their own user_id). Mirrors the same filter already applied to
+  // these same three tables in src/app/api/intelligence/route.ts; this
+  // voice-assistant path was added later and never picked up the pattern,
+  // which is what let another tracked person's schedule bleed into "what
+  // should I do today?" answers.
   let deadlinesQuery = supabase
     .from("deadlines")
     .select("id, title, due_at, priority, course_id")
     .eq("user_id", userId)
+    .is("person_id", null)
     .is("deleted_at", null)
     .in("status", OPEN_DEADLINE_STATUSES);
   let tasksQuery = supabase
     .from("tasks")
     .select("id, title, due_at, priority")
     .eq("user_id", userId)
+    .is("person_id", null)
     .is("deleted_at", null)
     .not("due_at", "is", null)
     .eq("status", "Open");
@@ -87,6 +102,7 @@ export async function loadSchedule(
     .from("courses")
     .select("id, name, code, location, meeting_blocks, term")
     .eq("user_id", userId)
+    .is("person_id", null)
     .is("deleted_at", null)
     .order("name", { ascending: true });
   const todoListsQuery = supabase.from("todo_lists").select("id, name").eq("user_id", userId).is("deleted_at", null);

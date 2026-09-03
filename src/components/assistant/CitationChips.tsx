@@ -22,7 +22,7 @@ export function CitationChips({ citations }: Props) {
       {citations.map((citation) => (
         <span
           key={citation.sourceId}
-          className="inline-flex items-center rounded-full border border-panel-border bg-bg-void-elevated px-2.5 py-0.5 font-mono text-xs text-text-secondary"
+          className="inline-flex items-center rounded-full border border-panel-border bg-bg-void-elevated px-2.5 py-0.5 text-xs text-text-secondary"
         >
           {citation.originUrl && isSafeHttpUrl(citation.originUrl) ? (
             <a href={citation.originUrl} target="_blank" rel="noopener noreferrer" className="hover:text-accent-teal">

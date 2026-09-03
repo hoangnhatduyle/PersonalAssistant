@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { loadUserTimezone, mutationSchema, toPendingMutation } from "../intent";
+import { loadEntityContext, loadUserTimezone, mutationSchema, toPendingMutation } from "../intent";
+import { adminClient, createAuthenticatedUser, createCourse, createDeadline, createPerson, createTask } from "../../../../supabase/tests/helpers";
 
 const VALID_TARGET_ID = "11111111-1111-4111-8111-111111111111";
 const VALID_COURSE_ID = "22222222-2222-4222-8222-222222222222";
@@ -328,5 +329,34 @@ describe("loadUserTimezone", () => {
   it("falls back to UTC when no user_preferences row exists", async () => {
     const timezone = await loadUserTimezone(fakeSupabase({ data: null }), "user-1");
     expect(timezone).toBe("UTC");
+  });
+});
+
+describe("loadEntityContext", () => {
+  const admin = adminClient();
+
+  // Regression: a tracked Person's (0013_people.sql) courses/deadlines/tasks
+  // are stored under the account owner's own user_id via a nullable
+  // person_id column -- a bare .eq("user_id", ...) filter alone previously
+  // let another tracked person's items appear in the entity context handed
+  // to the model for propose_mutation id-matching (and, since the 2h merge,
+  // every conversational turn's prompt).
+  it("excludes a tracked Person's courses/deadlines/tasks, keeping only the account owner's own", async () => {
+    const { userId, client } = await createAuthenticatedUser();
+    const personId = await createPerson(admin, userId, { name: "Sister" });
+
+    const myCourseId = await createCourse(admin, userId, { name: "My own course" });
+    await createDeadline(admin, userId, myCourseId, { title: "My own deadline" });
+    await createTask(admin, userId, { title: "My own task" });
+
+    const herCourseId = await createCourse(admin, userId, { name: "Sister's course", person_id: personId });
+    await createDeadline(admin, userId, herCourseId, { title: "Sister's deadline", person_id: personId });
+    await createTask(admin, userId, { title: "Sister's task", person_id: personId });
+
+    const context = await loadEntityContext(client, userId);
+
+    expect(context.courses.map((c) => c.name)).toEqual(["My own course"]);
+    expect(context.deadlines.map((d) => d.title)).toEqual(["My own deadline"]);
+    expect(context.tasks.map((t) => t.title)).toEqual(["My own task"]);
   });
 });

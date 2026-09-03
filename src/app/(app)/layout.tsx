@@ -28,7 +28,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
           <header className="flex items-center justify-between border-b border-panel-border bg-bg-void-elevated py-3 pl-16 pr-6 md:px-6">
             <div className="flex items-center gap-2">
               <span className="h-2 w-2 rounded-full bg-status-ok" aria-hidden="true" />
-              <span className="hidden font-mono text-xs uppercase tracking-wide text-text-eyebrow md:inline">
+              <span className="hidden text-xs uppercase tracking-wide text-text-eyebrow md:inline">
                 Signed in as {user.email}
               </span>
             </div>

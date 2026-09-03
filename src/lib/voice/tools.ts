@@ -75,7 +75,7 @@ export const CONVERSATION_TOOLS = [
     function: {
       name: "get_schedule",
       description:
-        "Look up the user's Deadlines, Tasks, and open Course To-Do / custom-project items due within a time window. Returns structured data already grouped by day and sorted by priority -- narrate it yourself in prose, never invent your own ordering, and never re-rank it.",
+        'Look up the user\'s Deadlines, Tasks, and open Course To-Do / custom-project items due within a time window. Returns structured data already grouped by day and sorted by priority -- narrate it yourself in prose, never invent your own ordering, and never re-rank it. Today\'s schedule (window: "today") is already provided to you in the system prompt -- only call this tool for "tomorrow", "week", or "unscoped".',
       strict: true,
       parameters: {
         type: "object",
