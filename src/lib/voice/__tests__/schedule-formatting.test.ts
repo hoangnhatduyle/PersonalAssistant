@@ -4,7 +4,7 @@ import { rankScheduleItems, formatScheduleAnswer, type ScheduleItem } from "../s
 const TZ = "America/Chicago";
 
 function item(overrides: Partial<ScheduleItem> & Pick<ScheduleItem, "id" | "title" | "dueAt">): ScheduleItem {
-  return { kind: "task", priority: null, ...overrides };
+  return { kind: "task", priority: null, context: null, ...overrides };
 }
 
 describe("rankScheduleItems", () => {
@@ -71,6 +71,31 @@ describe("formatScheduleAnswer", () => {
       "The first item that is due is Homework 1, due today at 3:00 PM. " +
         "Secondly, Check bill is due today at 5:00 PM. " +
         "Finally, Career fair is due tomorrow at 3:00 PM.",
+    );
+  });
+
+  it("listing: renders 'Title (context)' when a course/list name is set, bare title otherwise", () => {
+    const items: ScheduleItem[] = [
+      item({ id: "a", title: "Homework 1", dueAt: new Date("2026-09-03T20:00:00Z"), context: "CS 101" }),
+      item({ id: "b", title: "Buy groceries", dueAt: new Date("2026-09-03T22:00:00Z"), context: null }),
+    ];
+    const groups = rankScheduleItems(items, TZ);
+    const message = formatScheduleAnswer(groups, { timezone: TZ, now, style: "listing", emptyMessage: "nothing" });
+    expect(message).toBe(
+      "The first item that is due is Homework 1 (CS 101), due today at 3:00 PM. Secondly, Buy groceries is due today at 5:00 PM.",
+    );
+  });
+
+  it("recommendation: includes context in both the top-priority item and the lower-priority list", () => {
+    const items: ScheduleItem[] = [
+      item({ id: "a", title: "Review previous changes", dueAt: new Date("2026-09-03T20:00:00Z"), priority: "High", context: "Project Agrivoltaics" }),
+      item({ id: "b", title: "Homework 1", dueAt: new Date("2026-09-03T21:00:00Z"), priority: "Low", context: "CS 101" }),
+    ];
+    const groups = rankScheduleItems(items, TZ);
+    const message = formatScheduleAnswer(groups, { timezone: TZ, now, style: "recommendation", emptyMessage: "nothing" });
+    expect(message).toBe(
+      "You have 2 items due today. Review previous changes (Project Agrivoltaics) is High priority, so start there. " +
+        "Also due today, with lower priority: Homework 1 (CS 101) (Low).",
     );
   });
 

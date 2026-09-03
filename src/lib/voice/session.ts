@@ -10,12 +10,10 @@ import {
 } from "@/lib/voice/transitions";
 import { formatCascadeDisclosure, previewCourseDeleteCascade } from "@/lib/voice/cascade-preview";
 import { executePendingMutation, type MutationExecutionResult, type PendingMutation } from "@/lib/voice/mutations";
-import { loadUserTimezone, type ResolveIntentFn, type ResolvedIntent } from "@/lib/voice/intent";
-import { runKnowledgeLookup, type KnowledgeCitation, type KnowledgeLookupFn } from "@/lib/knowledge/retrieval";
-import { runSuggestionsLookup, type SuggestionsLookupFn } from "@/lib/voice/suggestions-lookup";
-import { runGeneralConversation, type GeneralConversationFn } from "@/lib/voice/general-conversation";
-import { resolveScheduleWindowBounds, resolveScheduleWindowDateKeys, type ScheduleTimeWindow } from "@/lib/voice/schedule-time-window";
-import { rankScheduleItems, formatScheduleAnswer, type ScheduleItem } from "@/lib/voice/schedule-formatting";
+import type { ResolveIntentFn, ResolvedIntent } from "@/lib/voice/intent";
+import type { KnowledgeCitation } from "@/lib/knowledge/retrieval";
+import { resolveActiveConversation } from "@/lib/voice/conversation-memory";
+import { runConversationTurn, type RunConversationTurnFn } from "@/lib/voice/conversation-core";
 
 export class VoiceSessionNotFoundError extends Error {}
 export class VoiceSessionInvalidStateError extends Error {}
@@ -29,12 +27,8 @@ export type { ResolveIntentFn };
 export interface VoiceTurnDeps {
   transcribe: TranscribeFn;
   resolveIntent: ResolveIntentFn;
-  /** Defaults to src/lib/knowledge/retrieval.ts's runKnowledgeLookup when omitted. */
-  knowledgeLookup?: KnowledgeLookupFn;
-  /** Defaults to src/lib/voice/suggestions-lookup.ts's runSuggestionsLookup when omitted. */
-  suggestionsLookup?: SuggestionsLookupFn;
-  /** Defaults to src/lib/voice/general-conversation.ts's runGeneralConversation when omitted. */
-  generalConversation?: GeneralConversationFn;
+  /** Defaults to src/lib/voice/conversation-core.ts's runConversationTurn when omitted. */
+  runConversationTurn?: RunConversationTurnFn;
 }
 
 export type VoiceTurnInput = { audio: Buffer; mimetype?: string } | { transcript: string };
@@ -45,7 +39,7 @@ export interface VoiceTurnResult {
   message: string;
   executed?: boolean;
   data?: unknown;
-  /** SPEC-API-008 VoiceTurnResult (extended): set only for a knowledge_lookup response. */
+  /** SPEC-API-008 VoiceTurnResult (extended): set when the conversational core's lookup_knowledge tool fired this turn. */
   citations?: KnowledgeCitation[];
   extractionLabel?: "machine_extracted";
   /** Set only for a personalization_suggestions response — tells the client to kick off the review-aloud loop (src/hooks/useReviewSuggestionsAloud.ts) once this message has been spoken. */
@@ -93,92 +87,12 @@ async function transition(
   }
 }
 
-const OPEN_DEADLINE_STATUSES = ["Not Started", "In Progress", "Submitted", "Overdue"] as const;
-
-const SCHEDULE_EMPTY_MESSAGES: Record<ScheduleTimeWindow, string> = {
-  today: "You have nothing due today.",
-  tomorrow: "You have nothing due tomorrow.",
-  week: "You have nothing due this week.",
-  unscoped: "You have nothing upcoming.",
-};
-
-async function runUpcomingScheduleQuery(
-  supabase: SupabaseClient<Database>,
-  userId: string,
-  timeWindow: ScheduleTimeWindow,
-): Promise<string> {
-  const now = new Date();
-  const timezone = await loadUserTimezone(supabase, userId);
-  const bounds = resolveScheduleWindowBounds(timeWindow, timezone, now);
-  // todo_items.due_date is a plain `date` column (no time-of-day), so it
-  // can't be filtered against the timestamp bounds above -- resolved
-  // separately as calendar-date strings.
-  const dateKeys = resolveScheduleWindowDateKeys(timeWindow, timezone, now);
-
-  let deadlinesQuery = supabase
-    .from("deadlines")
-    .select("id, title, due_at, priority")
-    .eq("user_id", userId)
-    .is("deleted_at", null)
-    .in("status", OPEN_DEADLINE_STATUSES);
-  let tasksQuery = supabase
-    .from("tasks")
-    .select("id, title, due_at, priority")
-    .eq("user_id", userId)
-    .is("deleted_at", null)
-    .not("due_at", "is", null)
-    .eq("status", "Open");
-  // Previously never queried at all here -- a Course To-Do / custom-project
-  // item (e.g. on a freestanding "Project: X" list) due today was
-  // structurally invisible to "what is due today," even though it's exactly
-  // as due as a Deadline or Task.
-  let todoItemsQuery = supabase
-    .from("todo_items")
-    .select("id, title, due_date, priority")
-    .eq("user_id", userId)
-    .is("deleted_at", null)
-    .not("due_date", "is", null)
-    .eq("is_done", false);
-
-  if (bounds && dateKeys) {
-    // A single day/week window is naturally small -- a generous sanity
-    // ceiling, not a "top N" cap like the unscoped branch below.
-    deadlinesQuery = deadlinesQuery.gte("due_at", bounds.startUtcIso).lt("due_at", bounds.endUtcIsoExclusive).order("due_at", { ascending: true }).limit(20);
-    tasksQuery = tasksQuery.gte("due_at", bounds.startUtcIso).lt("due_at", bounds.endUtcIsoExclusive).order("due_at", { ascending: true }).limit(20);
-    todoItemsQuery = todoItemsQuery
-      .gte("due_date", dateKeys.startDateKey)
-      .lt("due_date", dateKeys.endDateKeyExclusive)
-      .order("due_date", { ascending: true })
-      .limit(20);
-  } else {
-    // "unscoped": preserve the original next-5-of-each behavior, anchored
-    // to "today" for the date-only todo_items column.
-    const todayKey = resolveScheduleWindowDateKeys("today", timezone, now)!.startDateKey;
-    deadlinesQuery = deadlinesQuery.gte("due_at", now.toISOString()).order("due_at", { ascending: true }).limit(5);
-    tasksQuery = tasksQuery.gte("due_at", now.toISOString()).order("due_at", { ascending: true }).limit(5);
-    todoItemsQuery = todoItemsQuery.gte("due_date", todayKey).order("due_date", { ascending: true }).limit(5);
-  }
-
-  const [{ data: deadlines }, { data: tasks }, { data: todoItems }] = await Promise.all([deadlinesQuery, tasksQuery, todoItemsQuery]);
-
-  const items: ScheduleItem[] = [
-    ...(deadlines ?? []).map((d): ScheduleItem => ({ id: d.id, title: d.title, dueAt: new Date(d.due_at), kind: "deadline", priority: d.priority })),
-    ...(tasks ?? []).map((t): ScheduleItem => ({ id: t.id, title: t.title, dueAt: new Date(t.due_at!), kind: "task", priority: t.priority })),
-    ...(todoItems ?? []).map(
-      (item): ScheduleItem => ({ id: item.id, title: item.title, dueAt: new Date(`${item.due_date}T23:59:59.999`), kind: "todo", priority: item.priority }),
-    ),
-  ];
-
-  const groups = rankScheduleItems(items, timezone);
-  return formatScheduleAnswer(groups, { timezone, now, style: "listing", emptyMessage: SCHEDULE_EMPTY_MESSAGES[timeWindow] });
-}
-
 /**
  * Shared by every "ask the user to try again" exit out of intakeVoiceTurn
- * (silence, a transcription/LLM failure, and a genuinely low-confidence/
- * unsupported intent) — all three follow the same Transcribing ->
- * IntentAmbiguous -> Responding transition sequence, differing only in the
- * resolved-intent fields recorded and the message spoken back.
+ * (silence, a transcription/LLM failure, and a genuinely low-confidence
+ * mutation) — all three follow the same Transcribing -> IntentAmbiguous ->
+ * Responding transition sequence, differing only in the resolved-intent
+ * fields recorded and the message spoken back.
  *
  * query_kind/schedule_time_window/error_message (supabase/migrations/
  * 0022_voice_session_diagnostics.sql) exist purely for diagnosing what a
@@ -292,35 +206,30 @@ export async function intakeVoiceTurn(
     });
   }
 
-  // A read-only intent this app can't actually answer (queryKind unset/
-  // unrecognized) is routed the same way as low confidence: ask rather than
-  // fabricate a completed execution. Architect-review finding: this used to
-  // report `executed: true` with the LLM's own unverified prose as `data`
-  // for any read-only intent other than "upcoming_schedule".
-  const unsupportedReadOnlyQuery =
-    intent.readOnly &&
-    intent.queryKind !== "upcoming_schedule" &&
-    intent.queryKind !== "knowledge_lookup" &&
-    intent.queryKind !== "personalization_suggestions" &&
-    intent.queryKind !== "general_conversation";
-  if (!meetsConfidenceBar(intent.confidence) || unsupportedReadOnlyQuery) {
-    const message = unsupportedReadOnlyQuery
-      ? "I can't help with that kind of question yet — I can tell you what's coming up, though."
-      : `I'm not sure I understood — could you rephrase that? (heard: "${transcript}")`;
-    return respondWithClarification(supabase, userId, sessionId, message, {
+  // The confidence bar now gates only the mutation branch — a read-only
+  // intent always proceeds to the conversational core regardless of
+  // intent.confidence (per the "fully conversational" decision; there's no
+  // longer a fixed set of read-only query kinds to be "unsupported").
+  // intent.confidence is still persisted to confidence_score below either
+  // way, for diagnostics.
+  if (!intent.readOnly && !meetsConfidenceBar(intent.confidence)) {
+    return respondWithClarification(supabase, userId, sessionId, `I'm not sure I understood — could you rephrase that? (heard: "${transcript}")`, {
       resolved_intent: intent.summary,
       confidence_score: intent.confidence,
-      query_kind: intent.queryKind ?? null,
-      schedule_time_window: intent.scheduleTimeWindow ?? null,
+      query_kind: null,
+      schedule_time_window: null,
       error_message: null,
     });
   }
 
+  // query_kind/schedule_time_window stay null for every new row going
+  // forward — routing responsibility moved to conversation-core.ts's own
+  // tool-calling loop, so there's no longer a pre-classified query kind to
+  // record here. The columns stay in the schema, diagnostic-only, per
+  // 0022_voice_session_diagnostics.sql's own framing.
   await transition(supabase, userId, sessionId, "Transcribing", "intent_resolved_high_confidence", {
     resolved_intent: intent.summary,
     confidence_score: intent.confidence,
-    query_kind: intent.queryKind ?? null,
-    schedule_time_window: intent.scheduleTimeWindow ?? null,
   });
 
   if (intent.readOnly) {
@@ -330,61 +239,31 @@ export async function intakeVoiceTurn(
     // than leaving it stuck in Executing until the 24h retention sweep
     // (code-review finding).
     try {
-      // SPEC-VOICE-005 NC-VOICE-007/AC-9: knowledge_lookup follows this same
-      // read_only_query_resolved path as upcoming_schedule, no confirmation.
-      if (intent.queryKind === "knowledge_lookup") {
-        const lookup = deps.knowledgeLookup ?? runKnowledgeLookup;
-        const result = await lookup(supabase, userId, transcript);
-        await transition(supabase, userId, sessionId, "Executing", "execution_completed", {
-          ended_at: new Date().toISOString(),
-        });
-        return {
-          sessionId,
-          state: "Responding",
-          message: result.message,
-          executed: true,
-          data: result.message,
-          citations: result.citations,
-          ...(result.extractionLabel ? { extractionLabel: result.extractionLabel } : {}),
-        };
-      }
-
-      if (intent.queryKind === "general_conversation") {
-        const converse = deps.generalConversation ?? runGeneralConversation;
-        const result = await converse(supabase, userId, transcript);
-        await transition(supabase, userId, sessionId, "Executing", "execution_completed", {
-          ended_at: new Date().toISOString(),
-        });
-        return {
-          sessionId,
-          state: "Responding",
-          message: result.message,
-          executed: true,
-          data: result.message,
-        };
-      }
-
-      if (intent.queryKind === "personalization_suggestions") {
-        const lookup = deps.suggestionsLookup ?? runSuggestionsLookup;
-        const result = await lookup(supabase, userId);
-        await transition(supabase, userId, sessionId, "Executing", "execution_completed", {
-          ended_at: new Date().toISOString(),
-        });
-        return {
-          sessionId,
-          state: "Responding",
-          message: result.message,
-          executed: true,
-          data: result.message,
-          queryKind: "personalization_suggestions",
-        };
-      }
-
-      const message = await runUpcomingScheduleQuery(supabase, userId, intent.scheduleTimeWindow ?? "unscoped");
+      // SPEC-VOICE-005 NC-VOICE-007/AC-9: every read-only intent hands off
+      // entirely to the tool-calling conversational core -- no more
+      // pre-classified query_kind dispatch chain. Conversations are scoped
+      // per user account (2a) and the core may itself close/replace the
+      // active one mid-turn (the start_new_conversation tool) -- always
+      // persist result.conversationId, not the id this call started with,
+      // or the very turn that triggered a reset would file itself under the
+      // now-closed conversation and corrupt the next turn's history lookup.
+      const { conversationId } = await resolveActiveConversation(supabase, userId);
+      const result = await (deps.runConversationTurn ?? runConversationTurn)(supabase, userId, transcript, conversationId);
       await transition(supabase, userId, sessionId, "Executing", "execution_completed", {
         ended_at: new Date().toISOString(),
+        conversation_id: result.conversationId,
+        response_message: result.message,
       });
-      return { sessionId, state: "Responding", message, executed: true, data: message };
+      return {
+        sessionId,
+        state: "Responding",
+        message: result.message,
+        executed: true,
+        data: result.message,
+        citations: result.citations,
+        extractionLabel: result.extractionLabel,
+        ...(result.usedPersonalizationSuggestions ? { queryKind: "personalization_suggestions" as const } : {}),
+      };
     } catch (queryError) {
       await transition(supabase, userId, sessionId, "Executing", "execution_failed", {
         ended_at: new Date().toISOString(),

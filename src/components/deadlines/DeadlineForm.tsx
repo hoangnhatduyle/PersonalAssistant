@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { deadlinePayloadSchema, type DeadlinePayload } from "@/lib/api/schemas";
@@ -9,6 +10,7 @@ import { FormField } from "@/components/ui/FormField";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { DateTimeField } from "@/components/ui/DateTimeField";
+import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 
 type Props = {
@@ -29,6 +31,7 @@ export function DeadlineForm({ deadline, onSubmit, onCancel, submitLabel = "Save
     register,
     handleSubmit,
     control,
+    watch,
     formState: { errors, isSubmitting },
   } = useForm<DeadlinePayload>({
     resolver: zodResolver(deadlinePayloadSchema),
@@ -39,6 +42,9 @@ export function DeadlineForm({ deadline, onSubmit, onCancel, submitLabel = "Save
       priority: deadline?.priority ?? undefined,
     },
   });
+
+  const courseId = watch("course_id");
+  const selectedCourse = (courses?.rows ?? []).find((course) => course.id === courseId);
 
   return (
     <form onSubmit={handleSubmit(async (values) => onSubmit(values))} className="flex flex-col gap-4" noValidate>
@@ -59,6 +65,21 @@ export function DeadlineForm({ deadline, onSubmit, onCancel, submitLabel = "Save
           ))}
         </Select>
       </FormField>
+
+      {selectedCourse && (
+        <FormField label="Reminder">
+          <div className="flex items-center gap-2">
+            <Badge tone={selectedCourse.reminders_enabled ? "ok" : "neutral"}>
+              {selectedCourse.reminders_enabled
+                ? `${selectedCourse.reminder_lead_minutes}m before, via course`
+                : "Reminders off, via course"}
+            </Badge>
+            <Link href={`/courses/${selectedCourse.id}`} className="text-xs text-text-secondary underline hover:text-text-primary">
+              Edit on course
+            </Link>
+          </div>
+        </FormField>
+      )}
 
       <FormField label="Title" htmlFor="title" error={errors.title?.message}>
         <Input id="title" invalid={Boolean(errors.title)} {...register("title")} />

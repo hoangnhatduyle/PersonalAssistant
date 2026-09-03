@@ -901,9 +901,51 @@ export type Database = {
           },
         ]
       }
+      voice_conversations: {
+        Row: {
+          end_reason:
+            | Database["public"]["Enums"]["voice_conversation_end_reason"]
+            | null
+          ended_at: string | null
+          id: string
+          last_active_at: string
+          started_at: string
+          user_id: string
+        }
+        Insert: {
+          end_reason?:
+            | Database["public"]["Enums"]["voice_conversation_end_reason"]
+            | null
+          ended_at?: string | null
+          id?: string
+          last_active_at?: string
+          started_at?: string
+          user_id: string
+        }
+        Update: {
+          end_reason?:
+            | Database["public"]["Enums"]["voice_conversation_end_reason"]
+            | null
+          ended_at?: string | null
+          id?: string
+          last_active_at?: string
+          started_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "voice_conversations_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       voice_sessions: {
         Row: {
           confidence_score: number | null
+          conversation_id: string | null
           ended_at: string | null
           error_message: string | null
           expires_at: string | null
@@ -911,6 +953,7 @@ export type Database = {
           pending_mutation: Json | null
           query_kind: string | null
           resolved_intent: string | null
+          response_message: string | null
           schedule_time_window: string | null
           started_at: string
           state: Database["public"]["Enums"]["voice_session_state"]
@@ -919,6 +962,7 @@ export type Database = {
         }
         Insert: {
           confidence_score?: number | null
+          conversation_id?: string | null
           ended_at?: string | null
           error_message?: string | null
           expires_at?: string | null
@@ -926,6 +970,7 @@ export type Database = {
           pending_mutation?: Json | null
           query_kind?: string | null
           resolved_intent?: string | null
+          response_message?: string | null
           schedule_time_window?: string | null
           started_at?: string
           state?: Database["public"]["Enums"]["voice_session_state"]
@@ -934,6 +979,7 @@ export type Database = {
         }
         Update: {
           confidence_score?: number | null
+          conversation_id?: string | null
           ended_at?: string | null
           error_message?: string | null
           expires_at?: string | null
@@ -941,6 +987,7 @@ export type Database = {
           pending_mutation?: Json | null
           query_kind?: string | null
           resolved_intent?: string | null
+          response_message?: string | null
           schedule_time_window?: string | null
           started_at?: string
           state?: Database["public"]["Enums"]["voice_session_state"]
@@ -948,6 +995,13 @@ export type Database = {
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "voice_sessions_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "voice_conversations"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "voice_sessions_user_id_fkey"
             columns: ["user_id"]
@@ -1413,6 +1467,25 @@ export type Database = {
         Args: { p_chunks: Json; p_raw_content: string; p_source_id: string }
         Returns: boolean
       }
+      delete_expired_voice_conversations: {
+        Args: never
+        Returns: {
+          end_reason:
+            | Database["public"]["Enums"]["voice_conversation_end_reason"]
+            | null
+          ended_at: string | null
+          id: string
+          last_active_at: string
+          started_at: string
+          user_id: string
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "voice_conversations"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
       delete_expired_voice_sessions: {
         Args: never
         Returns: {
@@ -1560,6 +1633,7 @@ export type Database = {
         | "Snoozed"
         | "Expired"
       task_status: "Open" | "Done" | "Cancelled"
+      voice_conversation_end_reason: "explicit" | "timeout"
       voice_session_state:
         | "Idle"
         | "Listening"

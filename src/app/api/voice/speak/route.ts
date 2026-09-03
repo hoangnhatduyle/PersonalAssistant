@@ -1,7 +1,7 @@
 import { requireAuthenticatedContext } from "@/lib/api/auth";
 import { voiceSpeakSchema } from "@/lib/api/schemas";
 import { successResponse, validationErrorResponse, rateLimitedResponse, serverErrorResponse } from "@/lib/api/response";
-import { synthesizeSpeech } from "@/lib/voice/elevenlabs";
+import { synthesizeSpeech } from "@/lib/voice/text-to-speech";
 import { checkSpeakRateLimit } from "@/lib/voice/rate-limit";
 
 export interface VoiceSpeakResponse {

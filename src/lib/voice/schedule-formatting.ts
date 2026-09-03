@@ -13,6 +13,13 @@ export interface ScheduleItem {
   kind: "deadline" | "task" | "todo";
   /** Raw stored value -- null means genuinely unset, never reported/treated as "Medium" outside ranking comparisons. */
   priority: Priority | null;
+  /** The deadline's course name, or the todo item's list/project name -- null for a Task (no natural grouping) or an unnamed/uncategorized item. Spoken as "Title (context)" for clarity when several items share a similar name across courses/lists. */
+  context: string | null;
+}
+
+/** "Title (context)" when context is set, else the bare title. */
+function titleWithContext(item: ScheduleItem): string {
+  return item.context ? `${item.title} (${item.context})` : item.title;
 }
 
 export interface ScheduleDayGroup {
@@ -109,18 +116,18 @@ function joinNaturally(items: string[]): string {
 function buildListingAnswer(flatItems: ScheduleItem[], timezone: string, now: Date): string {
   if (flatItems.length === 1) {
     const [only] = flatItems;
-    return `The only item that is due is ${only.title}, due ${describeDueTime(only.dueAt, timezone, now)}.`;
+    return `The only item that is due is ${titleWithContext(only)}, due ${describeDueTime(only.dueAt, timezone, now)}.`;
   }
 
   return flatItems
     .map((item, index) => {
       const timePhrase = describeDueTime(item.dueAt, timezone, now);
       if (index === 0) {
-        return `The first item that is due is ${item.title}, due ${timePhrase}.`;
+        return `The first item that is due is ${titleWithContext(item)}, due ${timePhrase}.`;
       }
       const isLast = index === flatItems.length - 1;
       const prefix = isLast && flatItems.length > 2 ? "Finally" : ordinalWord(index);
-      return `${prefix}, ${item.title} is due ${timePhrase}.`;
+      return `${prefix}, ${titleWithContext(item)} is due ${timePhrase}.`;
     })
     .join(" ");
 }
@@ -135,7 +142,7 @@ function buildRecommendationAnswer(groups: ScheduleDayGroup[], timezone: string,
         const [item] = group.items;
         const timePhrase = describeDueTime(item.dueAt, timezone, now);
         const lead = groupIndex === 0 ? "You have one item due" : "Then, due";
-        return `${lead} ${dayPhrase}: ${item.title}, due ${timePhrase}.`;
+        return `${lead} ${dayPhrase}: ${titleWithContext(item)}, due ${timePhrase}.`;
       }
 
       const [top, ...rest] = group.items;
@@ -144,8 +151,8 @@ function buildRecommendationAnswer(groups: ScheduleDayGroup[], timezone: string,
         groupIndex === 0
           ? `You have ${group.items.length} items due ${dayPhrase}.`
           : `Also, on ${dayPhrase}, you have ${group.items.length} items.`;
-      const restDescriptions = joinNaturally(rest.map((item) => `${item.title} (${item.priority ?? "Medium"})`));
-      return `${intro} ${top.title} is ${topLabel} priority, so start there. Also due ${dayPhrase}, with lower priority: ${restDescriptions}.`;
+      const restDescriptions = joinNaturally(rest.map((item) => `${titleWithContext(item)} (${item.priority ?? "Medium"})`));
+      return `${intro} ${titleWithContext(top)} is ${topLabel} priority, so start there. Also due ${dayPhrase}, with lower priority: ${restDescriptions}.`;
     })
     .join(" ");
 }

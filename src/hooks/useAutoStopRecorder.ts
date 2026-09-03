@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { CAPTURE_MAX_DURATION_MS, CAPTURE_MIN_SPEECH_MS, CAPTURE_SILENCE_MS, SILENCE_RMS_THRESHOLD } from "@/lib/voice/constants";
 
 export interface UseAutoStopRecorderOptions {
@@ -35,6 +35,7 @@ export function useAutoStopRecorder(onComplete: (blob: Blob) => void, options: U
 
   const [status, setStatus] = useState<"idle" | "listening">("idle");
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
@@ -70,7 +71,10 @@ export function useAutoStopRecorder(onComplete: (blob: Blob) => void, options: U
   const start = useCallback(async () => {
     if (mediaRecorderRef.current) return;
 
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true } });
+    const reusable = streamRef.current;
+    const hasLiveAudioTrack = reusable?.getAudioTracks().some((track) => track.readyState !== "ended") ?? false;
+    const stream = hasLiveAudioTrack ? reusable! : await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true } });
+    streamRef.current = stream;
     const mimeType = typeof MediaRecorder.isTypeSupported === "function" && MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm" : "";
     const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
 
@@ -83,7 +87,11 @@ export function useAutoStopRecorder(onComplete: (blob: Blob) => void, options: U
       if (event.data.size > 0) chunksRef.current.push(event.data);
     };
     recorder.onstop = () => {
-      stream.getTracks().forEach((track) => track.stop());
+      // The underlying hardware stream is intentionally kept alive here —
+      // it is reused across start()/stop() cycles within the same session
+      // and only released on unmount (see the cleanup effect below). Tearing
+      // it down after every utterance is what re-triggers iOS's permission
+      // prompt on each tap.
       if (hasSpokenRef.current) {
         const blob = new Blob(chunksRef.current, { type: recorder.mimeType || "audio/webm" });
         onComplete(blob);
@@ -129,6 +137,16 @@ export function useAutoStopRecorder(onComplete: (blob: Blob) => void, options: U
 
     maxTimerRef.current = setTimeout(stop, maxDurationMs);
   }, [minSpeechMs, silenceMs, maxDurationMs, stop, onComplete]);
+
+  // The one place the underlying hardware stream is actually released —
+  // on unmount of whatever owns this hook's lifetime (e.g. the Quick
+  // Capture dialog closing), not after every individual recording.
+  useEffect(() => {
+    return () => {
+      streamRef.current?.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    };
+  }, []);
 
   return { status, start, stop };
 }

@@ -1,17 +1,29 @@
 "use client";
 
 import { useState, type KeyboardEvent } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { useCreateTodoItem, useUpdateTodoItem, useDeleteTodoItem } from "@/hooks/useTodoItems";
+import { todoItemPayloadSchema, type TodoItemPayload } from "@/lib/api/schemas";
 import { GlassPanel } from "@/components/ui/GlassPanel";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
+import { Dialog } from "@/components/ui/Dialog";
+import { FormField } from "@/components/ui/FormField";
 import { ITEM_PRIORITY_TONE } from "@/lib/status-colors";
 import type { ItemPriority, TodoItemRow, TodoListRow } from "@/lib/api/entity-types";
 
 const PRIORITY_OPTIONS: ItemPriority[] = ["Low", "Medium", "High", "Urgent"];
+
+// An untouched date input or the "No priority" <select> option reports "",
+// but the schema's z.iso.date().nullable().optional() and enum().nullable().optional()
+// reject "" — normalize at register time, same pattern as CreateTodoListDialog's
+// emptyToUndefined for course_id.
+const emptyToNull = (value: string) => (value === "" ? null : value);
+const emptyPriorityToUndefined = (value: string) => (value === "" ? undefined : (value as ItemPriority));
 
 type Props = {
   list: TodoListRow;
@@ -131,22 +143,70 @@ function TodoItemLine({ item }: { item: TodoItemRow }) {
   );
 }
 
-export function CourseTodoListCard({ list, items, courseName }: Props) {
+function AddTodoItemDialog({ listId, open, onClose }: { listId: string; open: boolean; onClose: () => void }) {
   const createItem = useCreateTodoItem();
-  const [title, setTitle] = useState("");
-  const [dueDate, setDueDate] = useState("");
-  const [priority, setPriority] = useState<ItemPriority | "">("");
+  const {
+    register,
+    handleSubmit,
+    reset,
+    formState: { errors, isSubmitting },
+  } = useForm<TodoItemPayload>({
+    resolver: zodResolver(todoItemPayloadSchema),
+    defaultValues: { list_id: listId, title: "", due_date: "", priority: undefined },
+  });
+
+  const handleClose = () => {
+    reset();
+    onClose();
+  };
+
+  return (
+    <Dialog open={open} onClose={handleClose} title="Add task or assignment">
+      <form
+        onSubmit={handleSubmit(async (values) => {
+          await createItem.mutateAsync({ ...values, list_id: listId });
+          reset();
+          onClose();
+        })}
+        className="flex flex-col gap-4"
+        noValidate
+      >
+        <FormField label="Task" htmlFor="item-title" error={errors.title?.message}>
+          <Input id="item-title" placeholder="Add a task or assignment" invalid={Boolean(errors.title)} autoFocus {...register("title")} />
+        </FormField>
+
+        <FormField label="Due date" htmlFor="item-due-date" error={errors.due_date?.message}>
+          <Input id="item-due-date" type="date" {...register("due_date", { setValueAs: emptyToNull })} />
+        </FormField>
+
+        <FormField label="Priority" htmlFor="item-priority" error={errors.priority?.message}>
+          <Select id="item-priority" {...register("priority", { setValueAs: emptyPriorityToUndefined })}>
+            <option value="">No priority</option>
+            {PRIORITY_OPTIONS.map((option) => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+          </Select>
+        </FormField>
+
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="secondary" onClick={handleClose} disabled={isSubmitting}>
+            Cancel
+          </Button>
+          <Button type="submit" isLoading={isSubmitting}>
+            Add task
+          </Button>
+        </div>
+      </form>
+    </Dialog>
+  );
+}
+
+export function CourseTodoListCard({ list, items, courseName }: Props) {
+  const [addDialogOpen, setAddDialogOpen] = useState(false);
 
   const doneCount = items.filter((item) => item.is_done).length;
-
-  const handleAdd = async () => {
-    const trimmed = title.trim();
-    if (!trimmed) return;
-    await createItem.mutateAsync({ list_id: list.id, title: trimmed, due_date: dueDate || null, priority: priority || null });
-    setTitle("");
-    setDueDate("");
-    setPriority("");
-  };
 
   return (
     <GlassPanel className="flex flex-col gap-3 p-4">
@@ -168,36 +228,11 @@ export function CourseTodoListCard({ list, items, courseName }: Props) {
         </ul>
       )}
 
-      <form
-        onSubmit={(event) => {
-          event.preventDefault();
-          void handleAdd();
-        }}
-        className="flex flex-wrap gap-2"
-      >
-        <Input
-          value={title}
-          onChange={(event) => setTitle(event.target.value)}
-          placeholder="Add a task or assignment"
-          className="min-w-0 flex-1"
-        />
-        <Input type="date" value={dueDate} onChange={(event) => setDueDate(event.target.value)} className="w-36" />
-        <Select
-          value={priority}
-          onChange={(event) => setPriority(event.target.value as ItemPriority | "")}
-          className="w-28"
-        >
-          <option value="">No priority</option>
-          {PRIORITY_OPTIONS.map((option) => (
-            <option key={option} value={option}>
-              {option}
-            </option>
-          ))}
-        </Select>
-        <Button type="submit" size="sm" isLoading={createItem.isPending} disabled={!title.trim()}>
-          +
-        </Button>
-      </form>
+      <Button type="button" variant="secondary" size="sm" onClick={() => setAddDialogOpen(true)}>
+        + Add task
+      </Button>
+
+      <AddTodoItemDialog listId={list.id} open={addDialogOpen} onClose={() => setAddDialogOpen(false)} />
     </GlassPanel>
   );
 }

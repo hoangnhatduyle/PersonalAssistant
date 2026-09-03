@@ -10,9 +10,6 @@ export interface ResolvedIntent {
   readOnly: boolean;
   /** Short human-readable description of the resolved action, spoken/shown back to the user. */
   summary: string;
-  queryKind?: "upcoming_schedule" | "knowledge_lookup" | "personalization_suggestions" | "general_conversation";
-  /** Set only when queryKind is "upcoming_schedule" — which calendar window the factual listing should be scoped to. */
-  scheduleTimeWindow?: "today" | "tomorrow" | "week" | "unscoped";
   mutation?: PendingMutation;
 }
 
@@ -24,7 +21,15 @@ export interface ResolveIntentFn {
 // supabase/migrations/0021_item_priority.sql's item_priority enum. A bare
 // z.string() previously let the LLM emit any free text, which could fail
 // the DB insert/update once the column became a strict enum.
-const itemPriorityMutationSchema = z.enum(["Low", "Medium", "High", "Urgent"]).nullable();
+//
+// .default(null): gpt-4o-mini's JSON mode is not fully reliable about
+// including every declared key when it has nothing to report for it —
+// verified directly (a live "remind me to buy textbooks tomorrow at 5pm"
+// call, no priority mentioned) that it sometimes omits `priority` entirely
+// rather than emitting `null`, which a bare `.nullable()` (required key)
+// rejects outright. Tolerate the omission as equivalent to null; an
+// explicitly-provided invalid value is still rejected.
+const itemPriorityMutationSchema = z.enum(["Low", "Medium", "High", "Urgent"]).nullable().default(null);
 
 const mutationSchemaBase = z.discriminatedUnion("target_type", [
   z.object({ target_type: z.literal("course"), operation: z.literal("delete"), target_id: z.uuid() }),
@@ -110,12 +115,6 @@ export const llmResponseSchema = z
     confidence: z.number().min(0).max(1),
     read_only: z.boolean(),
     summary: z.string(),
-    query_kind: z.enum(["upcoming_schedule", "knowledge_lookup", "personalization_suggestions", "general_conversation"]).nullable(),
-    // Set exactly when query_kind is "upcoming_schedule" (enforced below) —
-    // which calendar window a factual "what's due" listing should be scoped
-    // to, so runUpcomingScheduleQuery doesn't always return the same
-    // unscoped next-N items regardless of what the user actually asked.
-    schedule_time_window: z.enum(["today", "tomorrow", "week", "unscoped"]).nullable(),
     mutation: mutationSchema.nullable(),
   })
   .superRefine((value, ctx) => {
@@ -125,34 +124,20 @@ export const llmResponseSchema = z
     if (!value.read_only && value.mutation === null) {
       ctx.addIssue({ code: "custom", message: "mutation is required when read_only is false", path: ["mutation"] });
     }
-    if (value.query_kind === "upcoming_schedule" && value.schedule_time_window === null) {
-      ctx.addIssue({
-        code: "custom",
-        message: "schedule_time_window is required when query_kind is \"upcoming_schedule\"",
-        path: ["schedule_time_window"],
-      });
-    }
-    if (value.query_kind !== "upcoming_schedule" && value.schedule_time_window !== null) {
-      ctx.addIssue({
-        code: "custom",
-        message: "schedule_time_window must be null unless query_kind is \"upcoming_schedule\"",
-        path: ["schedule_time_window"],
-      });
-    }
   });
 
 const SYSTEM_PROMPT = `You are the intent-resolution layer for a student personal-assistant app.
 Given a spoken/transcribed user request, the current server time, the user's
 IANA time zone, and a JSON list of that user's current Courses, Deadlines,
-Tasks, and Knowledge Sources (with their ids), resolve it to exactly one
-supported operation and respond with ONLY a JSON object matching this shape:
+Tasks, and Knowledge Sources (with their ids), decide only one thing: does
+this request want to change app data (a mutation), or should it hand off
+entirely to the conversational assistant instead? Respond with ONLY a JSON
+object matching this shape:
 
 {
   "confidence": number,        // 0-1, your genuine confidence this is the right resolution
   "read_only": boolean,
   "summary": string,           // one sentence describing the action, for the user
-  "query_kind": "upcoming_schedule" | "knowledge_lookup" | "personalization_suggestions" | "general_conversation" | null,   // set when read_only
-  "schedule_time_window": "today" | "tomorrow" | "week" | "unscoped" | null,   // set only when query_kind is "upcoming_schedule", else null
   "mutation": {                // set when !read_only, else null
     "target_type": "course" | "deadline" | "task" | "note" | "reminder",
     "operation": "create" | "update" | "delete" | "acknowledge",
@@ -162,69 +147,36 @@ supported operation and respond with ONLY a JSON object matching this shape:
   } | null
 }
 
-Supported operations: create/update/delete a Deadline, Task, or Note;
-delete a Course; acknowledge/dismiss/snooze a Reminder; query the upcoming
-schedule (read-only); look up information from the user's personal knowledge
-base of imported reference material (read-only, query_kind
-"knowledge_lookup"); check for app-generated reminder-timing personalization
-suggestions based on the user's feedback history (read-only, query_kind
-"personalization_suggestions"); or answer an open-ended conversational
-question (read-only, query_kind "general_conversation"). Nothing else is
-supported.
-
-Choose among the read-only query kinds using these boundaries:
-- "knowledge_lookup": the user explicitly asks about material they imported,
-  saved, uploaded, captured, or previously provided, such as "what did that
-  article say about research paths?" or "summarize the notes I saved." This
-  also covers a request that names or clearly refers to one of the provided
-  Knowledge Sources' titles/topics (e.g. a source titled "My Girlfriend
-  (Tien) Bucket List" matches "the bucket list", "her bucket list", "test
-  the bucket list", "check the bucket list") — the wording doesn't need to
-  say "saved" or "imported" once it matches a known source; treat any bare
-  verb in front of it ("test", "check", "look at", "open", "try", "go
-  through") as asking to look the material up, not as an instruction to
-  create/change anything.
-- "personalization_suggestions": the user explicitly asks to check the app's
-  generated personalization/reminder-timing suggestions, such as "check my
-  suggestions" or "did the app recommend changing my reminder timing?"
-- "upcoming_schedule": the user only wants a factual listing of their upcoming
-  Tasks, Deadlines, or Course To-Do/custom-project items, such as "what is
-  due this week?" Also set
-  schedule_time_window to the calendar window the wording implies:
-  "today"/"due today"/"this afternoon"/"this evening" (as a plain factual
-  listing, not advice — see the general_conversation boundary below for the
-  advice-flavored version of "this afternoon") -> "today"; "tomorrow" ->
-  "tomorrow"; "this week"/"coming up"/"next few days" -> "week"; no time
-  phrase at all, or a vague ask like "what's on my plate"/"what's due soon"
-  -> "unscoped".
-- "general_conversation": open-ended advice, opinions, trade-off analysis,
-  scheduling guidance, wellbeing questions, or other conversation that does
-  not require imported reference material, such as "should I attend this
-  meeting or rest?", "what do you think about my schedule?", or "help me weigh
-  these two options." Use this even when the request mentions the user's own
-  Tasks, Deadlines, or Courses, unless the user is asking only for a factual
-  schedule listing or requesting a supported mutation.
+Supported mutations: create/update/delete a Deadline, Task, or Note; delete a
+Course; acknowledge/dismiss/snooze a Reminder. Everything else — every kind
+of question, lookup, schedule check, recommendation request, or open-ended
+conversation — is read-only and handled entirely by a separate conversational
+layer once you resolve read_only: true. You do not categorize what kind of
+read-only request it is; that's not your job anymore.
 
 A mutation requires a clear instruction to change app data, such as "create",
 "add", "update", "delete", "cancel this task", or "remind me to". Do not infer
 a mutation merely because the user mentions a possible real-world action.
 Questions, hypotheticals, and requests for advice take precedence and must be
-"general_conversation", even when they contain action verbs. In particular,
+read-only, even when they contain action verbs. In particular,
 "should I...", "do you think I should...", "what are your thoughts/advice...",
 "would it be better to...", and conditional phrases such as "in case I..."
 are not commands. If a request asks for advice and discusses a task the user
-might create, choose "general_conversation" unless it also contains a separate,
-explicit instruction to create that task.
+might create, resolve read_only unless it also contains a separate, explicit
+instruction to create that task.
 
 A bare verb like "test", "check", "look at", "try", or "open" in front of a
 noun phrase, with no new title/date/content actually being specified, is
 never enough on its own to justify creating a Task named after that noun
 phrase — a Task create needs the user asking to add/create/track a real new
-item, not merely to inspect or exercise something. If that noun phrase
-matches a provided Knowledge Source, resolve it as "knowledge_lookup"
-instead (see above); if it matches nothing in the provided context, prefer
-"general_conversation" or a low confidence score over guessing at a new Task
-title.
+item, not merely to inspect or exercise something. This is especially clear
+when that noun phrase matches a provided Knowledge Source's title/topic (e.g.
+a source titled "My Girlfriend (Tien) Bucket List" matches "the bucket
+list", "her bucket list", "test the bucket list") — the wording doesn't need
+to say "saved" or "imported" once it matches a known source; that's the user
+asking to look the material up, not create anything, so resolve read_only.
+If the noun phrase matches nothing in the provided context either, prefer
+read_only with a low confidence score over guessing at a new Task title.
 
 The request's "now" field is the current server timestamp (UTC, ISO 8601)
 and "timezone" is the user's IANA time zone — use both as the anchor for any
@@ -261,40 +213,29 @@ Examples:
 - "Remind me to review notes before Friday" (no exact time) -> task create,
   title "Review notes", due_at resolved to end-of-day Friday in the user's
   timezone, reminder_lead_minutes: null.
-- "Do I have any suggestions?" / "Check for recommendations" -> read_only
-  true, query_kind "personalization_suggestions", mutation null.
-- "Should I reach out to IEEE for information in case I miss the meeting?"
-  -> read_only true, query_kind "general_conversation", mutation null. This is
-  asking whether to act, not instructing the app to create a Task.
-- "I am tired and the timing is tight. What do you think, and should I ask
-  IEEE for notes?" -> read_only true, query_kind "general_conversation",
-  mutation null.
 - "Create a task to ask IEEE for notes" -> read_only false, mutation is a Task
   create.
-- "What is due today?" -> read_only true, query_kind "upcoming_schedule",
-  schedule_time_window "today".
-- "What's coming up this week?" -> read_only true, query_kind
-  "upcoming_schedule", schedule_time_window "week".
-- "What's on my plate?" (no explicit time phrase) -> read_only true,
-  query_kind "upcoming_schedule", schedule_time_window "unscoped".
+- "Should I reach out to IEEE for information in case I miss the meeting?"
+  -> read_only true, mutation null. This is asking whether to act, not
+  instructing the app to create a Task.
 - "Test the bucket list" / "Check out the bucket list" against a Knowledge
   Source titled "My Girlfriend (Tien) Bucket List" -> read_only true,
-  query_kind "knowledge_lookup", mutation null. NOT a Task create — "test"
-  here is the user exercising the lookup feature, not naming a new Task.
+  mutation null. NOT a Task create — "test" here is the user exercising the
+  lookup feature, not naming a new Task.
 
-If the request doesn't map confidently to one of these, or names an entity
-not in the provided context list, set confidence below 0.95 rather than
-guessing at a target_id. Never invent an id.`;
+If the request doesn't map confidently to a supported mutation, or names an
+entity not in the provided context list, set confidence below 0.95 rather
+than guessing at a target_id. Never invent an id.`;
 
 interface EntityContext {
   courses: Array<{ id: string; name: string }>;
   deadlines: Array<{ id: string; title: string; course_id: string }>;
   tasks: Array<{ id: string; title: string }>;
-  // Bug fix: without this, the classifier had zero visibility into what the
+  // Bug fix: without this, resolveIntent had zero visibility into what the
   // user's knowledge base actually contains, so a request naming a saved
   // source by its own title/topic (e.g. "test the bucket list" against a
   // source titled "My Girlfriend (Tien) Bucket List") had no anchor to
-  // recognize it as knowledge_lookup — it fell back to treating the bare
+  // recognize it as a read-only lookup — it fell back to treating the bare
   // imperative as an instruction to create a task literally titled that.
   // Titles only (no content) — same shape/cost as the courses/deadlines/
   // tasks lists above, just enough for the model to match a reference.
@@ -436,8 +377,6 @@ export async function resolveIntent(
     confidence: parsed.confidence,
     readOnly: parsed.read_only,
     summary: parsed.summary,
-    queryKind: parsed.query_kind ?? undefined,
-    scheduleTimeWindow: parsed.schedule_time_window ?? undefined,
     mutation: parsed.mutation ? toPendingMutation(parsed.mutation) : undefined,
   };
 }

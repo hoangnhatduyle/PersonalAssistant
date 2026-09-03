@@ -73,6 +73,26 @@ function localMidnightUtc(year: number, month: number, day: number, timeZone: st
   return new Date(guessMillis - offset);
 }
 
+/**
+ * The UTC instant one millisecond before `year-month-(day+1) 00:00:00` local
+ * wall-clock time in `timeZone` -- i.e. the last instant of that local
+ * calendar day (23:59:59.999 local time). `day + 1` is passed straight to
+ * `Date.UTC` inside localMidnightUtc, which rolls month/year boundaries
+ * correctly on its own (e.g. day 31 of a 30-day month rolls into next
+ * month) -- no separate calendar-math needed here.
+ *
+ * For anchoring a date-only value (e.g. todo_items.due_date, which has no
+ * time-of-day or timezone of its own) to a real, timezone-correct instant
+ * for day-bucketing (schedule-formatting.ts's rankScheduleItems) -- unlike
+ * a bare `new Date(dateKey + "T23:59:59.999")`, which parses in whatever
+ * timezone the Node process itself happens to be running in, not the
+ * user's, and can silently bucket the item onto the wrong calendar day for
+ * any user east of UTC.
+ */
+export function localEndOfDayUtc(year: number, month: number, day: number, timeZone: string): Date {
+  return new Date(localMidnightUtc(year, month, day + 1, timeZone).getTime() - 1);
+}
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** How many days after today's local midnight a window starts, and how many days it spans. Shared by both the instant-based and date-key-based resolvers below. */

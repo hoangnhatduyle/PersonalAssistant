@@ -12,6 +12,7 @@ import { ConfirmationBar } from "@/components/assistant/ConfirmationBar";
 import { useVoiceCapture, type VoiceTurnOrigin } from "@/components/assistant/VoiceCaptureProvider";
 import { useVoiceTurn, type VoiceTurnClientInput } from "@/hooks/useVoiceTurn";
 import { useSpeakVoiceResponse } from "@/hooks/useSpeakVoiceResponse";
+import { useResetVoiceConversation } from "@/hooks/useResetVoiceConversation";
 import { useAutoStopRecorder } from "@/hooks/useAutoStopRecorder";
 import { unlockAudioPlayback } from "@/lib/voice/play-audio";
 import { useSettings } from "@/hooks/useSettings";
@@ -31,6 +32,35 @@ export function MicIcon() {
       <path d="M5 11a7 7 0 0 0 14 0M12 18v3" strokeLinecap="round" />
     </svg>
   );
+}
+
+function NewConversationIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} className="h-4 w-4" aria-hidden="true">
+      <path d="M3 12a9 9 0 0 1 15-6.7M21 12a9 9 0 0 1-15 6.7" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M17 3v5h-5M7 21v-5h5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+const GENERIC_MIC_ERROR = "Microphone access is unavailable — try the text field instead";
+const DENIED_MIC_ERROR = "Microphone access is blocked — check Settings > Cadence > Microphone on your device";
+
+/**
+ * Distinguishes a hard permission denial from any other getUserMedia
+ * failure (transient hardware error, no device, etc.) so the toast can
+ * point at Settings only when that's actually the fix. Not every browser
+ * implements querying the "microphone" permission name, so this is
+ * best-effort — unsupported or erroring falls back to the generic message.
+ */
+async function describeMicrophoneAccessError(): Promise<string> {
+  try {
+    const status = await navigator.permissions.query({ name: "microphone" as PermissionName });
+    if (status.state === "denied") return DENIED_MIC_ERROR;
+  } catch {
+    // Unsupported in this browser — fall through to the generic message.
+  }
+  return GENERIC_MIC_ERROR;
 }
 
 /**
@@ -56,6 +86,7 @@ export function CaptureChannel({ compact = false }: Props) {
   // Passing `speak` down as a prop keeps one mutation, and one isPending,
   // for every message this CaptureChannel instance ever speaks.
   const speakResponse = useSpeakVoiceResponse();
+  const resetConversation = useResetVoiceConversation();
   const { refetch: refetchSuggestions } = usePersonalizationSuggestions({ status: ["pending"] });
   const reviewAloud = useReviewSuggestionsAloud();
   const [localStatus, setLocalStatus] = useState<LocalStatus>("idle");
@@ -155,7 +186,7 @@ export function CaptureChannel({ compact = false }: Props) {
     try {
       await startRecording();
     } catch {
-      showToast("Microphone access is unavailable — try the text field instead", "error");
+      showToast(await describeMicrophoneAccessError(), "error");
     }
   };
 
@@ -174,20 +205,32 @@ export function CaptureChannel({ compact = false }: Props) {
   return (
     <GlassPanel className={`flex flex-col gap-4 ${compact ? "p-4" : "p-6"}`}>
       <div className="flex flex-col items-center gap-3 py-2">
-        <button
-          type="button"
-          aria-pressed={isRecording}
-          aria-label="Tap to talk"
-          disabled={localStatus === "transcribing"}
-          onClick={handleMicClick}
-          className={`flex h-16 w-16 items-center justify-center rounded-full border transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
-            isRecording
-              ? "glow-urgent border-status-urgent bg-status-urgent/20 text-status-urgent"
-              : "border-accent-indigo/50 bg-accent-indigo/10 text-accent-indigo hover:bg-accent-indigo/20"
-          }`}
-        >
-          <MicIcon />
-        </button>
+        <div className="relative flex items-center gap-2">
+          <button
+            type="button"
+            aria-pressed={isRecording}
+            aria-label="Tap to talk"
+            disabled={localStatus === "transcribing"}
+            onClick={handleMicClick}
+            className={`flex h-16 w-16 items-center justify-center rounded-full border transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+              isRecording
+                ? "glow-urgent border-status-urgent bg-status-urgent/20 text-status-urgent"
+                : "border-accent-indigo/50 bg-accent-indigo/10 text-accent-indigo hover:bg-accent-indigo/20"
+            }`}
+          >
+            <MicIcon />
+          </button>
+          <button
+            type="button"
+            aria-label="New conversation"
+            title="New conversation"
+            disabled={resetConversation.isPending}
+            onClick={() => resetConversation.mutate()}
+            className="flex h-8 w-8 items-center justify-center rounded-full border border-panel-border text-text-secondary transition-colors hover:border-accent-indigo/50 hover:text-accent-indigo disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <NewConversationIcon />
+          </button>
+        </div>
         <p className="font-mono text-xs text-text-secondary">
           {isRecording ? "Tap to stop" : "Tap to talk"}
           {handsFree && " · Hands-free on"}

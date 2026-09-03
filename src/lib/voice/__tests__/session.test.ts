@@ -5,18 +5,29 @@ import {
   createCourse,
   createDeadline,
   createReminder,
-  createTask,
-  createTodoItem,
-  createTodoList,
-  walkTransitions,
   type TestUser,
 } from "../../../../supabase/tests/helpers";
 import { confirmVoiceSession, declineVoiceSession, intakeVoiceTurn, VoiceSessionExpiredError, VoiceSessionInvalidStateError } from "../session";
 import type { ResolvedIntent } from "../intent";
 import type { PendingMutation } from "../mutations";
+import type { ConversationTurnResult } from "../conversation-core";
+import { endConversation, resolveActiveConversation } from "../conversation-memory";
 
 function fakeResolver(intent: ResolvedIntent) {
   return vi.fn().mockResolvedValue(intent);
+}
+
+// Echoes back whatever conversationId it was called with (the real one
+// resolveActiveConversation resolved against the test DB, since that
+// function isn't itself an injectable VoiceTurnDeps) unless overridden —
+// voice_sessions.conversation_id has a real FK to voice_conversations, so a
+// fabricated id would fail the persistence step these tests exercise.
+function fakeConversationTurn(overrides: Partial<ConversationTurnResult> = {}) {
+  return vi.fn().mockImplementation(async (_supabase: unknown, _userId: string, _transcript: string, conversationId: string) => ({
+    message: "ok",
+    conversationId,
+    ...overrides,
+  }));
 }
 
 describe("intakeVoiceTurn / confirmVoiceSession / declineVoiceSession", () => {
@@ -37,23 +48,55 @@ describe("intakeVoiceTurn / confirmVoiceSession / declineVoiceSession", () => {
   // AC-1
   it("AC-1: a high-confidence read-only query executes immediately without confirmation", async () => {
     const transcribe = vi.fn();
-    const resolveIntent = fakeResolver({
-      confidence: 0.99,
-      readOnly: true,
-      summary: "your upcoming schedule",
-      queryKind: "upcoming_schedule",
-    });
+    const resolveIntent = fakeResolver({ confidence: 0.99, readOnly: true, summary: "your upcoming schedule" });
+    const runConversationTurn = fakeConversationTurn({ message: "Here's what's coming up." });
 
-    const result = await intakeVoiceTurn(user.client, userId, { transcript: "what's due soon" }, { transcribe, resolveIntent });
+    const result = await intakeVoiceTurn(
+      user.client,
+      userId,
+      { transcript: "what's due soon" },
+      { transcribe, resolveIntent, runConversationTurn },
+    );
 
     expect(result.state).toBe("Responding");
     expect(result.executed).toBe(true);
+    expect(result.message).toBe("Here's what's coming up.");
     expect(transcribe).not.toHaveBeenCalled();
+    expect(runConversationTurn).toHaveBeenCalledWith(user.client, userId, "what's due soon", expect.any(String));
 
     const row = await sessionRow(result.sessionId);
     expect(row.state).toBe("Responding");
     expect(row.pending_mutation).toBeNull();
     expect(row.ended_at).not.toBeNull();
+    // Diagnostics columns (0022_voice_session_diagnostics.sql) stay null
+    // going forward -- routing responsibility moved off resolveIntent
+    // entirely onto conversation-core.ts's own tool-calling loop.
+    expect(row.query_kind).toBeNull();
+    expect(row.schedule_time_window).toBeNull();
+    // 2f: persisted so conversation history (loadConversationHistory) can
+    // read this turn back on a later one.
+    expect(row.conversation_id).not.toBeNull();
+    expect(row.response_message).toBe("Here's what's coming up.");
+  });
+
+  // "fully conversational" decision: the confidence bar gates only the
+  // mutation branch now -- a read-only intent always proceeds to the
+  // conversational core, regardless of intent.confidence.
+  it("a low-confidence read-only intent still proceeds to the conversational core, unlike a low-confidence mutation", async () => {
+    const resolveIntent = fakeResolver({ confidence: 0.2, readOnly: true, summary: "a vague read-only question" });
+    const runConversationTurn = fakeConversationTurn({ message: "Sure, here's my answer." });
+
+    const result = await intakeVoiceTurn(
+      user.client,
+      userId,
+      { transcript: "hmm, what about stuff" },
+      { transcribe: vi.fn(), resolveIntent, runConversationTurn },
+    );
+
+    expect(result.state).toBe("Responding");
+    expect(result.executed).toBe(true);
+    expect(result.message).toBe("Sure, here's my answer.");
+    expect(runConversationTurn).toHaveBeenCalled();
   });
 
   // AC-2
@@ -174,9 +217,15 @@ describe("intakeVoiceTurn / confirmVoiceSession / declineVoiceSession", () => {
   it("AC-4/NC-VOICE-003: only the transcript persists — the raw audio buffer is never written to any column", async () => {
     const audio = Buffer.from("fake-pcm-audio-bytes");
     const transcribe = vi.fn().mockResolvedValue("what's on my plate today");
-    const resolveIntent = fakeResolver({ confidence: 0.99, readOnly: true, summary: "schedule", queryKind: "upcoming_schedule" });
+    const resolveIntent = fakeResolver({ confidence: 0.99, readOnly: true, summary: "schedule" });
+    const runConversationTurn = fakeConversationTurn();
 
-    const result = await intakeVoiceTurn(user.client, userId, { audio, mimetype: "audio/webm" }, { transcribe, resolveIntent });
+    const result = await intakeVoiceTurn(
+      user.client,
+      userId,
+      { audio, mimetype: "audio/webm" },
+      { transcribe, resolveIntent, runConversationTurn },
+    );
 
     expect(transcribe).toHaveBeenCalledWith(audio, "audio/webm");
     const row = await sessionRow(result.sessionId);
@@ -298,26 +347,25 @@ describe("intakeVoiceTurn / confirmVoiceSession / declineVoiceSession", () => {
     await expect(confirmVoiceSession(user.client, userId, idleSession!.id)).rejects.toBeInstanceOf(VoiceSessionInvalidStateError);
   });
 
-  // SPEC-VOICE-005 AC-9, NC-VOICE-007: knowledge_lookup follows the same
-  // read_only_query_resolved path as upcoming_schedule.
-  describe("knowledge_lookup", () => {
-    it("AC-9: executes immediately without confirmation and returns citation data", async () => {
-      const resolveIntent = fakeResolver({
-        confidence: 0.97,
-        readOnly: true,
-        summary: "look up financial aid deadlines",
-        queryKind: "knowledge_lookup",
-      });
-      const knowledgeLookup = vi.fn().mockResolvedValue({
+  // 2f: the classify-then-route knowledge_lookup/general_conversation/
+  // personalization_suggestions/upcoming_schedule dispatch chain is gone --
+  // every read-only intent hands off to the tool-calling conversational core
+  // instead (src/lib/voice/conversation-core.ts), injected here exactly the
+  // way resolveIntent/transcribe already are.
+  describe("read-only conversational core (runConversationTurn)", () => {
+    it("resolves the active conversation, calls runConversationTurn with the transcript, and returns citations/extractionLabel unconditionally", async () => {
+      const resolveIntent = fakeResolver({ confidence: 0.97, readOnly: true, summary: "look up financial aid deadlines" });
+      const runConversationTurn = fakeConversationTurn({
         message: "Financial aid applications are due March 2nd.",
         citations: [{ sourceId: "11111111-1111-4111-8111-111111111111", title: "UC Financial Aid Page", originUrl: "https://example.edu/aid" }],
+        extractionLabel: "machine_extracted",
       });
 
       const result = await intakeVoiceTurn(
         user.client,
         userId,
         { transcript: "when is financial aid due" },
-        { transcribe: vi.fn(), resolveIntent, knowledgeLookup },
+        { transcribe: vi.fn(), resolveIntent, runConversationTurn },
       );
 
       expect(result.state).toBe("Responding");
@@ -326,214 +374,88 @@ describe("intakeVoiceTurn / confirmVoiceSession / declineVoiceSession", () => {
       expect(result.citations).toEqual([
         { sourceId: "11111111-1111-4111-8111-111111111111", title: "UC Financial Aid Page", originUrl: "https://example.edu/aid" },
       ]);
-      expect(result.extractionLabel).toBeUndefined();
-      expect(knowledgeLookup).toHaveBeenCalledWith(user.client, userId, "when is financial aid due");
+      expect(result.extractionLabel).toBe("machine_extracted");
+      expect(runConversationTurn).toHaveBeenCalledWith(user.client, userId, "when is financial aid due", expect.any(String));
 
       const row = await sessionRow(result.sessionId);
       expect(row.state).toBe("Responding");
       expect(row.pending_mutation).toBeNull();
+      expect(row.response_message).toBe("Financial aid applications are due March 2nd.");
     });
 
-    it("AC-6/AC-9 (SPEC-CORE-008 NC-023): surfaces the machine_extracted label when the lookup result carries one", async () => {
-      const resolveIntent = fakeResolver({
-        confidence: 0.97,
-        readOnly: true,
-        summary: "describe the screenshot I saved",
-        queryKind: "knowledge_lookup",
-      });
-      const knowledgeLookup = vi.fn().mockResolvedValue({
-        message: "The screenshot shows a syllabus with a final exam date of May 10th.",
-        citations: [{ sourceId: "22222222-2222-4222-8222-222222222222", title: "Syllabus screenshot", originUrl: null }],
-        extractionLabel: "machine_extracted",
-      });
+    it("sets queryKind personalization_suggestions only when the turn actually used that tool", async () => {
+      const resolveIntent = fakeResolver({ confidence: 0.97, readOnly: true, summary: "check my suggestions" });
+      const runConversationTurn = fakeConversationTurn({ message: "You have 2 suggestions.", usedPersonalizationSuggestions: true });
 
       const result = await intakeVoiceTurn(
         user.client,
         userId,
-        { transcript: "what did that screenshot say" },
-        { transcribe: vi.fn(), resolveIntent, knowledgeLookup },
+        { transcript: "check my suggestions" },
+        { transcribe: vi.fn(), resolveIntent, runConversationTurn },
       );
 
-      expect(result.extractionLabel).toBe("machine_extracted");
+      expect(result.queryKind).toBe("personalization_suggestions");
     });
 
-    it("AC-6: a no-relevant-knowledge lookup result is still returned as a completed execution, not treated as ambiguous", async () => {
-      const resolveIntent = fakeResolver({
-        confidence: 0.97,
-        readOnly: true,
-        summary: "look up something not in the knowledge base",
-        queryKind: "knowledge_lookup",
-      });
-      const knowledgeLookup = vi.fn().mockResolvedValue({ message: "I don't have anything saved that answers that yet.", citations: [] });
+    it("leaves queryKind unset when the turn never used the personalization_suggestions tool", async () => {
+      const resolveIntent = fakeResolver({ confidence: 0.97, readOnly: true, summary: "just chatting" });
+      const runConversationTurn = fakeConversationTurn({ message: "Sure thing." });
 
       const result = await intakeVoiceTurn(
         user.client,
         userId,
-        { transcript: "tell me something I never saved" },
-        { transcribe: vi.fn(), resolveIntent, knowledgeLookup },
+        { transcript: "just chatting" },
+        { transcribe: vi.fn(), resolveIntent, runConversationTurn },
       );
 
-      expect(result.executed).toBe(true);
-      expect(result.citations).toEqual([]);
-      expect(result.message).toBe("I don't have anything saved that answers that yet.");
+      expect(result.queryKind).toBeUndefined();
     });
 
-    it("a lookup failure lands the session in Responding via execution_failed rather than stranding it in Executing", async () => {
-      const resolveIntent = fakeResolver({
-        confidence: 0.97,
-        readOnly: true,
-        summary: "look something up",
-        queryKind: "knowledge_lookup",
-      });
-      const knowledgeLookup = vi.fn().mockRejectedValue(new Error("embedding vendor call failed"));
-
-      await expect(
-        intakeVoiceTurn(user.client, userId, { transcript: "look something up" }, { transcribe: vi.fn(), resolveIntent, knowledgeLookup }),
-      ).rejects.toThrow("embedding vendor call failed");
-    });
-  });
-
-  describe("general_conversation", () => {
-    it("executes immediately without confirmation and returns an uncited response", async () => {
-      const resolveIntent = fakeResolver({
-        confidence: 0.98,
-        readOnly: true,
-        summary: "weigh attending the meeting against resting",
-        queryKind: "general_conversation",
-      });
-      const generalConversation = vi.fn().mockResolvedValue({
-        message: "Protect the coffee conversation, then decide based on your energy and ask IEEE for notes if you skip.",
-      });
-      const transcript = "Should I rush from coffee to the IEEE meeting when I am tired?";
+    // The trickiest invariant from the conversation-memory design (2b/2e):
+    // when start_new_conversation fires mid-turn, the *current* turn's own
+    // voice_sessions row must be filed under the NEW conversation id, not
+    // the one intakeVoiceTurn started with -- otherwise this very turn
+    // would corrupt the next turn's history lookup by hanging off an
+    // already-closed conversation.
+    it("persists the NEW conversation id when the core swaps it mid-turn, not the one the turn started with", async () => {
+      const resolveIntent = fakeResolver({ confidence: 0.97, readOnly: true, summary: "start over" });
+      const { conversationId: freshId } = await resolveActiveConversation(user.client, userId);
+      // Close it immediately so runConversationTurn's fake can "open" a
+      // distinct new one, mirroring what start_new_conversation really does.
+      await endConversation(user.client, userId, freshId, "explicit");
+      const { conversationId: swappedInId } = await resolveActiveConversation(user.client, userId);
+      const runConversationTurn = vi.fn().mockResolvedValue({ message: "Okay, starting fresh.", conversationId: swappedInId });
 
       const result = await intakeVoiceTurn(
         user.client,
         userId,
-        { transcript },
-        { transcribe: vi.fn(), resolveIntent, generalConversation },
+        { transcript: "never mind, start over" },
+        { transcribe: vi.fn(), resolveIntent, runConversationTurn },
       );
 
       expect(result.state).toBe("Responding");
-      expect(result.executed).toBe(true);
-      expect(result.message).toMatch(/ask IEEE for notes/i);
-      expect(result.citations).toBeUndefined();
-      expect(generalConversation).toHaveBeenCalledWith(user.client, userId, transcript);
-
       const row = await sessionRow(result.sessionId);
-      expect(row.state).toBe("Responding");
-      expect(row.pending_mutation).toBeNull();
+      expect(row.conversation_id).toBe(swappedInId);
+      expect(row.conversation_id).not.toBe(freshId);
     });
 
-    it("lands the session in Responding via execution_failed when conversation generation fails", async () => {
-      const resolveIntent = fakeResolver({
-        confidence: 0.98,
-        readOnly: true,
-        summary: "give advice",
-        queryKind: "general_conversation",
-      });
-      const transcript = "general conversation failure canary";
-      const generalConversation = vi.fn().mockRejectedValue(new Error("conversation model call failed"));
+    it("a turn failure lands the session in Responding via execution_failed rather than stranding it in Executing", async () => {
+      const resolveIntent = fakeResolver({ confidence: 0.97, readOnly: true, summary: "look something up" });
+      const runConversationTurn = vi.fn().mockRejectedValue(new Error("model call failed"));
 
       await expect(
-        intakeVoiceTurn(
-          user.client,
-          userId,
-          { transcript },
-          { transcribe: vi.fn(), resolveIntent, generalConversation },
-        ),
-      ).rejects.toThrow("conversation model call failed");
+        intakeVoiceTurn(user.client, userId, { transcript: "look something up" }, { transcribe: vi.fn(), resolveIntent, runConversationTurn }),
+      ).rejects.toThrow("model call failed");
 
       const { data: row } = await admin
         .from("voice_sessions")
         .select("state")
         .eq("user_id", userId)
-        .eq("transcript", transcript)
+        .eq("transcript", "look something up")
+        .order("started_at", { ascending: false })
+        .limit(1)
         .single();
       expect(row?.state).toBe("Responding");
-    });
-  });
-
-  // runUpcomingScheduleQuery: status filtering (a completed/done item must
-  // never be read back as still due) and time-window scoping (a query
-  // scoped to "today" must not pull in items due on other days).
-  describe("upcoming_schedule", () => {
-    it("excludes completed/done items and items outside the requested 'today' window, includes open Course To-Do items, and reads back as plain sentences", async () => {
-      const courseId = await createCourse(admin, userId, { name: "Schedule scoping course" });
-      const listId = await createTodoList(admin, userId, { name: "Project: Scoping canary" });
-
-      const now = new Date();
-      const todayNoonUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 12, 0, 0)).toISOString();
-      const tomorrowNoonUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1, 12, 0, 0)).toISOString();
-      const todayDateKey = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}-${String(now.getUTCDate()).padStart(2, "0")}`;
-      const tomorrowDate = new Date(now.getTime() + 86_400_000);
-      const tomorrowDateKey = `${tomorrowDate.getUTCFullYear()}-${String(tomorrowDate.getUTCMonth() + 1).padStart(2, "0")}-${String(tomorrowDate.getUTCDate()).padStart(2, "0")}`;
-
-      await createDeadline(admin, userId, courseId, { title: "Open deadline due today", due_at: todayNoonUtc });
-
-      const completedDeadlineId = await createDeadline(admin, userId, courseId, {
-        title: "Completed deadline due today",
-        due_at: todayNoonUtc,
-      });
-      await walkTransitions(admin, "deadlines", completedDeadlineId, "status", ["In Progress", "Submitted", "Completed"]);
-
-      await createTask(admin, userId, { title: "Open task due today", due_at: todayNoonUtc });
-
-      const doneTaskId = await createTask(admin, userId, { title: "Done task due today", due_at: todayNoonUtc });
-      await walkTransitions(admin, "tasks", doneTaskId, "status", ["Done"]);
-
-      await createDeadline(admin, userId, courseId, { title: "Deadline due tomorrow", due_at: tomorrowNoonUtc });
-
-      // Previously invisible to this query entirely (only Deadlines/Tasks
-      // were queried) -- a Course To-Do / custom-project item due today
-      // must now show up just like a Deadline or Task would.
-      await createTodoItem(admin, userId, listId, { title: "Open todo item due today", due_date: todayDateKey });
-      const doneTodoItemId = await createTodoItem(admin, userId, listId, { title: "Done todo item due today", due_date: todayDateKey });
-      await admin.from("todo_items").update({ is_done: true }).eq("id", doneTodoItemId);
-      await createTodoItem(admin, userId, listId, { title: "Todo item due tomorrow", due_date: tomorrowDateKey });
-
-      const resolveIntent = fakeResolver({
-        confidence: 0.99,
-        readOnly: true,
-        summary: "what's due today",
-        queryKind: "upcoming_schedule",
-        scheduleTimeWindow: "today",
-      });
-
-      const result = await intakeVoiceTurn(user.client, userId, { transcript: "what is due today" }, { transcribe: vi.fn(), resolveIntent });
-
-      expect(result.message).toContain("Open deadline due today");
-      expect(result.message).toContain("Open task due today");
-      expect(result.message).toContain("Open todo item due today");
-      expect(result.message).not.toContain("Completed deadline due today");
-      expect(result.message).not.toContain("Done task due today");
-      expect(result.message).not.toContain("Done todo item due today");
-      expect(result.message).not.toContain("Deadline due tomorrow");
-      expect(result.message).not.toContain("Todo item due tomorrow");
-      // Human-readable ("today at ..."), not a raw ISO timestamp.
-      expect(result.message).toMatch(/today at \d{1,2}:\d{2} [AP]M/);
-      expect(result.message).not.toMatch(/\d{4}-\d{2}-\d{2}T/);
-
-      // Diagnostics (supabase/migrations/0022_voice_session_diagnostics.sql):
-      // the resolved query_kind/schedule_time_window are now persisted so a
-      // turn's actual routing is provable from the DB, not inferred.
-      const row = await sessionRow(result.sessionId);
-      expect(row.query_kind).toBe("upcoming_schedule");
-      expect(row.schedule_time_window).toBe("today");
-      expect(row.error_message).toBeNull();
-    });
-
-    it("falls back to the unscoped next-N behavior when no time window is resolved", async () => {
-      const resolveIntent = fakeResolver({
-        confidence: 0.99,
-        readOnly: true,
-        summary: "what's coming up",
-        queryKind: "upcoming_schedule",
-      });
-
-      const result = await intakeVoiceTurn(user.client, userId, { transcript: "what's coming up" }, { transcribe: vi.fn(), resolveIntent });
-
-      expect(result.state).toBe("Responding");
-      expect(result.executed).toBe(true);
     });
   });
 });

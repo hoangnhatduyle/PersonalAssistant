@@ -149,6 +149,24 @@ describe("mutationSchema", () => {
     });
     expect(result.success).toBe(true);
   });
+
+  // gpt-4o-mini's JSON mode isn't fully reliable about including every
+  // declared key -- verified live that it sometimes omits `priority`
+  // entirely rather than emitting null when none was mentioned. Confirms
+  // the omission defaults to null rather than failing validation.
+  it("defaults an omitted priority key to null instead of rejecting the response", () => {
+    const result = mutationSchema.safeParse({
+      target_type: "task",
+      operation: "create",
+      target_id: null,
+      title: "Buy textbooks",
+      due_at: "2026-09-01T17:00:00.000Z",
+      reminder_lead_minutes: 0,
+      // priority intentionally omitted
+    });
+    expect(result.success).toBe(true);
+    if (result.success && result.data.target_type === "task") expect(result.data.priority).toBeNull();
+  });
 });
 
 describe("llmResponseSchema", () => {
@@ -157,8 +175,6 @@ describe("llmResponseSchema", () => {
       confidence: 0.99,
       read_only: true,
       summary: "ok",
-      query_kind: "upcoming_schedule",
-      schedule_time_window: "unscoped",
       mutation: { target_type: "course", operation: "delete", target_id: VALID_TARGET_ID },
     });
     expect(result.success).toBe(false);
@@ -169,98 +185,22 @@ describe("llmResponseSchema", () => {
       confidence: 0.99,
       read_only: false,
       summary: "ok",
-      query_kind: null,
-      schedule_time_window: null,
       mutation: null,
     });
     expect(result.success).toBe(false);
   });
 
+  // 2g: resolveIntent no longer classifies read-only requests into a
+  // query_kind -- every read-only resolution is the same shape now, handled
+  // entirely by the conversational core (src/lib/voice/conversation-core.ts).
   it("accepts a well-formed read-only response", () => {
     const result = llmResponseSchema.safeParse({
       confidence: 0.99,
       read_only: true,
       summary: "your upcoming schedule",
-      query_kind: "upcoming_schedule",
-      schedule_time_window: "today",
       mutation: null,
     });
     expect(result.success).toBe(true);
-  });
-
-  it("rejects an upcoming_schedule response with a null schedule_time_window", () => {
-    const result = llmResponseSchema.safeParse({
-      confidence: 0.99,
-      read_only: true,
-      summary: "your upcoming schedule",
-      query_kind: "upcoming_schedule",
-      schedule_time_window: null,
-      mutation: null,
-    });
-    expect(result.success).toBe(false);
-  });
-
-  it("rejects a non-upcoming_schedule response with a non-null schedule_time_window", () => {
-    const result = llmResponseSchema.safeParse({
-      confidence: 0.98,
-      read_only: true,
-      summary: "look up financial aid deadlines",
-      query_kind: "knowledge_lookup",
-      schedule_time_window: "today",
-      mutation: null,
-    });
-    expect(result.success).toBe(false);
-  });
-
-  // SPEC-API-008/SPEC-VOICE-005: knowledge_lookup is the second supported
-  // read-only query_kind, added alongside upcoming_schedule.
-  it("accepts a well-formed knowledge_lookup response", () => {
-    const result = llmResponseSchema.safeParse({
-      confidence: 0.98,
-      read_only: true,
-      summary: "look up financial aid deadlines",
-      query_kind: "knowledge_lookup",
-      schedule_time_window: null,
-      mutation: null,
-    });
-    expect(result.success).toBe(true);
-  });
-
-  // Third supported read-only query_kind, added alongside upcoming_schedule/knowledge_lookup.
-  it("accepts a well-formed personalization_suggestions response", () => {
-    const result = llmResponseSchema.safeParse({
-      confidence: 0.98,
-      read_only: true,
-      summary: "check for suggestions",
-      query_kind: "personalization_suggestions",
-      schedule_time_window: null,
-      mutation: null,
-    });
-    expect(result.success).toBe(true);
-  });
-
-  it("accepts a well-formed general_conversation response", () => {
-    const result = llmResponseSchema.safeParse({
-      confidence: 0.98,
-      read_only: true,
-      summary: "weigh attending the meeting against resting",
-      query_kind: "general_conversation",
-      schedule_time_window: null,
-      mutation: null,
-    });
-    expect(result.success).toBe(true);
-  });
-
-  it("rejects an unrecognized query_kind", () => {
-    const result = llmResponseSchema.safeParse({
-      confidence: 0.98,
-      read_only: true,
-      summary: "something else",
-      query_kind: "web_search",
-      schedule_time_window: null,
-      mutation: null,
-    });
-    expect(result.success).toBe(false);
   });
 
   it("accepts a well-formed mutating response", () => {
@@ -268,8 +208,6 @@ describe("llmResponseSchema", () => {
       confidence: 0.97,
       read_only: false,
       summary: "delete the course",
-      query_kind: null,
-      schedule_time_window: null,
       mutation: { target_type: "course", operation: "delete", target_id: VALID_TARGET_ID },
     });
     expect(result.success).toBe(true);
