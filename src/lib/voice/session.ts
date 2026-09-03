@@ -69,14 +69,21 @@ async function transition(
   if (!nextState) {
     throw new VoiceSessionInvalidStateError(`Cannot apply voice event "${event}" from state "${fromState}"`);
   }
-  const { data, error } = await supabase
-    .from("voice_sessions")
-    .update({ state: nextState, ...fields })
-    .eq("id", sessionId)
-    .eq("user_id", userId)
-    .eq("state", fromState)
-    .select("id")
-    .maybeSingle();
+  // TEMPORARY perf diagnostic -- see _perf-temp.ts. Every transition() call
+  // is a blocking Supabase round trip on the request's critical path, none
+  // of which showed up in the existing intakeVoiceTurn perf breakdown
+  // (only "transcribe" and "runConversationTurn" were timed) -- this closes
+  // that gap so a real request's log shows where the rest of the time goes.
+  const { data, error } = await timed(`transition (${event})`, async () =>
+    supabase
+      .from("voice_sessions")
+      .update({ state: nextState, ...fields })
+      .eq("id", sessionId)
+      .eq("user_id", userId)
+      .eq("state", fromState)
+      .select("id")
+      .maybeSingle(),
+  );
   if (error) throw error;
   if (!data) {
     throw new VoiceSessionInvalidStateError(
@@ -152,11 +159,9 @@ async function intakeVoiceTurnInner(
   input: VoiceTurnInput,
   deps: VoiceTurnDeps,
 ): Promise<VoiceTurnResult> {
-  const { data: created, error: insertError } = await supabase
-    .from("voice_sessions")
-    .insert({ user_id: userId })
-    .select("id, state")
-    .single();
+  const { data: created, error: insertError } = await timed("insert voice_sessions", async () =>
+    supabase.from("voice_sessions").insert({ user_id: userId }).select("id, state").single(),
+  );
   if (insertError) throw insertError;
   const sessionId = created.id;
 
@@ -188,11 +193,9 @@ async function intakeVoiceTurnInner(
   try {
     transcript =
       "transcript" in input ? input.transcript : await timed("transcribe (STT)", () => deps.transcribe(input.audio, input.mimetype));
-    const { error: transcriptError } = await supabase
-      .from("voice_sessions")
-      .update({ transcript })
-      .eq("id", sessionId)
-      .eq("user_id", userId);
+    const { error: transcriptError } = await timed("update transcript", async () =>
+      supabase.from("voice_sessions").update({ transcript }).eq("id", sessionId).eq("user_id", userId),
+    );
     if (transcriptError) throw transcriptError;
 
     // Deterministic guard, checked before the paid model call: silence (or
@@ -218,7 +221,7 @@ async function intakeVoiceTurnInner(
     // started with, or the very turn that triggered a reset would file
     // itself under the now-closed conversation and corrupt the next turn's
     // history lookup.
-    const { conversationId } = await resolveActiveConversation(supabase, userId);
+    const { conversationId } = await timed("resolveActiveConversation", () => resolveActiveConversation(supabase, userId));
     outcome = await timed("runConversationTurn (merged LLM call)", () =>
       (deps.runConversationTurn ?? runConversationTurn)(supabase, userId, transcript, conversationId),
     );

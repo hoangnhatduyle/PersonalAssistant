@@ -306,6 +306,7 @@ export const runConversationTurn: RunConversationTurnFn = async (supabase, userI
       openai.chat.completions.create({
         model: "gpt-5-mini",
         reasoning_effort: "low",
+        verbosity: "low",
         tools: CONVERSATION_TOOLS,
         tool_choice: forceRespondToUser ? { type: "function", function: { name: "respond_to_user" } } : "required",
         messages,
