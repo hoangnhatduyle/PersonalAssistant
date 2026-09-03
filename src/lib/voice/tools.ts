@@ -97,7 +97,7 @@ export const CONVERSATION_TOOLS = [
     function: {
       name: "lookup_knowledge",
       description:
-        "Search the user's personal knowledge base (saved notes, links, imported documents) for an answer. This tool has no memory of the conversation, so restate the user's question as a focused, self-contained search query using context from the conversation so far.",
+        "Search the user's personal knowledge base (saved notes, links, imported documents) for an answer. This tool has no memory of the conversation, so restate the user's question as a focused, self-contained search query using context from the conversation so far. The entity context you're given elsewhere only lists each saved source's id and title, never its content -- recognizing a title match is a reason to call this tool, not a substitute for calling it. Never tell the user a source has no content, or answer from its title alone, without having called this tool first.",
       strict: true,
       parameters: {
         type: "object",
