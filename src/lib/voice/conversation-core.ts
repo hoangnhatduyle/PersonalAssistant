@@ -10,6 +10,7 @@ import { runSuggestionsLookup } from "@/lib/voice/suggestions-lookup";
 import { loadEntityContext, loadUserTimezone, mutationSchema, toPendingMutation, type EntityContext } from "@/lib/voice/intent";
 import type { PendingMutation } from "@/lib/voice/mutations";
 import { CONVERSATION_TOOLS, type GetScheduleArgs, type LookupKnowledgeArgs, type RespondToUserArgs, type ToolName } from "@/lib/voice/tools";
+import { timed } from "@/lib/voice/_perf-temp";
 
 export interface ConversationAnswer {
   kind: "answer";
@@ -247,11 +248,9 @@ const FINALIZING_TOOL_NAMES = new Set<ToolName>(["respond_to_user", "propose_mut
  * turn or a second model round-trip to get it.
  */
 export const runConversationTurn: RunConversationTurnFn = async (supabase, userId, transcript, conversationId) => {
-  const [history, timezone, context] = await Promise.all([
-    loadConversationHistory(supabase, userId, conversationId),
-    loadUserTimezone(supabase, userId),
-    loadEntityContext(supabase, userId),
-  ]);
+  const [history, timezone, context] = await timed("setup (history+timezone+entityContext)", () =>
+    Promise.all([loadConversationHistory(supabase, userId, conversationId), loadUserTimezone(supabase, userId), loadEntityContext(supabase, userId)]),
+  );
 
   const messages: OpenAI.ChatCompletionMessageParam[] = [
     { role: "system", content: buildSystemPrompt(new Date(), timezone, context) },
@@ -273,12 +272,14 @@ export const runConversationTurn: RunConversationTurnFn = async (supabase, userI
     // below rather than plain message.content, so a final outcome always
     // carries either needs_follow_up or a confidence score -- there's no
     // longer a bare-text final-answer path for either.
-    const completion = await openai.chat.completions.create({
-      model: "gpt-5-mini",
-      tools: CONVERSATION_TOOLS,
-      tool_choice: "required",
-      messages,
-    });
+    const completion = await timed(`openai call (iteration ${iteration})`, () =>
+      openai.chat.completions.create({
+        model: "gpt-5-mini",
+        tools: CONVERSATION_TOOLS,
+        tool_choice: "required",
+        messages,
+      }),
+    );
     const message = completion.choices[0]?.message;
     if (!message || !message.tool_calls || message.tool_calls.length === 0) break;
 
@@ -329,7 +330,9 @@ export const runConversationTurn: RunConversationTurnFn = async (supabase, userI
         });
         continue;
       }
-      const result = await dispatchTool(toolCall, supabase, userId, activeConversationId);
+      const result = await timed(`tool dispatch (${toolCall.function.name})`, () =>
+        dispatchTool(toolCall, supabase, userId, activeConversationId),
+      );
       if (result.newConversationId) activeConversationId = result.newConversationId;
       if (result.citations && result.citations.length > 0) citations = dedupeCitationsBySourceId([...citations, ...result.citations]);
       if (result.extractionLabel) extractionLabel = result.extractionLabel;

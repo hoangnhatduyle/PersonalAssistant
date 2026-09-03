@@ -13,6 +13,7 @@ import { executePendingMutation, type MutationExecutionResult, type PendingMutat
 import type { KnowledgeCitation } from "@/lib/knowledge/retrieval";
 import { resolveActiveConversation } from "@/lib/voice/conversation-memory";
 import { runConversationTurn, type ConversationTurnOutcome, type RunConversationTurnFn } from "@/lib/voice/conversation-core";
+import { timed } from "@/lib/voice/_perf-temp";
 
 export class VoiceSessionNotFoundError extends Error {}
 export class VoiceSessionInvalidStateError extends Error {}
@@ -128,7 +129,24 @@ async function respondWithClarification(
  * src/lib/voice/conversation-core.ts's runConversationTurn (the default
  * when runConversationTurn is omitted from deps).
  */
+// TEMPORARY perf diagnostic wrapper — see _perf-temp.ts. Wraps the real
+// implementation (renamed below) purely to log total wall time across every
+// return path without restructuring each one.
 export async function intakeVoiceTurn(
+  supabase: SupabaseClient<Database>,
+  userId: string,
+  input: VoiceTurnInput,
+  deps: VoiceTurnDeps,
+): Promise<VoiceTurnResult> {
+  const start = Date.now();
+  try {
+    return await intakeVoiceTurnInner(supabase, userId, input, deps);
+  } finally {
+    console.log(`[perf] intakeVoiceTurn total: ${Date.now() - start}ms`);
+  }
+}
+
+async function intakeVoiceTurnInner(
   supabase: SupabaseClient<Database>,
   userId: string,
   input: VoiceTurnInput,
@@ -168,7 +186,8 @@ export async function intakeVoiceTurn(
   let transcript: string;
   let outcome: ConversationTurnOutcome;
   try {
-    transcript = "transcript" in input ? input.transcript : await deps.transcribe(input.audio, input.mimetype);
+    transcript =
+      "transcript" in input ? input.transcript : await timed("transcribe (STT)", () => deps.transcribe(input.audio, input.mimetype));
     const { error: transcriptError } = await supabase
       .from("voice_sessions")
       .update({ transcript })
@@ -200,7 +219,9 @@ export async function intakeVoiceTurn(
     // itself under the now-closed conversation and corrupt the next turn's
     // history lookup.
     const { conversationId } = await resolveActiveConversation(supabase, userId);
-    outcome = await (deps.runConversationTurn ?? runConversationTurn)(supabase, userId, transcript, conversationId);
+    outcome = await timed("runConversationTurn (merged LLM call)", () =>
+      (deps.runConversationTurn ?? runConversationTurn)(supabase, userId, transcript, conversationId),
+    );
   } catch (error) {
     // Previously discarded entirely -- a failed turn left resolved_intent/
     // confidence_score both NULL with no way to tell why from the DB.

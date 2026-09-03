@@ -17,7 +17,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 class FakeAudio {
   onended: (() => void) | null = null;
   onerror: (() => void) | null = null;
-  src = "";
   paused = false;
   playCalls = 0;
   play: () => Promise<void> = () => {
@@ -25,6 +24,21 @@ class FakeAudio {
     this.paused = false;
     return Promise.resolve();
   };
+
+  private _src = "";
+  get src(): string {
+    return this._src;
+  }
+  // A real <audio>.src assignment is what triggers a MediaSource's
+  // "sourceopen" event once the browser attaches it — regression coverage
+  // for exactly the bug this fake used to hide (an earlier version fired
+  // sourceopen unconditionally on registration, so code that awaited it
+  // BEFORE ever assigning audio.src deadlocked in real browsers without
+  // this test suite ever noticing).
+  set src(value: string) {
+    this._src = value;
+    mediaSourceByUrl.get(value)?._notifyAttached();
+  }
 
   constructor() {
     instances.push(this);
@@ -36,15 +50,18 @@ class FakeAudio {
 }
 
 /**
- * jsdom has neither MediaSource nor SourceBuffer. These fakes fire
- * "sourceopen" synchronously on registration (real MediaSource fires it
- * once attached to a media element, which play-audio.ts triggers via
- * audio.src = objectUrl — not worth simulating precisely here) and consume
- * one entry off the shared `appendResultQueue` per appendBuffer() call
- * (defaulting to "success"), firing the corresponding event on a microtask
- * to mirror the real API's asynchrony.
+ * jsdom has neither MediaSource nor SourceBuffer. FakeMediaSource only
+ * fires "sourceopen" once FakeAudio's src setter (above) actually assigns
+ * its object URL — mirroring the real attachment requirement — via the
+ * `mediaSourceByUrl` registry populated by the stubbed URL.createObjectURL
+ * below. FakeSourceBuffer consumes one entry off the shared
+ * `appendResultQueue` per appendBuffer() call (defaulting to "success"),
+ * firing the corresponding event on a microtask to mirror the real API's
+ * asynchrony.
  */
 let appendResultQueue: Array<"success" | "error">;
+let mediaSourceByUrl: Map<string, FakeMediaSource>;
+let objectUrlCounter: number;
 
 class FakeSourceBuffer {
   // appendChunk() always registers "updateend" then "error" for the same
@@ -77,11 +94,22 @@ class FakeSourceBuffer {
 
 class FakeMediaSource {
   static isTypeSupported = vi.fn(() => true);
-  readyState: "open" | "ended" = "open";
+  readyState: "closed" | "open" | "ended" = "closed";
   sourceBuffers: FakeSourceBuffer[] = [];
+  private sourceopenListeners: Array<() => void> = [];
+  private attached = false;
 
   addEventListener(type: "sourceopen" | "error", cb: () => void): void {
-    if (type === "sourceopen") cb();
+    if (type !== "sourceopen") return;
+    if (this.attached) cb();
+    else this.sourceopenListeners.push(cb);
+  }
+
+  /** Called by FakeAudio's src setter once assigned this instance's object URL. */
+  _notifyAttached(): void {
+    this.attached = true;
+    this.readyState = "open";
+    this.sourceopenListeners.splice(0).forEach((cb) => cb());
   }
 
   addSourceBuffer(_mime: string): FakeSourceBuffer {
@@ -116,6 +144,8 @@ let playAudio: typeof import("../play-audio");
 beforeEach(async () => {
   instances = [];
   appendResultQueue = [];
+  mediaSourceByUrl = new Map();
+  objectUrlCounter = 0;
   vi.resetModules();
   // Import before stubbing URL — Vite's own dynamic-import resolution uses
   // the real URL constructor internally, so stubbing it first breaks the
@@ -125,7 +155,11 @@ beforeEach(async () => {
   vi.stubGlobal("MediaSource", FakeMediaSource);
   vi.stubGlobal("URL", {
     ...URL,
-    createObjectURL: vi.fn(() => `blob:${instances.length}`),
+    createObjectURL: vi.fn((obj: unknown) => {
+      const url = `blob:${objectUrlCounter++}`;
+      if (obj instanceof FakeMediaSource) mediaSourceByUrl.set(url, obj);
+      return url;
+    }),
     revokeObjectURL: vi.fn(),
   });
 });
@@ -246,7 +280,11 @@ describe("playAudioStream", () => {
   it("throws and never reaches play() when the first chunk fails to append", async () => {
     appendResultQueue = ["error"];
     await expect(playAudio.playAudioStream(makeStreamResponse([new Uint8Array([1])]))).rejects.toThrow();
-    expect(instances).toHaveLength(0);
+    // The shared <audio> element IS attached before the first chunk (that
+    // attachment is what lets "sourceopen" fire at all — see the fake's
+    // regression coverage above) — but play() itself must never be called
+    // when the first chunk never successfully buffers.
+    expect(instances[0]?.playCalls ?? 0).toBe(0);
   });
 
   it("logs, rather than rejects, when a later (already-playing) chunk fails to append", async () => {

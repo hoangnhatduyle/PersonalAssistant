@@ -78,24 +78,34 @@ function base64ToBlob(base64: string, mimetype: string): Blob {
 }
 
 /**
- * Shared playback contract for both playBase64Audio and playAudioStream:
- * assigns `objectUrl` to the shared <audio> element, wires up
- * play/onended/onerror, and resolves once playback ends. A blocked-autoplay
- * rejection (or any other playback failure) is caught and returned as a
- * non-fatal, typed failure rather than an uncaught rejection — callers must
- * never let this break an already-rendered text response.
+ * Interrupts whatever is currently playing and points the shared <audio>
+ * element at `objectUrl`, without starting playback yet. Split out from
+ * startPlayback() below so playAudioStream can attach a MediaSource object
+ * URL BEFORE waiting for its "sourceopen" event — that event only fires
+ * once a media element's src is actually assigned to it; awaiting it prior
+ * to this assignment deadlocks forever (real MediaSource, unlike a test
+ * double, will never fire the event on an unattached instance).
  */
-function playObjectUrl(objectUrl: string): Promise<{ played: boolean }> {
+function attachObjectUrl(objectUrl: string): HTMLAudioElement {
   releaseCurrent();
-
   const audio = getSharedAudio();
   currentObjectUrl = objectUrl;
   audio.src = objectUrl;
+  return audio;
+}
 
+/**
+ * Wires up play/onended/onerror on an already-attached `audio` element and
+ * resolves once playback ends. A blocked-autoplay rejection (or any other
+ * playback failure) is caught and returned as a non-fatal, typed failure
+ * rather than an uncaught rejection — callers must never let this break an
+ * already-rendered text response.
+ */
+function startPlayback(audio: HTMLAudioElement, objectUrl: string): Promise<{ played: boolean }> {
   return new Promise((resolve) => {
     const finish = (played: boolean) => {
       // Only this playback's own completion/interruption ever clears the
-      // shared slot for it — by the time a later playObjectUrl() call's
+      // shared slot for it — by the time a later attachObjectUrl() call's
       // releaseCurrent() runs, it already resolved this promise via
       // currentFinish?.(false) above, so this check simply no-ops then.
       if (currentObjectUrl === objectUrl) {
@@ -113,7 +123,9 @@ function playObjectUrl(objectUrl: string): Promise<{ played: boolean }> {
 }
 
 export async function playBase64Audio(base64: string, mimetype: string): Promise<{ played: boolean }> {
-  return playObjectUrl(URL.createObjectURL(base64ToBlob(base64, mimetype)));
+  const objectUrl = URL.createObjectURL(base64ToBlob(base64, mimetype));
+  const audio = attachObjectUrl(objectUrl);
+  return startPlayback(audio, objectUrl);
 }
 
 // Matches the audio/mpeg contract POST /api/voice/speak's streaming branch
@@ -154,13 +166,19 @@ function appendChunk(sourceBuffer: SourceBuffer, chunk: Uint8Array): Promise<voi
 /**
  * Streaming counterpart to playBase64Audio for a raw audio/mpeg Response
  * (the streaming branch of POST /api/voice/speak) — same {played} contract,
- * same shared <audio> element, same interrupt semantics, via playObjectUrl.
- * Only ever called after isMediaSourceStreamingSupported() has confirmed
- * support; callers must still catch a rejection here and fall back to the
- * existing playBase64Audio + non-streaming request, since the first chunk
- * (the only failure point that rejects rather than degrades, see below) can
- * still fail for reasons unrelated to MSE support itself (a network error,
- * an empty body).
+ * same shared <audio> element, same interrupt semantics, via
+ * attachObjectUrl/startPlayback. Only ever called after
+ * isMediaSourceStreamingSupported() has confirmed support; callers must
+ * still catch a rejection here and fall back to the existing
+ * playBase64Audio + non-streaming request, since the first chunk (the only
+ * failure point that rejects rather than degrades, see below) can still
+ * fail for reasons unrelated to MSE support itself (a network error, an
+ * empty body).
+ *
+ * Attachment happens BEFORE awaiting "sourceopen": that event only fires
+ * once a media element's src is actually pointed at the MediaSource object
+ * URL, so waiting for it first (as an earlier version of this function did)
+ * deadlocks forever — nothing ever triggers the event.
  *
  * A failure appending a LATER chunk (after playback has already started) is
  * logged and left to degrade the current, already-committed playback rather
@@ -174,6 +192,7 @@ export async function playAudioStream(response: Response): Promise<{ played: boo
 
   const mediaSource = new MediaSource();
   const objectUrl = URL.createObjectURL(mediaSource);
+  const audio = attachObjectUrl(objectUrl);
   await waitForSourceOpen(mediaSource);
   const sourceBuffer = mediaSource.addSourceBuffer(STREAM_MIME_TYPE);
   const reader = response.body.getReader();
@@ -181,7 +200,7 @@ export async function playAudioStream(response: Response): Promise<{ played: boo
   const first = await reader.read();
   if (!first.done) await appendChunk(sourceBuffer, first.value);
 
-  const playResult = playObjectUrl(objectUrl);
+  const playResult = startPlayback(audio, objectUrl);
 
   void (async () => {
     try {
