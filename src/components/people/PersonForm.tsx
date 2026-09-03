@@ -2,11 +2,20 @@
 
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
+import type { z } from "zod";
 import { personPayloadSchema, type PersonPayload } from "@/lib/api/schemas";
 import type { PersonRow } from "@/lib/api/entity-types";
 import { FormField } from "@/components/ui/FormField";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
+
+// personPayloadSchema's relationship field is a transform (empty-string ->
+// null), so its input shape (what the form fields hold before submit) and
+// output shape (PersonPayload, what onSubmit receives) diverge -- react-hook-
+// form's 3-generic useForm<Input, Context, Output> keeps defaultValues typed
+// against the pre-transform input while handleSubmit's callback still gets
+// the post-transform PersonPayload.
+type PersonFormValues = z.input<typeof personPayloadSchema>;
 
 type Props = {
   person?: PersonRow;
@@ -29,11 +38,12 @@ export function PersonForm({ person, existingCount = 0, onSubmit, onCancel, subm
     register,
     handleSubmit,
     formState: { errors, isSubmitting },
-  } = useForm<PersonPayload>({
+  } = useForm<PersonFormValues, unknown, PersonPayload>({
     resolver: zodResolver(personPayloadSchema),
     defaultValues: {
       name: person?.name ?? "",
       color: defaultColor,
+      relationship: person?.relationship ?? "",
     },
   });
 
@@ -41,6 +51,15 @@ export function PersonForm({ person, existingCount = 0, onSubmit, onCancel, subm
     <form onSubmit={handleSubmit(async (values) => onSubmit(values))} className="flex flex-col gap-4" noValidate>
       <FormField label="Name" htmlFor="name" error={errors.name?.message}>
         <Input id="name" placeholder="e.g. Chau" invalid={Boolean(errors.name)} {...register("name")} />
+      </FormField>
+
+      <FormField label="Relationship" htmlFor="relationship" error={errors.relationship?.message}>
+        <Input
+          id="relationship"
+          placeholder="e.g. sister, roommate, coworker"
+          invalid={Boolean(errors.relationship)}
+          {...register("relationship")}
+        />
       </FormField>
 
       <FormField label="Color" htmlFor="color" error={errors.color?.message}>

@@ -159,6 +159,17 @@ const HEX_COLOR_REGEX = /^#[0-9a-fA-F]{6}$/;
 export const personPayloadSchema = z.object({
   name: z.string().trim().min(1),
   color: z.string().regex(HEX_COLOR_REGEX, "Expected #RRGGBB hex color").optional(),
+  // Free-text relationship to the account owner (e.g. "sister", "roommate")
+  // -- max length mirrors the DB check constraint in 0024_people_relationship.sql.
+  // Empty-string submits (an untouched form field) normalize to null here so
+  // PersonForm.tsx needs no extra logic beyond registering the input.
+  relationship: z
+    .string()
+    .trim()
+    .max(60)
+    .nullable()
+    .optional()
+    .transform((v) => (v ? v : null)),
 });
 export type PersonPayload = z.infer<typeof personPayloadSchema>;
 export const personPatchSchema = personPayloadSchema.partial();

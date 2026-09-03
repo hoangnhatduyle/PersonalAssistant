@@ -9,7 +9,14 @@ import { runKnowledgeLookup, type KnowledgeCitation } from "@/lib/knowledge/retr
 import { runSuggestionsLookup } from "@/lib/voice/suggestions-lookup";
 import { loadEntityContext, loadUserTimezone, mutationSchema, toPendingMutation, type EntityContext } from "@/lib/voice/intent";
 import type { PendingMutation } from "@/lib/voice/mutations";
-import { CONVERSATION_TOOLS, type GetScheduleArgs, type LookupKnowledgeArgs, type RespondToUserArgs, type ToolName } from "@/lib/voice/tools";
+import {
+  CONVERSATION_TOOLS,
+  type GetPersonScheduleArgs,
+  type GetScheduleArgs,
+  type LookupKnowledgeArgs,
+  type RespondToUserArgs,
+  type ToolName,
+} from "@/lib/voice/tools";
 import { timed } from "@/lib/voice/_perf-temp";
 
 export interface ConversationAnswer {
@@ -68,6 +75,7 @@ Give practical, honest answers and advice. Consider competing priorities, travel
 
 You have tools to ground your answers in the user's real data, and to act on explicit instructions to change it. Call whichever ones would help, and call more than one in the same turn when the request calls for it:
 - get_schedule: call this for tomorrow, this week, or unscoped/upcoming windows — any question about what is due, scheduled, or upcoming, AND any recommendation/priority question about what to do or focus on ("what should I work on this afternoon?", "what's most urgent?") — call it first to get real data, then reason over the result, rather than guessing at what the user has due. Today's schedule is already provided below under "Today's schedule" — do not call get_schedule with window: "today" again; it would return the exact same data you already have. Only call get_schedule for window: "tomorrow", "week", or "unscoped", or in the rare case you have a specific reason to believe today's data changed since this turn started. Whether the schedule data comes from that pre-loaded block or from calling this tool for another window, it is already grouped by day and sorted by priority (Urgent > High > Medium > Low, with a missing/unset priority treated as Medium for this comparison only — never state that an unset item's priority "is" Medium). This ordering is authoritative and deterministic — never re-rank, second-guess, or invent your own ordering. When multiple items share the same earliest due day, call this out explicitly rather than only naming one: state how many items are due that day, name the highest-priority one or two and say to start there, then briefly summarize the rest of that day's items by count and priority rather than naming every single one individually (e.g. "You have 5 items due today. Homework 1 is High priority, so start there. The other 4 are Medium or lower.") — reserve naming every item by title for a day with only a handful due. When you do name a Deadline or Course To-Do item, include its course or project name for clarity whenever it has one (e.g. "Homework 1 for CS 101"), especially when two items share a similar or identical title across different courses/lists.
+- get_person_schedule: call this instead of get_schedule when the question is about a specific tracked person other than the user themself — by name (e.g. "Châu") or by relationship (e.g. "my sister", "my girlfriend", "is she free right now", "do I need to pick her up"). Match the name/relationship mentioned against the "people" list in the entity context below (each entry has id, name, and relationship) and pass that person's id — never invent an id, and never guess when nothing in the list matches (respond that you don't have anyone tracked under that name/relationship instead). Never combine or compare more than one tracked person's schedule in a single answer unless the user explicitly asks to compare people — a plain "what's the schedule" with no name/relationship mentioned always means the user's own schedule via get_schedule, never a tracked person's.
 - lookup_knowledge: call this when the user asks about material they imported, saved, uploaded, captured, or previously provided ("what did that article say about research paths?", "summarize the notes I saved"), or names/refers to something that sounds like a saved source by its own title or topic. A bare verb in front of it ("test", "check", "look at", "open", "try", "go through") means look it up, not create or change anything. Its answer is already grounded in the user's own saved material — relay it faithfully rather than inventing your own facts, but weave it naturally into the rest of your response rather than just repeating it verbatim out of context. The entity context below lists each Knowledge Source's id and title ONLY, never its saved content — recognizing that a question matches a source's title is what tells you to call this tool, never a reason to skip calling it. Never answer from the title alone, and never tell the user there's "no saved content" without having actually called lookup_knowledge first — you cannot see a source's content any other way.
 - get_personalization_suggestions: call this when the user asks to check the app's generated personalization/reminder-timing suggestions ("check my suggestions", "did the app recommend changing my reminder timing?"). Relay its message near-verbatim — you don't have access to the suggestions' own detail, only the count it reports.
 - start_new_conversation: only when the user explicitly asks to start over, forget what was said before, or begin a new conversation. Never announce that you did it — just continue naturally with whatever else they asked in the same turn.
@@ -93,6 +101,8 @@ Examples:
 - "Create a task to ask IEEE for notes" -> propose_mutation, task create, high confidence.
 - "Should I reach out to IEEE for information in case I miss the meeting?" -> respond_to_user. This is asking whether to act, not instructing the app to create a Task.
 - "Test the bucket list" / "Check out the bucket list" against a Knowledge Source titled "My Girlfriend (Tien) Bucket List" -> lookup_knowledge, then respond_to_user. NOT a Task create — "test" here is the user exercising the lookup feature, not naming a new Task.
+- "What is my sister's schedule today?" (entity context people list has {id: "...", name: "Châu", relationship: "sister"}) -> get_person_schedule with that id and window "today", then respond_to_user. NOT get_schedule — the question is about a tracked person, not the user's own schedule.
+- "Is Tien free right now?" but no person in the entity context has that name or a matching relationship -> respond_to_user explaining no one tracked matches "Tien". NOT a guessed person_id.
 
 Only claim to have looked something up when you actually called a tool for it — never imply a web search or a source you didn't actually retrieve. Only describe having created, changed, cancelled, or acted on something in the same turn you actually call propose_mutation for it — the spoken summary you give there is what gets confirmed, so it must accurately describe the change.
 
@@ -108,11 +118,15 @@ Current time: ${now.toISOString()} (UTC). The user's IANA timezone is ${timezone
 Today's schedule (already loaded — same shape get_schedule returns for other windows; do not call get_schedule with window: "today" again, only for "tomorrow", "week", or "unscoped"):
 ${JSON.stringify(todaySchedule)}
 
-The user's current data, for referencing real ids with propose_mutation or matching a Knowledge Source by title — never invent an id not in this list. knowledgeSources here is id+title only; a title match means call lookup_knowledge for the actual content, not that you already have it:
+The user's current data, for referencing real ids with propose_mutation, get_person_schedule, or matching a Knowledge Source by title — never invent an id not in this list. knowledgeSources here is id+title only; a title match means call lookup_knowledge for the actual content, not that you already have it. \`people\` lists every tracked person's id, name, and relationship (e.g. "sister") for get_person_schedule — match the person the user names or describes by relationship against this list, and never invent a person_id:
 ${JSON.stringify(context)}`;
 }
 
 const getScheduleArgsSchema: z.ZodType<GetScheduleArgs> = z.object({
+  window: z.enum(["today", "tomorrow", "week", "unscoped"]),
+});
+const getPersonScheduleArgsSchema: z.ZodType<GetPersonScheduleArgs> = z.object({
+  person_id: z.uuid(),
   window: z.enum(["today", "tomorrow", "week", "unscoped"]),
 });
 const lookupKnowledgeArgsSchema: z.ZodType<LookupKnowledgeArgs> = z.object({
@@ -197,12 +211,25 @@ async function dispatchTool(
   supabase: SupabaseClient<Database>,
   userId: string,
   conversationId: string,
+  context: EntityContext,
 ): Promise<ToolDispatchResult> {
   const name = toolCall.function.name as ToolName;
   switch (name) {
     case "get_schedule": {
       const args = parseToolArgs(getScheduleArgsSchema, toolCall);
       const result = await loadSchedule(supabase, userId, args.window);
+      return { payload: toScheduleToolPayload(result) };
+    }
+    case "get_person_schedule": {
+      const args = parseToolArgs(getPersonScheduleArgsSchema, toolCall);
+      // Enforcement point for "never invent a person_id" -- the model's
+      // person_id is only trustworthy if it actually came from this turn's
+      // own entity context (which is itself already user_id-scoped), never
+      // from free-form text it composed itself.
+      if (!context.people.some((person) => person.id === args.person_id)) {
+        return { payload: { error: "Unknown person_id — not one of the user's tracked people." } };
+      }
+      const result = await loadSchedule(supabase, userId, args.window, undefined, args.person_id);
       return { payload: toScheduleToolPayload(result) };
     }
     case "lookup_knowledge": {
@@ -370,7 +397,7 @@ export const runConversationTurn: RunConversationTurnFn = async (supabase, userI
       }
 
       const result = await timed(`tool dispatch (${toolCall.function.name})`, () =>
-        dispatchTool(toolCall, supabase, userId, activeConversationId),
+        dispatchTool(toolCall, supabase, userId, activeConversationId, context),
       );
       dispatchedPayloads.set(dedupeKey, result.payload);
       if (result.newConversationId) activeConversationId = result.newConversationId;

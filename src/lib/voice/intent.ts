@@ -107,6 +107,12 @@ export interface EntityContext {
   // as the courses/deadlines/tasks lists above, just enough for the model
   // to match a reference.
   knowledgeSources: Array<{ id: string; title: string }>;
+  // Tracked People (0013_people.sql) the model may resolve "my sister"/
+  // "Châu" against for get_person_schedule's person_id arg -- id + name +
+  // relationship only, never any of that person's own items (those stay
+  // excluded from courses/deadlines/tasks above by the person_id IS NULL
+  // filter, unchanged).
+  people: Array<{ id: string; name: string; relationship: string | null }>;
 }
 
 export async function loadEntityContext(supabase: SupabaseClient<Database>, userId: string): Promise<EntityContext> {
@@ -117,13 +123,20 @@ export async function loadEntityContext(supabase: SupabaseClient<Database>, user
   // tracked person's item by id — mirrors the same filter in
   // src/lib/voice/schedule-loader.ts's loadSchedule and
   // src/app/api/intelligence/route.ts.
-  const [{ data: courses }, { data: deadlines }, { data: tasks }, { data: knowledgeSources }] = await Promise.all([
+  const [{ data: courses }, { data: deadlines }, { data: tasks }, { data: knowledgeSources }, { data: people }] = await Promise.all([
     supabase.from("courses").select("id, name").eq("user_id", userId).is("person_id", null).is("deleted_at", null),
     supabase.from("deadlines").select("id, title, course_id").eq("user_id", userId).is("person_id", null).is("deleted_at", null),
     supabase.from("tasks").select("id, title").eq("user_id", userId).is("person_id", null).is("deleted_at", null),
     supabase.from("knowledge_sources").select("id, title").eq("user_id", userId).eq("status", "Ready"),
+    supabase.from("people").select("id, name, relationship").eq("user_id", userId).is("deleted_at", null),
   ]);
-  return { courses: courses ?? [], deadlines: deadlines ?? [], tasks: tasks ?? [], knowledgeSources: knowledgeSources ?? [] };
+  return {
+    courses: courses ?? [],
+    deadlines: deadlines ?? [],
+    tasks: tasks ?? [],
+    knowledgeSources: knowledgeSources ?? [],
+    people: people ?? [],
+  };
 }
 
 /**

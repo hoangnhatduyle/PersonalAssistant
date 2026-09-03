@@ -136,4 +136,36 @@ describe("loadSchedule", () => {
     expect(courseNames).toContain("My own course");
     expect(courseNames).not.toContain("Sister's course");
   });
+
+  // The inverse of the test above: passing personId (get_person_schedule)
+  // flips the filter to that person's items only, and must exclude the
+  // account owner's own -- the two modes never blend together.
+  it("with a personId, returns only that person's items and excludes the account owner's own", async () => {
+    const { userId: freshUserId, client } = await createAuthenticatedUser();
+    const personId = await createPerson(admin, freshUserId, { name: "Sister" });
+
+    const myCourseId = await createCourse(admin, freshUserId, { name: "My own course" });
+    await createDeadline(admin, freshUserId, myCourseId, { title: "My own deadline due today", due_at: new Date().toISOString() });
+    await createTask(admin, freshUserId, { title: "My own task due today", due_at: new Date().toISOString() });
+
+    const herCourseId = await createCourse(admin, freshUserId, { name: "Sister's course", person_id: personId });
+    await createDeadline(admin, freshUserId, herCourseId, {
+      title: "Sister's deadline due today",
+      due_at: new Date().toISOString(),
+      person_id: personId,
+    });
+    await createTask(admin, freshUserId, { title: "Sister's task due today", due_at: new Date().toISOString(), person_id: personId });
+
+    const result = await loadSchedule(client, freshUserId, "today", undefined, personId);
+
+    const titles = result.scheduleItems.map((item) => item.title);
+    expect(titles).toContain("Sister's deadline due today");
+    expect(titles).toContain("Sister's task due today");
+    expect(titles).not.toContain("My own deadline due today");
+    expect(titles).not.toContain("My own task due today");
+
+    const courseNames = result.courses.map((c) => c.name);
+    expect(courseNames).toContain("Sister's course");
+    expect(courseNames).not.toContain("My own course");
+  });
 });

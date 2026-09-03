@@ -7,6 +7,11 @@ export interface GetScheduleArgs {
   window: ScheduleTimeWindow;
 }
 
+export interface GetPersonScheduleArgs {
+  person_id: string;
+  window: ScheduleTimeWindow;
+}
+
 export interface LookupKnowledgeArgs {
   query: string;
 }
@@ -53,6 +58,7 @@ export type EmptyToolArgs = Record<string, never>;
  * each handler's actual implementation lives where the dispatch switch (2e)
  * reuses an existing function:
  *   get_schedule                     -> loadSchedule (schedule-loader.ts)
+ *   get_person_schedule              -> loadSchedule(..., personId) (schedule-loader.ts)
  *   lookup_knowledge                 -> runKnowledgeLookup (knowledge/retrieval.ts)
  *   get_personalization_suggestions  -> runSuggestionsLookup (suggestions-lookup.ts)
  *   start_new_conversation           -> endConversation + resolveActiveConversation (conversation-memory.ts)
@@ -88,6 +94,28 @@ export const CONVERSATION_TOOLS = [
           },
         },
         required: ["window"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_person_schedule",
+      description:
+        "Look up a specific tracked Person's (not the user's own) Deadlines/Tasks/Courses for a time window -- use when the user asks about someone else by name or relationship (\"my sister's schedule\", \"is Châu free right now\", \"do I need to pick her up\"). person_id MUST be an id from the `people` list in the entity context provided to you -- match it by the person's relationship field or name as mentioned in the request. Never invent a person_id, and never call this for the user's own schedule (use get_schedule for that). If no person in the entity context matches what the user said, do not guess -- call respond_to_user explaining you don't have anyone tracked under that name/relationship.",
+      strict: true,
+      parameters: {
+        type: "object",
+        properties: {
+          person_id: { type: "string", description: "An id from the `people` array in the entity context. Never invented." },
+          window: {
+            type: "string",
+            enum: SCHEDULE_WINDOWS,
+            description: '"today", "tomorrow", "week" (the next 7 days including today), or "unscoped" (no date filter).',
+          },
+        },
+        required: ["person_id", "window"],
         additionalProperties: false,
       },
     },

@@ -40,15 +40,18 @@ vi.mock("@/lib/voice/intent", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/voice/intent")>();
   return {
     ...actual,
-    loadEntityContext: vi.fn().mockResolvedValue({ courses: [], deadlines: [], tasks: [], knowledgeSources: [] }),
+    loadEntityContext: vi.fn().mockResolvedValue({ courses: [], deadlines: [], tasks: [], knowledgeSources: [], people: [] }),
     loadUserTimezone: vi.fn().mockResolvedValue("UTC"),
   };
 });
 
 import { runSuggestionsLookup } from "@/lib/voice/suggestions-lookup";
+import { loadEntityContext } from "@/lib/voice/intent";
 import { runConversationTurn } from "../conversation-core";
 
 const VALID_TARGET_ID = "11111111-1111-4111-8111-111111111111";
+const PERSON_ID = "22222222-2222-4222-8222-222222222222";
+const UNKNOWN_PERSON_ID = "33333333-3333-4333-8333-333333333333";
 const fakeSupabase = {} as SupabaseClient<Database>;
 
 interface FakeToolCall {
@@ -204,5 +207,92 @@ describe("runConversationTurn", () => {
     expect(runSuggestionsLookup).toHaveBeenCalledTimes(1);
     const [thirdCallArgs] = mocks.chatCompletionsCreate.mock.calls[2];
     expect(thirdCallArgs.tool_choice).toEqual({ type: "function", function: { name: "respond_to_user" } });
+  });
+
+  describe("get_person_schedule", () => {
+    it("resolves a person_id present in the entity context and calls loadSchedule scoped to that person", async () => {
+      vi.mocked(loadEntityContext).mockResolvedValueOnce({
+        courses: [],
+        deadlines: [],
+        tasks: [],
+        knowledgeSources: [],
+        people: [{ id: PERSON_ID, name: "Châu", relationship: "sister" }],
+      });
+      mocks.chatCompletionsCreate.mockReset();
+      mocks.chatCompletionsCreate
+        .mockResolvedValueOnce(toolCallResponse([{ id: "call_1", name: "get_person_schedule", arguments: { person_id: PERSON_ID, window: "today" } }]))
+        .mockResolvedValueOnce(
+          toolCallResponse([{ id: "call_2", name: "respond_to_user", arguments: { message: "Châu is free until 3pm.", needs_follow_up: false } }]),
+        );
+
+      const result = await runConversationTurn(fakeSupabase, "user-1", "what is my sister's schedule today?", "conv-1");
+
+      expect(result).toEqual({
+        kind: "answer",
+        message: "Châu is free until 3pm.",
+        needsFollowUp: false,
+        conversationId: "conv-1",
+      });
+      // 1 unconditional "today" prefetch (personId omitted -- the owner's own
+      // schedule) + 1 real get_person_schedule dispatch scoped to PERSON_ID.
+      expect(loadSchedule).toHaveBeenCalledWith(fakeSupabase, "user-1", "today", expect.any(Date));
+      expect(loadSchedule).toHaveBeenCalledWith(fakeSupabase, "user-1", "today", undefined, PERSON_ID);
+    });
+
+    it("still resolves correctly for a person with no relationship set (relationship: null)", async () => {
+      vi.mocked(loadEntityContext).mockResolvedValueOnce({
+        courses: [],
+        deadlines: [],
+        tasks: [],
+        knowledgeSources: [],
+        people: [{ id: PERSON_ID, name: "Châu", relationship: null }],
+      });
+      mocks.chatCompletionsCreate.mockReset();
+      mocks.chatCompletionsCreate
+        .mockResolvedValueOnce(toolCallResponse([{ id: "call_1", name: "get_person_schedule", arguments: { person_id: PERSON_ID, window: "today" } }]))
+        .mockResolvedValueOnce(toolCallResponse([{ id: "call_2", name: "respond_to_user", arguments: { message: "Châu is free.", needs_follow_up: false } }]));
+
+      const result = await runConversationTurn(fakeSupabase, "user-1", "is Châu free today?", "conv-1");
+
+      expect(result).toEqual({ kind: "answer", message: "Châu is free.", needsFollowUp: false, conversationId: "conv-1" });
+      expect(loadSchedule).toHaveBeenCalledWith(fakeSupabase, "user-1", "today", undefined, PERSON_ID);
+    });
+
+    // The concrete regression test for "never let the model invent a
+    // person_id": a person_id absent from this turn's own entity context
+    // must be rejected before ever reaching loadSchedule, regardless of how
+    // the model came up with it.
+    it("rejects a person_id that is not in the entity context, without calling loadSchedule for it", async () => {
+      vi.mocked(loadEntityContext).mockResolvedValueOnce({
+        courses: [],
+        deadlines: [],
+        tasks: [],
+        knowledgeSources: [],
+        people: [{ id: PERSON_ID, name: "Châu", relationship: "sister" }],
+      });
+      mocks.chatCompletionsCreate.mockReset();
+      mocks.chatCompletionsCreate
+        .mockResolvedValueOnce(
+          toolCallResponse([{ id: "call_1", name: "get_person_schedule", arguments: { person_id: UNKNOWN_PERSON_ID, window: "today" } }]),
+        )
+        .mockResolvedValueOnce(
+          toolCallResponse([{ id: "call_2", name: "respond_to_user", arguments: { message: "I don't have anyone tracked under that name.", needs_follow_up: false } }]),
+        );
+
+      const result = await runConversationTurn(fakeSupabase, "user-1", "what is my brother's schedule?", "conv-1");
+
+      expect(result).toEqual({
+        kind: "answer",
+        message: "I don't have anyone tracked under that name.",
+        needsFollowUp: false,
+        conversationId: "conv-1",
+      });
+      expect(loadSchedule).not.toHaveBeenCalledWith(fakeSupabase, "user-1", "today", undefined, UNKNOWN_PERSON_ID);
+      // messages is the same array reference the mock recorded, mutated
+      // further after this call (the respond_to_user assistant message gets
+      // appended on the next iteration) -- at(-2) is this call's own tool
+      // result, at(-1) would be that later, unrelated assistant message.
+      expect(mocks.chatCompletionsCreate.mock.calls[1][0].messages.at(-2).content).toContain("Unknown person_id");
+    });
   });
 });

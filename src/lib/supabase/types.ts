@@ -501,6 +501,7 @@ export type Database = {
           deleted_at: string | null
           id: string
           name: string
+          relationship: string | null
           updated_at: string
           user_id: string
         }
@@ -510,6 +511,7 @@ export type Database = {
           deleted_at?: string | null
           id?: string
           name: string
+          relationship?: string | null
           updated_at?: string
           user_id: string
         }
@@ -519,6 +521,7 @@ export type Database = {
           deleted_at?: string | null
           id?: string
           name?: string
+          relationship?: string | null
           updated_at?: string
           user_id?: string
         }
@@ -1258,6 +1261,7 @@ export type Database = {
           deleted_at: string | null
           id: string | null
           name: string | null
+          relationship: string | null
           updated_at: string | null
           user_id: string | null
         }
@@ -1267,6 +1271,7 @@ export type Database = {
           deleted_at?: string | null
           id?: string | null
           name?: string | null
+          relationship?: string | null
           updated_at?: string | null
           user_id?: string | null
         }
@@ -1276,6 +1281,7 @@ export type Database = {
           deleted_at?: string | null
           id?: string | null
           name?: string | null
+          relationship?: string | null
           updated_at?: string | null
           user_id?: string | null
         }

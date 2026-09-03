@@ -359,4 +359,26 @@ describe("loadEntityContext", () => {
     expect(context.deadlines.map((d) => d.title)).toEqual(["My own deadline"]);
     expect(context.tasks.map((t) => t.title)).toEqual(["My own task"]);
   });
+
+  // Regression for the relationship-aware get_person_schedule feature: the
+  // model needs each tracked Person's id/name/relationship to resolve "my
+  // sister's schedule" to a specific person_id -- a soft-deleted person must
+  // never appear (same 0013_people.sql pattern as the other soft-deletable
+  // entities already excluded elsewhere via .is("deleted_at", null)).
+  it("includes each tracked Person's id/name/relationship, excluding a soft-deleted person", async () => {
+    const { userId, client } = await createAuthenticatedUser();
+    const sisterId = await createPerson(admin, userId, { name: "Châu", relationship: "sister" });
+    const roommateId = await createPerson(admin, userId, { name: "Alex" });
+    await createPerson(admin, userId, { name: "Old Roommate", deleted_at: new Date().toISOString() });
+
+    const context = await loadEntityContext(client, userId);
+
+    expect(context.people).toEqual(
+      expect.arrayContaining([
+        { id: sisterId, name: "Châu", relationship: "sister" },
+        { id: roommateId, name: "Alex", relationship: null },
+      ]),
+    );
+    expect(context.people).toHaveLength(2);
+  });
 });

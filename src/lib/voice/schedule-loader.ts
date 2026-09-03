@@ -57,6 +57,7 @@ export async function loadSchedule(
   userId: string,
   window: ScheduleTimeWindow,
   now: Date = new Date(),
+  personId?: string,
 ): Promise<ScheduleLoadResult> {
   const timezone = await loadUserTimezone(supabase, userId);
   const bounds = resolveScheduleWindowBounds(window, timezone, now);
@@ -65,28 +66,33 @@ export async function loadSchedule(
   // separately as calendar-date strings.
   const dateKeys = resolveScheduleWindowDateKeys(window, timezone, now);
 
-  // person_id IS NULL excludes rows tagged to a tracked Person (0013_people.sql
-  // -- e.g. a family member's courses/tasks/deadlines an account owner tracks
-  // under their own user_id). Mirrors the same filter already applied to
-  // these same three tables in src/app/api/intelligence/route.ts; this
-  // voice-assistant path was added later and never picked up the pattern,
-  // which is what let another tracked person's schedule bleed into "what
-  // should I do today?" answers.
+  // Dual-mode person scoping: with no personId (the account owner's own
+  // schedule -- get_schedule), person_id IS NULL excludes rows tagged to a
+  // tracked Person (0013_people.sql -- e.g. a family member's courses/tasks/
+  // deadlines the owner tracks under their own user_id), mirroring the same
+  // filter in src/app/api/intelligence/route.ts. With a personId (a specific
+  // tracked person's schedule -- get_person_schedule, conversation-core.ts),
+  // the filter flips to person_id = that id instead, so the two modes are
+  // mutually exclusive and never blend the owner's items with a tracked
+  // person's.
   let deadlinesQuery = supabase
     .from("deadlines")
     .select("id, title, due_at, priority, course_id")
     .eq("user_id", userId)
-    .is("person_id", null)
     .is("deleted_at", null)
     .in("status", OPEN_DEADLINE_STATUSES);
+  deadlinesQuery = personId ? deadlinesQuery.eq("person_id", personId) : deadlinesQuery.is("person_id", null);
   let tasksQuery = supabase
     .from("tasks")
     .select("id, title, due_at, priority")
     .eq("user_id", userId)
-    .is("person_id", null)
     .is("deleted_at", null)
     .not("due_at", "is", null)
     .eq("status", "Open");
+  tasksQuery = personId ? tasksQuery.eq("person_id", personId) : tasksQuery.is("person_id", null);
+  // todo_items has no person_id column (0013_people.sql never added one) --
+  // a person-scoped schedule (personId set) never includes todo items,
+  // regardless of window; only the account owner's own todo items exist.
   let todoItemsQuery = supabase
     .from("todo_items")
     .select("id, title, due_date, priority, list_id")
@@ -98,13 +104,13 @@ export async function loadSchedule(
   // each ScheduleItem, plus the richer fields (code/location/meeting_blocks/
   // term) a conversational answer may want to reference -- run alongside
   // the item queries rather than sequentially.
-  const coursesQuery = supabase
+  let coursesQuery = supabase
     .from("courses")
     .select("id, name, code, location, meeting_blocks, term")
     .eq("user_id", userId)
-    .is("person_id", null)
     .is("deleted_at", null)
     .order("name", { ascending: true });
+  coursesQuery = personId ? coursesQuery.eq("person_id", personId) : coursesQuery.is("person_id", null);
   const todoListsQuery = supabase.from("todo_lists").select("id, name").eq("user_id", userId).is("deleted_at", null);
 
   if (bounds && dateKeys) {
