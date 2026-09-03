@@ -27,6 +27,10 @@ vi.mock("@/lib/voice/schedule-loader", () => ({
   }),
 }));
 
+vi.mock("@/lib/voice/suggestions-lookup", () => ({
+  runSuggestionsLookup: vi.fn().mockResolvedValue({ message: "No new suggestions right now." }),
+}));
+
 // loadEntityContext/loadUserTimezone are the two DB-touching calls
 // runConversationTurn makes unconditionally -- mocked so these tests never
 // hit a real Supabase instance. mutationSchema/toPendingMutation are kept
@@ -41,6 +45,7 @@ vi.mock("@/lib/voice/intent", async (importOriginal) => {
   };
 });
 
+import { runSuggestionsLookup } from "@/lib/voice/suggestions-lookup";
 import { runConversationTurn } from "../conversation-core";
 
 const VALID_TARGET_ID = "11111111-1111-4111-8111-111111111111";
@@ -168,5 +173,36 @@ describe("runConversationTurn", () => {
     expect(firstCallArgs.messages[0].content).toContain('do not call get_schedule with window: "today"');
     expect(result).toEqual({ kind: "answer", message: "Submit form is due today.", needsFollowUp: false, conversationId: "conv-1" });
     expect(mocks.chatCompletionsCreate).toHaveBeenCalledTimes(1);
+  });
+
+  // Regression for the observed production bug: a model that repeats the
+  // exact same no-op data-tool call turn after turn (get_personalization_
+  // suggestions called 5x running on a query needing no tool at all) must
+  // not be allowed to ride that out to MAX_TOOL_CALL_ITERATIONS -- the very
+  // next completion after the repeat is caught should have tool_choice
+  // forced to respond_to_user, and the repeated call itself must not incur
+  // a second real dispatch.
+  it("forces respond_to_user on the call right after a repeated identical tool call, without re-dispatching it", async () => {
+    mocks.chatCompletionsCreate.mockReset();
+    mocks.chatCompletionsCreate
+      .mockResolvedValueOnce(toolCallResponse([{ id: "call_1", name: "get_personalization_suggestions", arguments: {} }]))
+      .mockResolvedValueOnce(toolCallResponse([{ id: "call_2", name: "get_personalization_suggestions", arguments: {} }]))
+      .mockResolvedValueOnce(
+        toolCallResponse([{ id: "call_3", name: "respond_to_user", arguments: { message: "You have 2 items due today.", needs_follow_up: false } }]),
+      );
+
+    const result = await runConversationTurn(fakeSupabase, "user-1", "what is due today?", "conv-1");
+
+    expect(result).toEqual({
+      kind: "answer",
+      message: "You have 2 items due today.",
+      needsFollowUp: false,
+      usedPersonalizationSuggestions: true,
+      conversationId: "conv-1",
+    });
+    expect(mocks.chatCompletionsCreate).toHaveBeenCalledTimes(3);
+    expect(runSuggestionsLookup).toHaveBeenCalledTimes(1);
+    const [thirdCallArgs] = mocks.chatCompletionsCreate.mock.calls[2];
+    expect(thirdCallArgs.tool_choice).toEqual({ type: "function", function: { name: "respond_to_user" } });
   });
 });

@@ -274,6 +274,15 @@ export const runConversationTurn: RunConversationTurnFn = async (supabase, userI
   let extractionLabel: "machine_extracted" | undefined;
   let usedPersonalizationSuggestions = false;
 
+  // Keyed by `${tool name}:${raw JSON args}` -- catches a model repeating the
+  // exact same data-tool call (observed: get_personalization_suggestions
+  // called 5 turns running on a query that needed no tool at all) so the
+  // repeat can be answered from cache instead of spending another real
+  // dispatch, and so forceRespondToUser below can end the turn on the very
+  // next iteration rather than riding it out to MAX_TOOL_CALL_ITERATIONS.
+  const dispatchedPayloads = new Map<string, unknown>();
+  let sawRepeatedToolCall = false;
+
   for (let iteration = 0; iteration < MAX_TOOL_CALL_ITERATIONS; iteration++) {
     // No response_format: {type: "json_object"} here -- a departure from
     // every other OpenAI call site in this codebase. tool_choice: "required"
@@ -282,20 +291,23 @@ export const runConversationTurn: RunConversationTurnFn = async (supabase, userI
     // carries either needs_follow_up or a confidence score -- there's no
     // longer a bare-text final-answer path for either.
     //
-    // On the LAST iteration, tool_choice is narrowed to force respond_to_user
-    // specifically (never propose_mutation) -- otherwise a model that keeps
-    // re-calling a data tool right up to the cap (observed: get_schedule
-    // called on all 6 iterations, never finalizing) falls through to the
-    // generic FALLBACK_MESSAGE below instead of a real answer. Forcing
-    // respond_to_user rather than leaving the choice open means it must
-    // compose SOME spoken answer from whatever it already has, and never a
-    // mutation proposal on a forced, possibly-rushed final turn.
+    // On the LAST iteration, and as soon as a repeated tool call is caught,
+    // tool_choice is narrowed to force respond_to_user specifically (never
+    // propose_mutation) -- otherwise a model that keeps re-calling a data
+    // tool right up to the cap (observed: get_schedule called on all 6
+    // iterations, never finalizing) falls through to the generic
+    // FALLBACK_MESSAGE below instead of a real answer. Forcing respond_to_user
+    // rather than leaving the choice open means it must compose SOME spoken
+    // answer from whatever it already has, and never a mutation proposal on a
+    // forced, possibly-rushed final turn.
     const isFinalIteration = iteration === MAX_TOOL_CALL_ITERATIONS - 1;
+    const forceRespondToUser = isFinalIteration || sawRepeatedToolCall;
     const completion = await timed(`openai call (iteration ${iteration})`, () =>
       openai.chat.completions.create({
         model: "gpt-5-mini",
+        reasoning_effort: "low",
         tools: CONVERSATION_TOOLS,
-        tool_choice: isFinalIteration ? { type: "function", function: { name: "respond_to_user" } } : "required",
+        tool_choice: forceRespondToUser ? { type: "function", function: { name: "respond_to_user" } } : "required",
         messages,
       }),
     );
@@ -349,9 +361,17 @@ export const runConversationTurn: RunConversationTurnFn = async (supabase, userI
         });
         continue;
       }
+      const dedupeKey = `${toolCall.function.name}:${toolCall.function.arguments}`;
+      if (dispatchedPayloads.has(dedupeKey)) {
+        sawRepeatedToolCall = true;
+        messages.push({ role: "tool", tool_call_id: toolCall.id, content: JSON.stringify(dispatchedPayloads.get(dedupeKey)) });
+        continue;
+      }
+
       const result = await timed(`tool dispatch (${toolCall.function.name})`, () =>
         dispatchTool(toolCall, supabase, userId, activeConversationId),
       );
+      dispatchedPayloads.set(dedupeKey, result.payload);
       if (result.newConversationId) activeConversationId = result.newConversationId;
       if (result.citations && result.citations.length > 0) citations = dedupeCitationsBySourceId([...citations, ...result.citations]);
       if (result.extractionLabel) extractionLabel = result.extractionLabel;
