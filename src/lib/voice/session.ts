@@ -10,10 +10,9 @@ import {
 } from "@/lib/voice/transitions";
 import { formatCascadeDisclosure, previewCourseDeleteCascade } from "@/lib/voice/cascade-preview";
 import { executePendingMutation, type MutationExecutionResult, type PendingMutation } from "@/lib/voice/mutations";
-import type { ResolveIntentFn, ResolvedIntent } from "@/lib/voice/intent";
 import type { KnowledgeCitation } from "@/lib/knowledge/retrieval";
 import { resolveActiveConversation } from "@/lib/voice/conversation-memory";
-import { runConversationTurn, type RunConversationTurnFn } from "@/lib/voice/conversation-core";
+import { runConversationTurn, type ConversationTurnOutcome, type RunConversationTurnFn } from "@/lib/voice/conversation-core";
 
 export class VoiceSessionNotFoundError extends Error {}
 export class VoiceSessionInvalidStateError extends Error {}
@@ -22,11 +21,9 @@ export class VoiceSessionExpiredError extends Error {}
 export interface TranscribeFn {
   (audio: Buffer, mimetype?: string): Promise<string>;
 }
-export type { ResolveIntentFn };
 
 export interface VoiceTurnDeps {
   transcribe: TranscribeFn;
-  resolveIntent: ResolveIntentFn;
   /** Defaults to src/lib/voice/conversation-core.ts's runConversationTurn when omitted. */
   runConversationTurn?: RunConversationTurnFn;
 }
@@ -125,10 +122,11 @@ async function respondWithClarification(
  * SPEC-VOICE-005 AC-1/AC-2/AC-3, SPEC-API-005 AC-3: one press-to-talk turn,
  * start to finish within a single request except when it lands in
  * AwaitingConfirmation (which a later, separate confirm/decline request
- * resolves). transcribe/resolveIntent are injected so this can be tested
- * without a network call to Deepgram/an LLM — production callers pass
- * src/lib/voice/deepgram.ts's transcribeAudio and
- * src/lib/voice/intent.ts's resolveIntent.
+ * resolves). transcribe/runConversationTurn are injected so this can be
+ * tested without a network call to Deepgram/an LLM — production callers
+ * pass src/lib/voice/deepgram.ts's transcribeAudio and
+ * src/lib/voice/conversation-core.ts's runConversationTurn (the default
+ * when runConversationTurn is omitted from deps).
  */
 export async function intakeVoiceTurn(
   supabase: SupabaseClient<Database>,
@@ -151,17 +149,24 @@ export async function intakeVoiceTurn(
   // transcriber — it is never written to any column. Only the resulting
   // transcript text is persisted below.
   //
-  // Architect-review finding: transcribe()/resolveIntent() are the two
-  // external-network calls in this whole turn (Deepgram, then an LLM) and
-  // the session is already in Transcribing by this point — with no
+  // Architect-review finding, extended by the 2h merge: transcribe() and
+  // the single merged runConversationTurn() call (STT, then the one LLM
+  // call that now decides mutation-vs-read-only AND either answers or
+  // proposes a mutation) are the external-network calls in this whole turn,
+  // and the session is already in Transcribing by this point — with no
   // transition from Transcribing directly to Responding in SPEC-VOICE-005's
   // machine, an uncaught failure here would strand the row until the 24h
   // retention sweep. Route a failure through the same IntentAmbiguous ->
   // Responding path a genuinely-ambiguous intent takes, rather than
-  // throwing — a transient STT/LLM hiccup should read to the user as "I
-  // didn't catch that," not a 500.
+  // throwing — a transient STT/LLM/downstream-tool hiccup should read to
+  // the user as "I didn't catch that," not a 500. (Confirmed tradeoff: this
+  // deliberately no longer distinguishes a plain model hiccup from a
+  // genuine backend/DB error inside a data tool the model called — both
+  // read identically to the user now, matching this stage's own state-
+  // machine semantics; the real error is still logged server-side below
+  // either way.)
   let transcript: string;
-  let intent: ResolvedIntent;
+  let outcome: ConversationTurnOutcome;
   try {
     transcript = "transcript" in input ? input.transcript : await deps.transcribe(input.audio, input.mimetype);
     const { error: transcriptError } = await supabase
@@ -171,10 +176,10 @@ export async function intakeVoiceTurn(
       .eq("user_id", userId);
     if (transcriptError) throw transcriptError;
 
-    // Deterministic guard, checked before the paid resolveIntent() call:
-    // silence (or a transcript Deepgram couldn't get anything from) must
-    // always read back as "I didn't catch that," never depend on the LLM's
-    // own judgment of an empty/blank string — that's what previously let a
+    // Deterministic guard, checked before the paid model call: silence (or
+    // a transcript Deepgram couldn't get anything from) must always read
+    // back as "I didn't catch that," never depend on the LLM's own
+    // judgment of an empty/blank string — that's what previously let a
     // silent capture get misclassified as a real query (e.g.
     // "upcoming_schedule") and read back a full answer instead of asking
     // the user to repeat themselves.
@@ -188,14 +193,21 @@ export async function intakeVoiceTurn(
       });
     }
 
-    intent = await deps.resolveIntent(supabase, userId, transcript);
+    // Conversations are scoped per user account (2a) and the core may
+    // itself close/replace the active one mid-turn (the start_new_conversation
+    // tool) -- always persist outcome.conversationId, not the id this call
+    // started with, or the very turn that triggered a reset would file
+    // itself under the now-closed conversation and corrupt the next turn's
+    // history lookup.
+    const { conversationId } = await resolveActiveConversation(supabase, userId);
+    outcome = await (deps.runConversationTurn ?? runConversationTurn)(supabase, userId, transcript, conversationId);
   } catch (error) {
     // Previously discarded entirely -- a failed turn left resolved_intent/
     // confidence_score both NULL with no way to tell why from the DB.
     // console.error matches this codebase's established server-side error
     // logging convention (see src/lib/api/response.ts, src/lib/voice/
     // elevenlabs.ts, etc. -- no dedicated logger module exists).
-    console.error("intakeVoiceTurn: transcribe/resolveIntent failed", error);
+    console.error("intakeVoiceTurn: transcribe/runConversationTurn failed", error);
     const errorMessage = (error instanceof Error ? error.message : String(error)).slice(0, 500);
     return respondWithClarification(supabase, userId, sessionId, "Sorry, I had trouble processing that — could you try again?", {
       resolved_intent: null,
@@ -206,86 +218,79 @@ export async function intakeVoiceTurn(
     });
   }
 
-  // The confidence bar now gates only the mutation branch — a read-only
-  // intent always proceeds to the conversational core regardless of
-  // intent.confidence (per the "fully conversational" decision; there's no
-  // longer a fixed set of read-only query kinds to be "unsupported").
-  // intent.confidence is still persisted to confidence_score below either
-  // way, for diagnostics.
-  if (!intent.readOnly && !meetsConfidenceBar(intent.confidence)) {
+  if (outcome.kind === "answer") {
+    // query_kind/schedule_time_window stay null for every new row going
+    // forward — routing responsibility moved to conversation-core.ts's own
+    // tool-calling loop, so there's no longer a pre-classified query kind to
+    // record here. The columns stay in the schema, diagnostic-only, per
+    // 0022_voice_session_diagnostics.sql's own framing. resolved_intent/
+    // confidence_score also stay null: a plain answer no longer carries a
+    // numeric confidence the way a mutation proposal does.
+    await transition(supabase, userId, sessionId, "Transcribing", "intent_resolved_high_confidence", {
+      resolved_intent: null,
+      confidence_score: null,
+    });
+    await transition(supabase, userId, sessionId, "IntentResolved", "read_only_query_resolved", {});
+    // Mirrors confirmVoiceSession's execution try/catch: a failure writing
+    // this specific transition must still land the session in Responding
+    // via execution_failed rather than leaving it stuck in Executing until
+    // the 24h retention sweep (code-review finding). This is purely a
+    // DB-write boundary now, not a model-call boundary — the model call
+    // itself already succeeded by this point (its own failures are handled
+    // by the outer try/catch above).
+    try {
+      await transition(supabase, userId, sessionId, "Executing", "execution_completed", {
+        ended_at: new Date().toISOString(),
+        conversation_id: outcome.conversationId,
+        response_message: outcome.message,
+      });
+    } catch (writeError) {
+      await transition(supabase, userId, sessionId, "Executing", "execution_failed", {
+        ended_at: new Date().toISOString(),
+      }).catch(() => {});
+      throw writeError;
+    }
+    return {
+      sessionId,
+      state: "Responding",
+      message: outcome.message,
+      executed: true,
+      data: outcome.message,
+      citations: outcome.citations,
+      extractionLabel: outcome.extractionLabel,
+      needsFollowUp: outcome.needsFollowUp,
+      ...(outcome.usedPersonalizationSuggestions ? { queryKind: "personalization_suggestions" as const } : {}),
+    };
+  }
+
+  // outcome.kind === "mutation_proposal" from here down. The confidence bar
+  // gates only this branch — a plain answer always proceeds regardless of
+  // confidence (per the "fully conversational" decision, unchanged by the
+  // merge). outcome.confidence is still persisted to confidence_score
+  // below either way, for diagnostics.
+  if (!meetsConfidenceBar(outcome.confidence)) {
     return respondWithClarification(supabase, userId, sessionId, `I'm not sure I understood — could you rephrase that? (heard: "${transcript}")`, {
-      resolved_intent: intent.summary,
-      confidence_score: intent.confidence,
+      resolved_intent: outcome.summary,
+      confidence_score: outcome.confidence,
       query_kind: null,
       schedule_time_window: null,
       error_message: null,
     });
   }
 
-  // query_kind/schedule_time_window stay null for every new row going
-  // forward — routing responsibility moved to conversation-core.ts's own
-  // tool-calling loop, so there's no longer a pre-classified query kind to
-  // record here. The columns stay in the schema, diagnostic-only, per
-  // 0022_voice_session_diagnostics.sql's own framing.
   await transition(supabase, userId, sessionId, "Transcribing", "intent_resolved_high_confidence", {
-    resolved_intent: intent.summary,
-    confidence_score: intent.confidence,
+    resolved_intent: outcome.summary,
+    confidence_score: outcome.confidence,
   });
 
-  if (intent.readOnly) {
-    await transition(supabase, userId, sessionId, "IntentResolved", "read_only_query_resolved", {});
-    // Mirrors confirmVoiceSession's execution try/catch: a query failure
-    // must still land the session in Responding via execution_failed rather
-    // than leaving it stuck in Executing until the 24h retention sweep
-    // (code-review finding).
-    try {
-      // SPEC-VOICE-005 NC-VOICE-007/AC-9: every read-only intent hands off
-      // entirely to the tool-calling conversational core -- no more
-      // pre-classified query_kind dispatch chain. Conversations are scoped
-      // per user account (2a) and the core may itself close/replace the
-      // active one mid-turn (the start_new_conversation tool) -- always
-      // persist result.conversationId, not the id this call started with,
-      // or the very turn that triggered a reset would file itself under the
-      // now-closed conversation and corrupt the next turn's history lookup.
-      const { conversationId } = await resolveActiveConversation(supabase, userId);
-      const result = await (deps.runConversationTurn ?? runConversationTurn)(supabase, userId, transcript, conversationId);
-      await transition(supabase, userId, sessionId, "Executing", "execution_completed", {
-        ended_at: new Date().toISOString(),
-        conversation_id: result.conversationId,
-        response_message: result.message,
-      });
-      return {
-        sessionId,
-        state: "Responding",
-        message: result.message,
-        executed: true,
-        data: result.message,
-        citations: result.citations,
-        extractionLabel: result.extractionLabel,
-        ...(result.usedPersonalizationSuggestions ? { queryKind: "personalization_suggestions" as const } : {}),
-      };
-    } catch (queryError) {
-      await transition(supabase, userId, sessionId, "Executing", "execution_failed", {
-        ended_at: new Date().toISOString(),
-      });
-      throw queryError;
-    }
-  }
-
-  // intent.ts's llmResponseSchema guarantees mutation is non-null whenever
-  // read_only is false (review finding: this used to be an unchecked `as
-  // PendingMutation` cast that could crash on a schema-violating response).
-  if (!intent.mutation) {
-    throw new Error("resolveIntent resolved a mutating intent with no mutation payload");
-  }
-  const mutation = intent.mutation;
-  let message = intent.summary;
+  const mutation = outcome.mutation;
+  let message = outcome.summary;
   // SPEC-VOICE-005 AC-8/NC-VOICE-006, Tracked debt: disclose the cascade
   // scope in the prompt itself, before the user confirms — not just in the
   // post-execution result cascadeDeleteCourse later reports.
   if (mutation.targetType === "course" && mutation.operation === "delete") {
     const preview = await previewCourseDeleteCascade(supabase, userId, mutation.targetId);
-    message = `${intent.summary} ${formatCascadeDisclosure(preview)}`;
+    message = `${outcome.summary} ${formatCascadeDisclosure(preview)}`;
   }
 
   await transition(supabase, userId, sessionId, "IntentResolved", "mutating_action_resolved", {

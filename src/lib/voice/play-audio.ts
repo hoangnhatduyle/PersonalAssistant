@@ -78,23 +78,24 @@ function base64ToBlob(base64: string, mimetype: string): Blob {
 }
 
 /**
- * Resolves once playback ends. A blocked-autoplay rejection (or any other
- * playback failure) is caught and returned as a non-fatal, typed failure
- * rather than an uncaught rejection — callers must never let this break an
- * already-rendered text response.
+ * Shared playback contract for both playBase64Audio and playAudioStream:
+ * assigns `objectUrl` to the shared <audio> element, wires up
+ * play/onended/onerror, and resolves once playback ends. A blocked-autoplay
+ * rejection (or any other playback failure) is caught and returned as a
+ * non-fatal, typed failure rather than an uncaught rejection — callers must
+ * never let this break an already-rendered text response.
  */
-export async function playBase64Audio(base64: string, mimetype: string): Promise<{ played: boolean }> {
+function playObjectUrl(objectUrl: string): Promise<{ played: boolean }> {
   releaseCurrent();
 
   const audio = getSharedAudio();
-  const objectUrl = URL.createObjectURL(base64ToBlob(base64, mimetype));
   currentObjectUrl = objectUrl;
   audio.src = objectUrl;
 
   return new Promise((resolve) => {
     const finish = (played: boolean) => {
       // Only this playback's own completion/interruption ever clears the
-      // shared slot for it — by the time a later playBase64Audio() call's
+      // shared slot for it — by the time a later playObjectUrl() call's
       // releaseCurrent() runs, it already resolved this promise via
       // currentFinish?.(false) above, so this check simply no-ops then.
       if (currentObjectUrl === objectUrl) {
@@ -109,4 +110,91 @@ export async function playBase64Audio(base64: string, mimetype: string): Promise
     audio.onerror = () => finish(false);
     audio.play().catch(() => finish(false));
   });
+}
+
+export async function playBase64Audio(base64: string, mimetype: string): Promise<{ played: boolean }> {
+  return playObjectUrl(URL.createObjectURL(base64ToBlob(base64, mimetype)));
+}
+
+// Matches the audio/mpeg contract POST /api/voice/speak's streaming branch
+// promises (src/app/api/voice/speak/route.ts). Support for this exact MIME
+// type in MediaSource is realistically Chromium-only (Firefox has never
+// supported raw MP3 elementary streams in MSE; Safari desktop/iOS don't
+// reliably either) — isMediaSourceStreamingSupported() below is what keeps
+// every other browser silently on the existing playBase64Audio path.
+const STREAM_MIME_TYPE = "audio/mpeg";
+
+export function isMediaSourceStreamingSupported(): boolean {
+  return typeof window !== "undefined" && typeof MediaSource !== "undefined" && MediaSource.isTypeSupported(STREAM_MIME_TYPE);
+}
+
+function waitForSourceOpen(mediaSource: MediaSource): Promise<void> {
+  return new Promise((resolve, reject) => {
+    mediaSource.addEventListener("sourceopen", () => resolve(), { once: true });
+    mediaSource.addEventListener("error", () => reject(new Error("MediaSource error")), { once: true });
+  });
+}
+
+function appendChunk(sourceBuffer: SourceBuffer, chunk: Uint8Array): Promise<void> {
+  return new Promise((resolve, reject) => {
+    sourceBuffer.addEventListener("updateend", () => resolve(), { once: true });
+    sourceBuffer.addEventListener("error", () => reject(new Error("SourceBuffer error")), { once: true });
+    try {
+      // Cast: a fetch body reader's Uint8Array is always ArrayBuffer-backed
+      // at runtime, but its TS type is generic over ArrayBufferLike (which
+      // also covers SharedArrayBuffer) while appendBuffer's BufferSource
+      // requires ArrayBuffer specifically -- a type-only mismatch.
+      sourceBuffer.appendBuffer(chunk as BufferSource);
+    } catch (err) {
+      reject(err instanceof Error ? err : new Error(String(err)));
+    }
+  });
+}
+
+/**
+ * Streaming counterpart to playBase64Audio for a raw audio/mpeg Response
+ * (the streaming branch of POST /api/voice/speak) — same {played} contract,
+ * same shared <audio> element, same interrupt semantics, via playObjectUrl.
+ * Only ever called after isMediaSourceStreamingSupported() has confirmed
+ * support; callers must still catch a rejection here and fall back to the
+ * existing playBase64Audio + non-streaming request, since the first chunk
+ * (the only failure point that rejects rather than degrades, see below) can
+ * still fail for reasons unrelated to MSE support itself (a network error,
+ * an empty body).
+ *
+ * A failure appending a LATER chunk (after playback has already started) is
+ * logged and left to degrade the current, already-committed playback rather
+ * than rejecting this promise — rejecting here would make the caller retry
+ * with a fresh non-streaming request and play a second, duplicate copy of a
+ * clip that mostly already played successfully.
+ */
+export async function playAudioStream(response: Response): Promise<{ played: boolean }> {
+  if (!isMediaSourceStreamingSupported()) throw new Error("MediaSource audio/mpeg streaming not supported");
+  if (!response.body) throw new Error("Streaming response had no body");
+
+  const mediaSource = new MediaSource();
+  const objectUrl = URL.createObjectURL(mediaSource);
+  await waitForSourceOpen(mediaSource);
+  const sourceBuffer = mediaSource.addSourceBuffer(STREAM_MIME_TYPE);
+  const reader = response.body.getReader();
+
+  const first = await reader.read();
+  if (!first.done) await appendChunk(sourceBuffer, first.value);
+
+  const playResult = playObjectUrl(objectUrl);
+
+  void (async () => {
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        await appendChunk(sourceBuffer, value);
+      }
+      if (mediaSource.readyState === "open") mediaSource.endOfStream();
+    } catch (error) {
+      console.error("playAudioStream: background chunk pipe failed", error instanceof Error ? error.message : error);
+    }
+  })();
+
+  return playResult;
 }

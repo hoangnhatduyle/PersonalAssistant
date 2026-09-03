@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { llmResponseSchema, loadUserTimezone, mutationSchema, toPendingMutation } from "../intent";
+import { loadUserTimezone, mutationSchema, toPendingMutation } from "../intent";
 
 const VALID_TARGET_ID = "11111111-1111-4111-8111-111111111111";
 const VALID_COURSE_ID = "22222222-2222-4222-8222-222222222222";
@@ -166,51 +166,6 @@ describe("mutationSchema", () => {
     });
     expect(result.success).toBe(true);
     if (result.success && result.data.target_type === "task") expect(result.data.priority).toBeNull();
-  });
-});
-
-describe("llmResponseSchema", () => {
-  it("rejects read_only: true with a non-null mutation", () => {
-    const result = llmResponseSchema.safeParse({
-      confidence: 0.99,
-      read_only: true,
-      summary: "ok",
-      mutation: { target_type: "course", operation: "delete", target_id: VALID_TARGET_ID },
-    });
-    expect(result.success).toBe(false);
-  });
-
-  it("rejects read_only: false with a null mutation (review finding: this crashed session.ts's old unchecked cast)", () => {
-    const result = llmResponseSchema.safeParse({
-      confidence: 0.99,
-      read_only: false,
-      summary: "ok",
-      mutation: null,
-    });
-    expect(result.success).toBe(false);
-  });
-
-  // 2g: resolveIntent no longer classifies read-only requests into a
-  // query_kind -- every read-only resolution is the same shape now, handled
-  // entirely by the conversational core (src/lib/voice/conversation-core.ts).
-  it("accepts a well-formed read-only response", () => {
-    const result = llmResponseSchema.safeParse({
-      confidence: 0.99,
-      read_only: true,
-      summary: "your upcoming schedule",
-      mutation: null,
-    });
-    expect(result.success).toBe(true);
-  });
-
-  it("accepts a well-formed mutating response", () => {
-    const result = llmResponseSchema.safeParse({
-      confidence: 0.97,
-      read_only: false,
-      summary: "delete the course",
-      mutation: { target_type: "course", operation: "delete", target_id: VALID_TARGET_ID },
-    });
-    expect(result.success).toBe(true);
   });
 });
 

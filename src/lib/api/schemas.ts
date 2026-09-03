@@ -281,5 +281,8 @@ export type UserPreferencesPatch = z.infer<typeof userPreferencesPatchSchema>;
 // paid ElevenLabs/OpenAI call) is ever invoked.
 export const voiceSpeakSchema = z.object({
   text: z.string().trim().min(1).max(MAX_SPEAK_TEXT_CHARS),
+  // When true, POST /api/voice/speak returns a raw streaming audio/mpeg
+  // Response instead of the standard JSON envelope — see route.ts.
+  stream: z.boolean().optional(),
 });
 export type VoiceSpeakPayload = z.infer<typeof voiceSpeakSchema>;

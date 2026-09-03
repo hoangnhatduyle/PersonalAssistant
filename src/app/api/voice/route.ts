@@ -1,14 +1,14 @@
 import { requireAuthenticatedContext } from "@/lib/api/auth";
 import { intakeVoiceTurn } from "@/lib/voice/session";
 import { transcribeAudio } from "@/lib/voice/deepgram";
-import { resolveIntent } from "@/lib/voice/intent";
 import { successResponse, validationErrorResponse, serverErrorResponse } from "@/lib/api/response";
 
 /**
  * POST /api/voice — SPEC-VOICE-005/SPEC-API-005 AC-3: intake one
  * press-to-talk turn. Accepts either a raw `audio/*` body (transcribed via
  * Deepgram) or `{ transcript: string }` JSON (text-mode intake, same
- * pipeline from intent resolution onward).
+ * pipeline from there onward — src/lib/voice/conversation-core.ts's
+ * tool-calling core decides mutation-vs-read-only itself).
  */
 export async function POST(request: Request) {
   const ctx = await requireAuthenticatedContext();
@@ -33,7 +33,6 @@ export async function POST(request: Request) {
   try {
     const turn = await intakeVoiceTurn(supabase, user.id, input, {
       transcribe: transcribeAudio,
-      resolveIntent,
     });
     return successResponse(turn, { status: 201 });
   } catch (error) {

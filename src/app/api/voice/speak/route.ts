@@ -1,7 +1,7 @@
 import { requireAuthenticatedContext } from "@/lib/api/auth";
 import { voiceSpeakSchema } from "@/lib/api/schemas";
 import { successResponse, validationErrorResponse, rateLimitedResponse, serverErrorResponse } from "@/lib/api/response";
-import { synthesizeSpeech } from "@/lib/voice/text-to-speech";
+import { synthesizeSpeech, synthesizeSpeechStream } from "@/lib/voice/text-to-speech";
 import { checkSpeakRateLimit } from "@/lib/voice/rate-limit";
 
 export interface VoiceSpeakResponse {
@@ -27,6 +27,16 @@ export async function POST(request: Request) {
   try {
     const { allowed } = await checkSpeakRateLimit(supabase, user.id);
     if (!allowed) return rateLimitedResponse();
+
+    // Streaming path (NC-API-SPEAK-002 extension): only ever taken when the
+    // client has already feature-detected MediaSource support for
+    // audio/mpeg (src/lib/voice/play-audio.ts's isMediaSourceStreamingSupported)
+    // -- this is the first raw, non-successResponse Response anywhere in
+    // src/app/api, deliberately scoped to only this branch of this route.
+    if (parsed.data.stream) {
+      const stream = await synthesizeSpeechStream(parsed.data.text);
+      return new Response(stream, { status: 200, headers: { "Content-Type": "audio/mpeg", "Cache-Control": "no-store" } });
+    }
 
     const audio = await synthesizeSpeech(parsed.data.text);
     return successResponse<VoiceSpeakResponse>({ audio: audio.toString("base64"), mimetype: "audio/mpeg" });

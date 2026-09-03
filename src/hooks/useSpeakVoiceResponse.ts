@@ -1,6 +1,6 @@
 import { useMutation } from "@tanstack/react-query";
 import { apiFetch } from "@/lib/http/client";
-import { playBase64Audio } from "@/lib/voice/play-audio";
+import { isMediaSourceStreamingSupported, playAudioStream, playBase64Audio } from "@/lib/voice/play-audio";
 import { useToast } from "@/components/ui/Toast";
 import { MAX_SPEAK_TEXT_CHARS } from "@/lib/voice/constants";
 import type { VoiceSpeakResponse } from "@/app/api/voice/speak/route";
@@ -39,7 +39,35 @@ export function useSpeakVoiceResponse() {
   const { showToast } = useToast();
   const mutation = useMutation({
     mutationFn: async (text: string) => {
-      const { data } = await apiFetch<VoiceSpeakResponse>("/api/voice/speak", { method: "POST", body: { text: truncateForSpeech(text) } });
+      const truncated = truncateForSpeech(text);
+
+      // Only attempted when the browser has already confirmed MediaSource
+      // support for audio/mpeg (realistically Chromium-only — see
+      // play-audio.ts). Deliberately bypasses apiFetch, which always calls
+      // response.json() and would throw on an audio body. ANY failure here
+      // (network, non-ok status, wrong content-type, playAudioStream
+      // rejecting) falls through silently to the existing buffered request
+      // below — there is no separate error path for the streaming attempt,
+      // it either succeeds faster or the proven fallback takes over.
+      if (isMediaSourceStreamingSupported()) {
+        try {
+          const response = await fetch("/api/voice/speak", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ text: truncated, stream: true }),
+          });
+          if (!response.ok || !(response.headers.get("Content-Type") ?? "").startsWith("audio/")) {
+            throw new Error(`Streaming speak request failed with status ${response.status}`);
+          }
+          const result = await playAudioStream(response);
+          if (!result.played) showToast("Tap Replay to hear the response", "info");
+          return result;
+        } catch {
+          // Fall through to the buffered path below.
+        }
+      }
+
+      const { data } = await apiFetch<VoiceSpeakResponse>("/api/voice/speak", { method: "POST", body: { text: truncated } });
       const result = await playBase64Audio(data.audio, data.mimetype);
       if (!result.played) {
         showToast("Tap Replay to hear the response", "info");
