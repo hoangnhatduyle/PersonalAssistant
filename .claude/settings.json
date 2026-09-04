@@ -24,7 +24,8 @@
       "mcp__playwright__browser_network_request",
       "Bash(TZ=America/New_York node -e ' *)",
       "Bash(TZ=UTC node -e ' *)",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)"
     ]
   }
 }
