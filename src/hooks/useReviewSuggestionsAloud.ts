@@ -11,7 +11,7 @@ import { classifyYesNo } from "@/lib/voice/yes-no";
 import { resolveTargetTitle } from "@/lib/personalization/target-title";
 import { applyPersonalizationSuggestion, dismissPersonalizationSuggestion } from "@/lib/api/suggestions-client";
 import { courseKeys, personalizationSuggestionKeys, reminderKeys, taskKeys } from "@/lib/query/keys";
-import { CONFIRM_MAX_DURATION_MS, CONFIRM_SILENCE_MS } from "@/lib/voice/constants";
+import { CONFIRM_MAX_DURATION_MS, CONFIRM_SILENCE_MS, SPEAK_TIMEOUT_MS } from "@/lib/voice/constants";
 import type { PersonalizationSuggestionRow } from "@/lib/api/entity-types";
 import type { VoiceTranscribeResponse } from "@/app/api/voice/transcribe/route";
 
@@ -19,6 +19,19 @@ import type { VoiceTranscribeResponse } from "@/app/api/voice/transcribe/route";
 // always settles even if useAutoStopRecorder's onComplete never fires (its
 // documented behavior when no speech is ever detected).
 const LISTEN_TIMEOUT_MS = CONFIRM_MAX_DURATION_MS + 1000;
+
+/**
+ * Races `promise` against a `ms` timer -- resolves "timeout" instead of
+ * hanging forever when `promise` never settles. Used below so a stalled
+ * speakResponse.mutateAsync() (no timeout of its own anywhere in its fetch
+ * chain -- see useSpeakVoiceResponse.ts) can't leave start()'s loop, and
+ * therefore the calling component's own busy state, stuck until a manual
+ * refresh (the confirmed root cause of an intermittently "stuck" Assistant/
+ * Daily Intelligence card).
+ */
+function raceTimeout<T>(promise: Promise<T>, ms: number): Promise<T | "timeout"> {
+  return Promise.race([promise, new Promise<"timeout">((resolve) => setTimeout(() => resolve("timeout"), ms))]);
+}
 
 export interface UseReviewSuggestionsAloudResult {
   /** Speaks each suggestion in order, listens for a yes/no, applies/dismisses accordingly. Stops early on an unclear or absent answer, leaving the rest pending. */
@@ -72,11 +85,16 @@ export function useReviewSuggestionsAloud(): UseReviewSuggestionsAloudResult {
         for (const suggestion of suggestions) {
           const title = resolveTargetTitle(suggestion.scope, suggestion.target_id, courses?.rows ?? [], tasks?.rows ?? []);
           const sentence = `For ${title}, move the reminder lead time from ${suggestion.from_value} to ${suggestion.to_value} minutes. ${suggestion.rationale} Say yes to apply, or no to skip.`;
-          try {
-            await speakResponse.mutateAsync(sentence);
-          } catch {
-            // Toast already surfaced by useSpeakVoiceResponse's onError.
-          }
+          const speakResult = await raceTimeout(
+            speakResponse.mutateAsync(sentence).catch(() => null), // Toast already surfaced by useSpeakVoiceResponse's onError.
+            SPEAK_TIMEOUT_MS,
+          );
+          // A genuinely hung speak call, unlike a fast-failing one, means we
+          // can't be confident the sentence ever played or ever will --
+          // stop reviewing rather than ask the user to answer a question
+          // they may not have heard, or risk the still-pending promise
+          // resolving unexpectedly later.
+          if (speakResult === "timeout") break;
 
           const blob = await listenOnce();
           if (!blob) break; // no answer / mic unavailable — stop, leave the rest pending

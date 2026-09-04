@@ -8,6 +8,13 @@
 export const MAX_SPEAK_TEXT_CHARS = 2000;
 export const SPEAK_RATE_LIMIT_MAX = 20;
 export const SPEAK_RATE_LIMIT_WINDOW_MINUTES = 10;
+// Safety-net cap on a single speak-and-play round trip (useSpeakVoiceResponse,
+// consumed by useReviewSuggestionsAloud's per-suggestion loop) -- generous
+// headroom over real TTS latency for up to MAX_SPEAK_TEXT_CHARS, just a
+// backstop against a hung network/audio call with no timeout of its own
+// leaving the caller (CaptureChannel or DailyIntelligenceCard) stuck busy
+// until a manual refresh.
+export const SPEAK_TIMEOUT_MS = 20_000;
 
 // Auto-stop-on-silence recording (src/hooks/useAutoStopRecorder.ts). Two
 // profiles: a full command (longer grace, longer max) and a short yes/no

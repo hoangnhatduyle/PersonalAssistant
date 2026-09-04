@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { expandBlockInWeek, getNextOccurrence, formatBlocksSummary, formatMinutesOfDay } from "../recurrence";
+import { expandBlockForDateKeys, expandBlockInWeek, getNextOccurrence, formatBlocksSummary, formatMinutesOfDay } from "../recurrence";
 import { makeMeetingBlock } from "./fixtures";
 
 // Sun 2026-01-04 .. Sat 2026-01-10 (exclusive end).
 const WEEK_START = new Date(2026, 0, 4);
 const WEEK_END = new Date(2026, 0, 11);
+// Same week, expressed as date keys (Sun..Sat) for expandBlockForDateKeys.
+const WEEK_DATE_KEYS = ["2026-01-04", "2026-01-05", "2026-01-06", "2026-01-07", "2026-01-08", "2026-01-09", "2026-01-10"];
 
 describe("formatMinutesOfDay", () => {
   it("formats on-the-hour and mid-hour times", () => {
@@ -39,6 +41,34 @@ describe("expandBlockInWeek", () => {
   it("returns nothing when the block's days never occur", () => {
     const block = makeMeetingBlock({ days: [] });
     expect(expandBlockInWeek(block, WEEK_START, WEEK_END, null, null)).toHaveLength(0);
+  });
+});
+
+describe("expandBlockForDateKeys", () => {
+  it("matches a block's weekday across a handful of known dates", () => {
+    // Mon 1/5, Wed 1/7, Fri 1/9 within the week's date keys.
+    const block = makeMeetingBlock({ days: [1, 3, 5], startMinutes: 600, endMinutes: 650 });
+    const occurrences = expandBlockForDateKeys(block, WEEK_DATE_KEYS, null, null);
+    expect(occurrences.map((o) => o.dateKey)).toEqual(["2026-01-05", "2026-01-07", "2026-01-09"]);
+    expect(occurrences.every((o) => o.startMinutes === 600 && o.endMinutes === 650)).toBe(true);
+  });
+
+  it("excludes a date whose weekday isn't in the block's days", () => {
+    const block = makeMeetingBlock({ days: [] });
+    expect(expandBlockForDateKeys(block, WEEK_DATE_KEYS, null, null)).toHaveLength(0);
+  });
+
+  it("excludes dates outside [recurrence_start_date, recurrence_end_date]", () => {
+    const block = makeMeetingBlock({ days: [1, 3, 5] });
+    // Range starts on Wed 1/7, so only Wed/Fri remain.
+    const occurrences = expandBlockForDateKeys(block, WEEK_DATE_KEYS, "2026-01-07", null);
+    expect(occurrences.map((o) => o.dateKey)).toEqual(["2026-01-07", "2026-01-09"]);
+  });
+
+  it("excludes dates after recurrence_end_date", () => {
+    const block = makeMeetingBlock({ days: [1, 3, 5] });
+    const occurrences = expandBlockForDateKeys(block, WEEK_DATE_KEYS, null, "2026-01-06");
+    expect(occurrences.map((o) => o.dateKey)).toEqual(["2026-01-05"]);
   });
 });
 

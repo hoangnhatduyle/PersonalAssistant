@@ -17,7 +17,14 @@
       "mcp__playwright__browser_click",
       "mcp__playwright__browser_select_option",
       "mcp__playwright__browser_network_requests",
-      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:3000 --max-time 2)"
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:3000 --max-time 2)",
+      "Bash(node -e \"console.log\\(require\\('@supabase/supabase-js'\\).createClient ? 'ok' : 'missing'\\)\")",
+      "Bash(node -e ' *)",
+      "Bash(node --experimental-strip-types -e \"console.log\\('ok'\\)\")",
+      "mcp__playwright__browser_network_request",
+      "Bash(TZ=America/New_York node -e ' *)",
+      "Bash(TZ=UTC node -e ' *)",
+      "Bash(git add *)"
     ]
   }
 }

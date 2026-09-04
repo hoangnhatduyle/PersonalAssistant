@@ -1,15 +1,27 @@
 import type OpenAI from "openai";
-import type { ScheduleTimeWindow } from "@/lib/voice/schedule-time-window";
 
-const SCHEDULE_WINDOWS: readonly ScheduleTimeWindow[] = ["today", "tomorrow", "week", "unscoped"];
+// Deliberately narrower than the internal ScheduleTimeWindow
+// (schedule-time-window.ts) -- "today"/"tomorrow" are NOT included here, so
+// the type system itself keeps them unreachable from a model tool call. The
+// model resolves any relative date itself (see each tool's `date`
+// description below) and passes window: "date" with the resolved date,
+// exactly the way due_at is already resolved for a mutation. "today" stays
+// reachable only via the internal preload call in conversation-core.ts,
+// which never goes through these tool schemas.
+export type ModelFacingScheduleWindow = "date" | "week" | "unscoped";
+const SCHEDULE_WINDOWS: readonly ModelFacingScheduleWindow[] = ["date", "week", "unscoped"];
 
 export interface GetScheduleArgs {
-  window: ScheduleTimeWindow;
+  window: ModelFacingScheduleWindow;
+  /** Required (non-null) only when window is "date" -- YYYY-MM-DD, model-resolved. Null otherwise. */
+  date: string | null;
 }
 
 export interface GetPersonScheduleArgs {
   person_id: string;
-  window: ScheduleTimeWindow;
+  window: ModelFacingScheduleWindow;
+  /** Required (non-null) only when window is "date" -- YYYY-MM-DD, model-resolved. Null otherwise. */
+  date: string | null;
 }
 
 export interface LookupKnowledgeArgs {
@@ -86,7 +98,7 @@ export const CONVERSATION_TOOLS = [
     function: {
       name: "get_schedule",
       description:
-        'Look up the user\'s Deadlines, Tasks, and open Course To-Do / custom-project items due within a time window. Returns structured data already grouped by day and sorted by priority -- narrate it yourself in prose, never invent your own ordering, and never re-rank it. Today\'s schedule (window: "today") is already provided to you in the system prompt -- only call this tool for "tomorrow", "week", or "unscoped".',
+        'Look up the user\'s Deadlines, Tasks, open Course To-Do / custom-project items, Course meeting/class occurrences, and planned Deadline work Sessions due or happening within a time window. Returns structured data already grouped by day and sorted by priority -- narrate it yourself in prose, never invent your own ordering, and never re-rank it. Today\'s schedule (window: "date", date: today) is already provided to you in the system prompt -- do not call this tool for today again. Call it with window: "date" for any other single day (resolve "yesterday", "tomorrow", "3 days ago", "next Tuesday", etc. into a YYYY-MM-DD date yourself first, the same way you resolve due_at for a mutation), or window: "week"/"unscoped" for a range.',
       strict: true,
       parameters: {
         type: "object",
@@ -95,10 +107,15 @@ export const CONVERSATION_TOOLS = [
             type: "string",
             enum: SCHEDULE_WINDOWS,
             description:
-              '"today", "tomorrow", "week" (the next 7 days including today), or "unscoped" (no date filter -- the next few upcoming items of each kind).',
+              '"date" (a single specific day -- pass the resolved date below), "week" (the next 7 days including today), or "unscoped" (no date filter -- the next few upcoming items of each kind).',
+          },
+          date: {
+            type: ["string", "null"],
+            description:
+              'Required (non-null) only when window is "date": the calendar date to look up, as YYYY-MM-DD in the user\'s own timezone. Resolve the user\'s relative-date phrasing ("today", "yesterday", "3 days ago", "next Tuesday") into this date yourself, using the current time and timezone given to you below -- the same way you already resolve due_at when creating a Task or Deadline. Null when window is "week" or "unscoped".',
           },
         },
-        required: ["window"],
+        required: ["window", "date"],
         additionalProperties: false,
       },
     },
@@ -108,7 +125,7 @@ export const CONVERSATION_TOOLS = [
     function: {
       name: "get_person_schedule",
       description:
-        "Look up a specific tracked Person's (not the user's own) Deadlines/Tasks/Courses for a time window -- use when the user asks about someone else by name or relationship (\"my sister's schedule\", \"is Châu free right now\", \"do I need to pick her up\"). person_id MUST be an id from the `people` list in the entity context provided to you -- match it by the person's relationship field or name as mentioned in the request. Never invent a person_id, and never call this for the user's own schedule (use get_schedule for that). If no person in the entity context matches what the user said, do not guess -- call respond_to_user explaining you don't have anyone tracked under that name/relationship.",
+        "Look up a specific tracked Person's (not the user's own) schedule for a time window -- use when the user asks about someone else by name or relationship (\"my sister's schedule\", \"is Châu free right now\", \"do I need to pick her up\"). Returns ONLY that Person's Course meeting/class occurrences and Tasks -- never Deadlines (a tracked Person is never assigned a Deadline directly in this product) and never Course To-Do items (those only ever belong to the account owner). Don't be surprised if a Person's day looks sparser than the user's own -- that's expected, not a sign something is missing. person_id MUST be an id from the `people` list in the entity context provided to you -- match it by the person's relationship field or name as mentioned in the request. Never invent a person_id, and never call this for the user's own schedule (use get_schedule for that). If no person in the entity context matches what the user said, do not guess -- call respond_to_user explaining you don't have anyone tracked under that name/relationship.",
       strict: true,
       parameters: {
         type: "object",
@@ -117,10 +134,15 @@ export const CONVERSATION_TOOLS = [
           window: {
             type: "string",
             enum: SCHEDULE_WINDOWS,
-            description: '"today", "tomorrow", "week" (the next 7 days including today), or "unscoped" (no date filter).',
+            description: '"date" (a single specific day -- pass the resolved date below), "week" (the next 7 days including today), or "unscoped" (no date filter).',
+          },
+          date: {
+            type: ["string", "null"],
+            description:
+              'Required (non-null) only when window is "date": the calendar date to look up, as YYYY-MM-DD in the user\'s own timezone -- resolve relative phrasing ("yesterday", "3 days ago", "next Tuesday") yourself the same way you resolve due_at. Null when window is "week" or "unscoped".',
           },
         },
-        required: ["person_id", "window"],
+        required: ["person_id", "window", "date"],
         additionalProperties: false,
       },
     },

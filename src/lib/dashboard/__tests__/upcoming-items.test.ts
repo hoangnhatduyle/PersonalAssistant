@@ -176,7 +176,11 @@ describe("filterUpcomingItemsByTimeWindow", () => {
   });
 
   it("includes the next seven calendar days in 7 Days", () => {
-    const items = [itemAt("today", "2026-09-01T08:00:00"), itemAt("day-7", "2026-09-08T08:00:00"), itemAt("day-8", "2026-09-09T08:00:00")];
-    expect(filterUpcomingItemsByTimeWindow(items, "7days", now).map((item) => item.id)).toEqual(["today", "day-7"]);
+    // "7days" is a 7-calendar-day span: today (offset 0) through 6 days out,
+    // inclusive -- day-6 (Sep 7) is the last included day, day-7 (Sep 8) is
+    // the first excluded one. Mirrors the "3days" test's own boundary
+    // pattern above (day-2 included, day-3 excluded for a 3-day span).
+    const items = [itemAt("today", "2026-09-01T08:00:00"), itemAt("day-6", "2026-09-07T08:00:00"), itemAt("day-7", "2026-09-08T08:00:00")];
+    expect(filterUpcomingItemsByTimeWindow(items, "7days", now).map((item) => item.id)).toEqual(["today", "day-6"]);
   });
 });

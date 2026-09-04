@@ -19,7 +19,12 @@
 // day-bucketing a spoken schedule summary; not acceptable for exact
 // reminder-firing math (this module is never used for that).
 
-export type ScheduleTimeWindow = "today" | "tomorrow" | "week" | "unscoped";
+// "date" is deliberately not model-facing on its own (see tools.ts's
+// narrower ModelFacingScheduleWindow) -- it requires the explicitDateKey
+// param below on both resolvers. "today"/"tomorrow" stay for the internal
+// preload call (conversation-core.ts) and their existing tests; nothing
+// forces deleting them just because the model can no longer request them.
+export type ScheduleTimeWindow = "today" | "tomorrow" | "week" | "unscoped" | "date";
 
 export interface ScheduleWindowBounds {
   /** Inclusive lower bound, UTC ISO 8601. */
@@ -65,7 +70,7 @@ function partsToUtcMillis(parts: ZonedParts): number {
 }
 
 /** The UTC instant that reads as `year-month-day 00:00:00` local wall-clock time in `timeZone`. */
-function localMidnightUtc(year: number, month: number, day: number, timeZone: string): Date {
+export function localMidnightUtc(year: number, month: number, day: number, timeZone: string): Date {
   const guessMillis = Date.UTC(year, month - 1, day, 0, 0, 0);
   const guessDate = new Date(guessMillis);
   const partsAtGuess = partsInZone(guessDate, timeZone);
@@ -110,13 +115,35 @@ function windowOffsetAndSpanDays(window: "today" | "tomorrow" | "week"): { offse
   }
 }
 
-/** Returns null for "unscoped" (no filtering — the legacy/default behavior). */
+/**
+ * Returns null for "unscoped" (no filtering — the legacy/default behavior).
+ * `explicitDateKey` ("YYYY-MM-DD") is required when `window` is "date" —
+ * the caller (schedule-loader.ts, fed by the model-resolved `date` tool
+ * argument) always supplies it in that case; anything else is a programmer
+ * error, not a user-input validation concern (that's the tool's zod schema's
+ * job in conversation-core.ts).
+ */
 export function resolveScheduleWindowBounds(
   window: ScheduleTimeWindow,
   timezone: string,
   now: Date = new Date(),
+  explicitDateKey?: string,
 ): ScheduleWindowBounds | null {
   if (window === "unscoped") return null;
+
+  if (window === "date") {
+    if (!explicitDateKey) throw new Error('resolveScheduleWindowBounds: explicitDateKey is required when window is "date"');
+    const [year, month, day] = explicitDateKey.split("-").map(Number);
+    // Two independent localMidnightUtc calls (rather than +DAY_MS offset
+    // arithmetic) so each day boundary gets its own correctly-observed
+    // timezone offset -- exact across a DST transition, unlike the
+    // offset-based branch below (which accepts that approximation, per this
+    // file's header comment, only because it's always anchored to "now").
+    return {
+      startUtcIso: localMidnightUtc(year, month, day, timezone).toISOString(),
+      endUtcIsoExclusive: localMidnightUtc(year, month, day + 1, timezone).toISOString(),
+    };
+  }
 
   const nowParts = partsInZone(now, timezone);
   const todayMidnight = localMidnightUtc(nowParts.year, nowParts.month, nowParts.day, timezone);
@@ -146,14 +173,27 @@ function dateKey(year: number, month: number, day: number): string {
  * column (e.g. todo_items.due_date), which has no time-of-day/timezone
  * component to convert. Pure calendar-day arithmetic (never converts back
  * through a real timezone), so unlike the instant-based resolver above this
- * has no DST edge case at all. Returns null for "unscoped".
+ * has no DST edge case at all. Returns null for "unscoped". Same
+ * `explicitDateKey` contract as resolveScheduleWindowBounds above.
  */
 export function resolveScheduleWindowDateKeys(
   window: ScheduleTimeWindow,
   timezone: string,
   now: Date = new Date(),
+  explicitDateKey?: string,
 ): ScheduleWindowDateKeys | null {
   if (window === "unscoped") return null;
+
+  if (window === "date") {
+    if (!explicitDateKey) throw new Error('resolveScheduleWindowDateKeys: explicitDateKey is required when window is "date"');
+    const [year, month, day] = explicitDateKey.split("-").map(Number);
+    const start = Date.UTC(year, month - 1, day);
+    const end = new Date(start + DAY_MS);
+    return {
+      startDateKey: explicitDateKey,
+      endDateKeyExclusive: dateKey(end.getUTCFullYear(), end.getUTCMonth() + 1, end.getUTCDate()),
+    };
+  }
 
   const { year, month, day } = partsInZone(now, timezone);
   // Date.UTC/getUTC* here are pure calendar-day arithmetic on a Y-M-D
@@ -168,4 +208,34 @@ export function resolveScheduleWindowDateKeys(
     startDateKey: dateKey(start.getUTCFullYear(), start.getUTCMonth() + 1, start.getUTCDate()),
     endDateKeyExclusive: dateKey(end.getUTCFullYear(), end.getUTCMonth() + 1, end.getUTCDate()),
   };
+}
+
+/**
+ * Every calendar date key from `startDateKey` (inclusive) to
+ * `endDateKeyExclusive` (exclusive), as "YYYY-MM-DD" strings. Pure
+ * Date.UTC-arithmetic walk, same "UTC as an arbitrary fixed-offset clock"
+ * technique as the rest of this file's date-key functions. Used by
+ * schedule-loader.ts to turn a resolved window into the concrete list of
+ * days to expand a course's recurring meeting_blocks across.
+ */
+export function enumerateDateKeys(startDateKey: string, endDateKeyExclusive: string): string[] {
+  const [startYear, startMonth, startDay] = startDateKey.split("-").map(Number);
+  const endMs = (() => {
+    const [year, month, day] = endDateKeyExclusive.split("-").map(Number);
+    return Date.UTC(year, month - 1, day);
+  })();
+
+  const keys: string[] = [];
+  for (let cursorMs = Date.UTC(startYear, startMonth - 1, startDay); cursorMs < endMs; cursorMs += DAY_MS) {
+    const cursor = new Date(cursorMs);
+    keys.push(dateKey(cursor.getUTCFullYear(), cursor.getUTCMonth() + 1, cursor.getUTCDate()));
+  }
+  return keys;
+}
+
+/** `dateKey` shifted by `days` (may be negative) — same Date.UTC-arithmetic technique as the rest of this file. */
+export function addDaysToDateKey(startDateKey: string, days: number): string {
+  const [year, month, day] = startDateKey.split("-").map(Number);
+  const shifted = new Date(Date.UTC(year, month - 1, day + days));
+  return dateKey(shifted.getUTCFullYear(), shifted.getUTCMonth() + 1, shifted.getUTCDate());
 }

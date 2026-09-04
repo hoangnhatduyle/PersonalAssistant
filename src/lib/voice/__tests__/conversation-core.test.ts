@@ -21,10 +21,12 @@ vi.mock("@/lib/voice/conversation-memory", () => ({
 
 vi.mock("@/lib/voice/schedule-loader", () => ({
   loadSchedule: vi.fn().mockResolvedValue({ rankedSchedule: [], courses: [] }),
-  toScheduleToolPayload: (result: { rankedSchedule: unknown; courses: unknown }) => ({
-    rankedSchedule: result.rankedSchedule,
-    courses: result.courses,
-  }),
+  // Mirrors the real implementation's model-facing shape: courses is
+  // deliberately dropped here too (see schedule-loader.ts's doc comment on
+  // toScheduleToolPayload -- a confirmed hallucination source, not just
+  // dead weight) so a test asserting on this mock's output shape reflects
+  // reality.
+  toScheduleToolPayload: (result: { rankedSchedule: unknown }) => ({ rankedSchedule: result.rankedSchedule }),
 }));
 
 vi.mock("@/lib/voice/suggestions-lookup", () => ({
@@ -127,7 +129,7 @@ describe("runConversationTurn", () => {
     mocks.chatCompletionsCreate
       .mockResolvedValueOnce(
         toolCallResponse([
-          { id: "call_1", name: "get_schedule", arguments: { window: "today" } },
+          { id: "call_1", name: "get_schedule", arguments: { window: "date", date: "2026-09-05" } },
           { id: "call_2", name: "propose_mutation", arguments: validProposeMutationArgs },
         ]),
       )
@@ -142,9 +144,10 @@ describe("runConversationTurn", () => {
       conversationId: "conv-1",
     });
     expect(mocks.chatCompletionsCreate).toHaveBeenCalledTimes(2);
-    // 1 unconditional prefetch in setup + 1 real model-issued get_schedule("today")
-    // call in the batch above -- the deliberate graceful-fallback path, not a
-    // hard rejection, so it still dispatches and costs a real DB round-trip.
+    // 1 unconditional prefetch in setup + 1 real model-issued get_schedule
+    // (window "date") call in the batch above -- the deliberate
+    // graceful-fallback path, not a hard rejection, so it still dispatches
+    // and costs a real DB round-trip.
     expect(loadSchedule).toHaveBeenCalledTimes(2);
   });
 
@@ -173,9 +176,15 @@ describe("runConversationTurn", () => {
     expect(loadSchedule).toHaveBeenCalledWith(fakeSupabase, "user-1", "today", expect.any(Date));
     const [firstCallArgs] = mocks.chatCompletionsCreate.mock.calls[0];
     expect(firstCallArgs.messages[0].content).toContain("Submit form");
-    expect(firstCallArgs.messages[0].content).toContain('do not call get_schedule with window: "today"');
+    expect(firstCallArgs.messages[0].content).toContain("never call get_schedule for today again");
+    // Regression guard for a real observed hallucination: the model carried
+    // a recurring class forward from an earlier turn's answer into a day it
+    // didn't actually meet on. Just asserts the guarding instruction is
+    // present in the built prompt -- LLM behavior itself isn't unit-testable.
+    expect(firstCallArgs.messages[0].content).toContain("never add an item that isn't actually present in the specific result");
     expect(result).toEqual({ kind: "answer", message: "Submit form is due today.", needsFollowUp: false, conversationId: "conv-1" });
     expect(mocks.chatCompletionsCreate).toHaveBeenCalledTimes(1);
+    expect(firstCallArgs.reasoning_effort).toBe("low");
   });
 
   // Regression for the observed production bug: a model that repeats the
@@ -207,6 +216,9 @@ describe("runConversationTurn", () => {
     expect(runSuggestionsLookup).toHaveBeenCalledTimes(1);
     const [thirdCallArgs] = mocks.chatCompletionsCreate.mock.calls[2];
     expect(thirdCallArgs.tool_choice).toEqual({ type: "function", function: { name: "respond_to_user" } });
+    for (const [callArgs] of mocks.chatCompletionsCreate.mock.calls) {
+      expect(callArgs.reasoning_effort).toBe("low");
+    }
   });
 
   describe("get_person_schedule", () => {
@@ -220,7 +232,9 @@ describe("runConversationTurn", () => {
       });
       mocks.chatCompletionsCreate.mockReset();
       mocks.chatCompletionsCreate
-        .mockResolvedValueOnce(toolCallResponse([{ id: "call_1", name: "get_person_schedule", arguments: { person_id: PERSON_ID, window: "today" } }]))
+        .mockResolvedValueOnce(
+          toolCallResponse([{ id: "call_1", name: "get_person_schedule", arguments: { person_id: PERSON_ID, window: "date", date: "2026-09-03" } }]),
+        )
         .mockResolvedValueOnce(
           toolCallResponse([{ id: "call_2", name: "respond_to_user", arguments: { message: "Châu is free until 3pm.", needs_follow_up: false } }]),
         );
@@ -236,7 +250,9 @@ describe("runConversationTurn", () => {
       // 1 unconditional "today" prefetch (personId omitted -- the owner's own
       // schedule) + 1 real get_person_schedule dispatch scoped to PERSON_ID.
       expect(loadSchedule).toHaveBeenCalledWith(fakeSupabase, "user-1", "today", expect.any(Date));
-      expect(loadSchedule).toHaveBeenCalledWith(fakeSupabase, "user-1", "today", undefined, PERSON_ID);
+      expect(loadSchedule).toHaveBeenCalledWith(fakeSupabase, "user-1", "date", expect.any(Date), PERSON_ID, "2026-09-03");
+      expect(mocks.chatCompletionsCreate.mock.calls[0][0].reasoning_effort).toBe("low");
+      expect(mocks.chatCompletionsCreate.mock.calls[1][0].reasoning_effort).toBe("low");
     });
 
     it("still resolves correctly for a person with no relationship set (relationship: null)", async () => {
@@ -249,13 +265,15 @@ describe("runConversationTurn", () => {
       });
       mocks.chatCompletionsCreate.mockReset();
       mocks.chatCompletionsCreate
-        .mockResolvedValueOnce(toolCallResponse([{ id: "call_1", name: "get_person_schedule", arguments: { person_id: PERSON_ID, window: "today" } }]))
+        .mockResolvedValueOnce(
+          toolCallResponse([{ id: "call_1", name: "get_person_schedule", arguments: { person_id: PERSON_ID, window: "date", date: "2026-09-03" } }]),
+        )
         .mockResolvedValueOnce(toolCallResponse([{ id: "call_2", name: "respond_to_user", arguments: { message: "Châu is free.", needs_follow_up: false } }]));
 
       const result = await runConversationTurn(fakeSupabase, "user-1", "is Châu free today?", "conv-1");
 
       expect(result).toEqual({ kind: "answer", message: "Châu is free.", needsFollowUp: false, conversationId: "conv-1" });
-      expect(loadSchedule).toHaveBeenCalledWith(fakeSupabase, "user-1", "today", undefined, PERSON_ID);
+      expect(loadSchedule).toHaveBeenCalledWith(fakeSupabase, "user-1", "date", expect.any(Date), PERSON_ID, "2026-09-03");
     });
 
     // The concrete regression test for "never let the model invent a
@@ -273,7 +291,9 @@ describe("runConversationTurn", () => {
       mocks.chatCompletionsCreate.mockReset();
       mocks.chatCompletionsCreate
         .mockResolvedValueOnce(
-          toolCallResponse([{ id: "call_1", name: "get_person_schedule", arguments: { person_id: UNKNOWN_PERSON_ID, window: "today" } }]),
+          toolCallResponse([
+            { id: "call_1", name: "get_person_schedule", arguments: { person_id: UNKNOWN_PERSON_ID, window: "date", date: "2026-09-03" } },
+          ]),
         )
         .mockResolvedValueOnce(
           toolCallResponse([{ id: "call_2", name: "respond_to_user", arguments: { message: "I don't have anyone tracked under that name.", needs_follow_up: false } }]),
@@ -287,7 +307,7 @@ describe("runConversationTurn", () => {
         needsFollowUp: false,
         conversationId: "conv-1",
       });
-      expect(loadSchedule).not.toHaveBeenCalledWith(fakeSupabase, "user-1", "today", undefined, UNKNOWN_PERSON_ID);
+      expect(loadSchedule).not.toHaveBeenCalledWith(fakeSupabase, "user-1", "date", expect.any(Date), UNKNOWN_PERSON_ID, "2026-09-03");
       // messages is the same array reference the mock recorded, mutated
       // further after this call (the respond_to_user assistant message gets
       // appended on the next iteration) -- at(-2) is this call's own tool

@@ -76,13 +76,17 @@ const CONVERSATION_SYSTEM_PROMPT = `You are an ongoing, conversational personal 
 Give practical, honest answers and advice. Consider competing priorities, travel or transition time, energy, wellbeing, deadlines, and the cost of missing something when they are relevant. Do not simply validate the user's preferred conclusion: identify trade-offs, challenge weak assumptions, and state uncertainty when important information is missing.
 
 You have tools to ground your answers in the user's real data, and to act on explicit instructions to change it. Call whichever ones would help, and call more than one in the same turn when the request calls for it:
-- get_schedule: call this for tomorrow, this week, or unscoped/upcoming windows — any question about what is due, scheduled, or upcoming, AND any recommendation/priority question about what to do or focus on ("what should I work on this afternoon?", "what's most urgent?") — call it first to get real data, then reason over the result, rather than guessing at what the user has due. Today's schedule is already provided below under "Today's schedule" — do not call get_schedule with window: "today" again; it would return the exact same data you already have. Only call get_schedule for window: "tomorrow", "week", or "unscoped", or in the rare case you have a specific reason to believe today's data changed since this turn started. Whether the schedule data comes from that pre-loaded block or from calling this tool for another window, it is already grouped by day and sorted by priority (Urgent > High > Medium > Low, with a missing/unset priority treated as Medium for this comparison only — never state that an unset item's priority "is" Medium). This ordering is authoritative and deterministic — never re-rank, second-guess, or invent your own ordering. When multiple items share the same earliest due day, call this out explicitly rather than only naming one: state how many items are due that day, name the highest-priority one or two and say to start there, then briefly summarize the rest of that day's items by count and priority rather than naming every single one individually (e.g. "You have 5 items due today. Homework 1 is High priority, so start there. The other 4 are Medium or lower.") — reserve naming every item by title for a day with only a handful due. When you do name a Deadline or Course To-Do item, include its course or project name for clarity whenever it has one (e.g. "Homework 1 for CS 101"), especially when two items share a similar or identical title across different courses/lists.
-- get_person_schedule: call this instead of get_schedule when the question is about a specific tracked person other than the user themself — by name (e.g. "Châu") or by relationship (e.g. "my sister", "my girlfriend", "is she free right now", "do I need to pick her up"). Match the name/relationship mentioned against the "people" list in the entity context below (each entry has id, name, and relationship) and pass that person's id — never invent an id, and never guess when nothing in the list matches (respond that you don't have anyone tracked under that name/relationship instead). Never combine or compare more than one tracked person's schedule in a single answer unless the user explicitly asks to compare people — a plain "what's the schedule" with no name/relationship mentioned always means the user's own schedule via get_schedule, never a tracked person's.
+- get_schedule: any question about what is due, scheduled, or upcoming for the user's OWN Deadlines, Tasks, Course To-Do items, Course meeting/class times, and planned Deadline work Sessions, AND any recommendation/priority question about what to do or focus on ("what should I work on this afternoon?", "what's most urgent?") — call it first to get real data, then reason over the result, rather than guessing at what the user has due. Today's schedule is already provided below under "Today's schedule" — never call get_schedule for today again, it would return the exact same data you already have. For any other single day (a specific date, "yesterday", "tomorrow", "3 days ago", "next Tuesday", etc.), resolve it into a YYYY-MM-DD date yourself first — the same way you already resolve due_at for a mutation — then call get_schedule with window: "date" and that date. Use window: "week" or "unscoped" for a range instead of a single day. Whether the schedule data comes from that pre-loaded block or from calling this tool, it is already grouped by day and sorted by priority (Urgent > High > Medium > Low, with a missing/unset priority treated as Medium for this comparison only — never state that an unset item's priority "is" Medium). This ordering is authoritative and deterministic — never re-rank, second-guess, or invent your own ordering. When multiple items share the same earliest due day, call this out explicitly rather than only naming one: state how many items are due that day, name the highest-priority one or two and say to start there, then briefly summarize the rest of that day's items by count and priority rather than naming every single one individually (e.g. "You have 5 items due today. Homework 1 is High priority, so start there. The other 4 are Medium or lower.") — reserve naming every item by title for a day with only a handful due. When you do name a Deadline or Course To-Do item, include its course or project name for clarity whenever it has one (e.g. "Homework 1 for CS 101"), especially when two items share a similar or identical title across different courses/lists.
+- get_person_schedule: call this instead of get_schedule when the question is about a specific tracked person other than the user themself — by name (e.g. "Châu") or by relationship (e.g. "my sister", "my girlfriend", "is she free right now", "do I need to pick her up"). Match the name/relationship mentioned against the "people" list in the entity context below (each entry has id, name, and relationship) and pass that person's id — never invent an id, and never guess when nothing in the list matches (respond that you don't have anyone tracked under that name/relationship instead). It returns ONLY that person's Course meeting/class occurrences and Tasks — never Deadlines and never Course To-Do items (those concepts don't apply to a tracked Person in this app), so don't be surprised if their day looks sparser than the user's own for the same window — that's expected, not missing data. Same date-resolution rule as get_schedule: window "date" needs a resolved YYYY-MM-DD date; "week"/"unscoped" don't. Never combine or compare more than one tracked person's schedule in a single answer unless the user explicitly asks to compare people — a plain "what's the schedule" with no name/relationship mentioned always means the user's own schedule via get_schedule, never a tracked person's.
 - lookup_knowledge: call this when the user asks about material they imported, saved, uploaded, captured, or previously provided ("what did that article say about research paths?", "summarize the notes I saved"), or names/refers to something that sounds like a saved source by its own title or topic. A bare verb in front of it ("test", "check", "look at", "open", "try", "go through") means look it up, not create or change anything. Its answer is already grounded in the user's own saved material — relay it faithfully rather than inventing your own facts, but weave it naturally into the rest of your response rather than just repeating it verbatim out of context. The entity context below lists each Knowledge Source's id and title ONLY, never its saved content — recognizing that a question matches a source's title is what tells you to call this tool, never a reason to skip calling it. Never answer from the title alone, and never tell the user there's "no saved content" without having actually called lookup_knowledge first — you cannot see a source's content any other way.
-- get_personalization_suggestions: call this when the user asks to check the app's generated personalization/reminder-timing suggestions ("check my suggestions", "did the app recommend changing my reminder timing?"). Relay its message near-verbatim — you don't have access to the suggestions' own detail, only the count it reports.
+- get_personalization_suggestions: call this when the user asks to check the app's generated personalization/reminder-timing suggestions ("check my suggestions", "did the app recommend changing my reminder timing?"). It runs synchronously and its result is already final by the time you see it — there is nothing left "in progress." Relay its message near-verbatim as your actual answer via respond_to_user; never say something like "checking now" or "let me look into that" instead of the real message — that phrasing describes work you haven't done, since the tool has already run and returned by that point.
 - get_deadline_progress: call this when the user asks about planned-session progress toward a specific Deadline ("how much progress on Homework 1", "how many sessions do I have left", "did I finish my sessions for the project"). Match the deadline mentioned by title against the "deadlines" list in the entity context below and pass that deadline's id — never invent an id, and never guess when nothing in the list matches (respond that you don't have a matching deadline instead). Relay its message near-verbatim.
 - start_new_conversation: only when the user explicitly asks to start over, forget what was said before, or begin a new conversation. Never announce that you did it — just continue naturally with whatever else they asked in the same turn.
 - propose_mutation: call this when the user gives a clear instruction to change app data — create/update/delete a Deadline, Task, or Note; delete a Course; acknowledge/dismiss/snooze a Reminder. Call it alone, never alongside another tool call, and never in the same turn as respond_to_user. See "Deciding whether something is a mutation" below for when something is or isn't really a command — read it carefully, since acting on a data change the user didn't actually ask for is a much worse mistake than asking a question is.
+
+When you narrate a schedule (from the pre-loaded Today's schedule block or a get_schedule/get_person_schedule result), account for every item across every kind due or happening in the window you're describing — Deadlines, Tasks, Course To-Do items, and Course meetings alike. Never silently drop an item because it doesn't fit how you phrased the summary — e.g. describing a group as "to-dos" and then only naming todo-kind items while a Task due the same day goes unmentioned. If you summarize by count rather than naming every item, that count must include every item actually present.
+
+Equally, never add an item that isn't actually present in the specific result you're narrating. Each get_schedule/get_person_schedule call — and the pre-loaded Today's schedule block — describes only the exact window/date it was requested for. A Course meeting or other item you mentioned in an earlier turn's answer, or that appeared in a different window's result (e.g. a weekly class listed several times in a "what's coming up" answer), does not carry forward into a new answer unless a fresh tool result for THIS window actually contains it — a recurring class does not meet on every day just because it met on some other day you saw earlier. When in doubt about whether something recurs on the specific day being asked about, trust only the tool result for that day, never a pattern you're inferring from memory of an earlier turn. If rankedSchedule is an empty array in the result you're narrating, that means literally nothing is due or scheduled in that window — say so plainly (e.g. "Nothing scheduled on the 7th"); an empty result is never a reason to reach into an earlier turn's answer or your own knowledge of a recurring pattern to fill in an item anyway, even one you are confident recurs weekly.
 
 You must end every turn that isn't a mutation by calling respond_to_user with your final message — never answer with plain text outside a tool call. Call it alone, only once you already have every piece of information you need from any data tools called earlier in the same turn. Set needs_follow_up to true only when your message asks the user a question or presents an explicit choice that expects a reply next (e.g. offering two next steps and asking which they'd like); set it to false for a complete answer, even a friendly one that ends by inviting further questions without actually needing one to continue.
 
@@ -104,7 +108,7 @@ Examples:
 - "Create a task to ask IEEE for notes" -> propose_mutation, task create, high confidence.
 - "Should I reach out to IEEE for information in case I miss the meeting?" -> respond_to_user. This is asking whether to act, not instructing the app to create a Task.
 - "Test the bucket list" / "Check out the bucket list" against a Knowledge Source titled "My Girlfriend (Tien) Bucket List" -> lookup_knowledge, then respond_to_user. NOT a Task create — "test" here is the user exercising the lookup feature, not naming a new Task.
-- "What is my sister's schedule today?" (entity context people list has {id: "...", name: "Châu", relationship: "sister"}) -> get_person_schedule with that id and window "today", then respond_to_user. NOT get_schedule — the question is about a tracked person, not the user's own schedule.
+- "What is my sister's schedule today?" (entity context people list has {id: "...", name: "Châu", relationship: "sister"}) -> get_person_schedule with that id, window "date", and date resolved to today's date from the current time/timezone below, then respond_to_user. NOT get_schedule — the question is about a tracked person, not the user's own schedule. NOT the pre-loaded Today's schedule block either — that's always the user's own data, never hers.
 - "Is Tien free right now?" but no person in the entity context has that name or a matching relationship -> respond_to_user explaining no one tracked matches "Tien". NOT a guessed person_id.
 
 Only claim to have looked something up when you actually called a tool for it — never imply a web search or a source you didn't actually retrieve. Only describe having created, changed, cancelled, or acted on something in the same turn you actually call propose_mutation for it — the spoken summary you give there is what gets confirmed, so it must accurately describe the change.
@@ -116,22 +120,35 @@ Keep your response concise enough to be comfortably spoken aloud — aim for wel
 function buildSystemPrompt(now: Date, timezone: string, context: EntityContext, todaySchedule: ScheduleToolPayload): string {
   return `${CONVERSATION_SYSTEM_PROMPT}
 
-Current time: ${now.toISOString()} (UTC). The user's IANA timezone is ${timezone} — resolve any relative date/time phrase ("today", "this afternoon", "tomorrow", "5pm") against that timezone, not UTC. Resolve a time-of-day phrase to that time in the user's timezone, then convert it to an ISO datetime string with that timezone's correct UTC offset for that instant — never assume UTC or guess at today's date.
+Current time: ${now.toISOString()} (UTC). The user's IANA timezone is ${timezone} — resolve any relative date/time phrase ("today", "this afternoon", "tomorrow", "5pm") against that timezone, not UTC. Resolve a time-of-day phrase to that time in the user's timezone, then convert it to an ISO datetime string with that timezone's correct UTC offset for that instant — never assume UTC or guess at today's date. The same resolution applies to get_schedule/get_person_schedule's \`date\` argument when window is "date": resolve the user's relative-date phrase into a plain YYYY-MM-DD calendar date in this timezone, the same way you resolve due_at.
 
-Today's schedule (already loaded — same shape get_schedule returns for other windows; do not call get_schedule with window: "today" again, only for "tomorrow", "week", or "unscoped"):
+Today's schedule (already loaded — same shape get_schedule returns for other windows; never call get_schedule for today again). This is exclusively the user's own data, never a tracked Person's — never use it to answer a question about a tracked Person; only an actual get_person_schedule result may describe what a Person has going on:
 ${JSON.stringify(todaySchedule)}
 
 The user's current data, for referencing real ids with propose_mutation, get_person_schedule, or matching a Knowledge Source by title — never invent an id not in this list. knowledgeSources here is id+title only; a title match means call lookup_knowledge for the actual content, not that you already have it. \`people\` lists every tracked person's id, name, and relationship (e.g. "sister") for get_person_schedule — match the person the user names or describes by relationship against this list, and never invent a person_id:
 ${JSON.stringify(context)}`;
 }
 
-const getScheduleArgsSchema: z.ZodType<GetScheduleArgs> = z.object({
-  window: z.enum(["today", "tomorrow", "week", "unscoped"]),
-});
-const getPersonScheduleArgsSchema: z.ZodType<GetPersonScheduleArgs> = z.object({
-  person_id: z.uuid(),
-  window: z.enum(["today", "tomorrow", "week", "unscoped"]),
-});
+// `date` is required (non-null) iff window is "date" -- same per-branch
+// required-field enforcement idiom mutationSchema already uses in intent.ts.
+function requireDateWhenWindowIsDate(value: { window: string; date: string | null }, ctx: z.RefinementCtx): void {
+  if (value.window === "date" && !value.date) {
+    ctx.addIssue({ code: "custom", message: 'date is required when window is "date"', path: ["date"] });
+  }
+}
+const getScheduleArgsSchema: z.ZodType<GetScheduleArgs> = z
+  .object({
+    window: z.enum(["date", "week", "unscoped"]),
+    date: z.iso.date().nullable(),
+  })
+  .superRefine(requireDateWhenWindowIsDate);
+const getPersonScheduleArgsSchema: z.ZodType<GetPersonScheduleArgs> = z
+  .object({
+    person_id: z.uuid(),
+    window: z.enum(["date", "week", "unscoped"]),
+    date: z.iso.date().nullable(),
+  })
+  .superRefine(requireDateWhenWindowIsDate);
 const lookupKnowledgeArgsSchema: z.ZodType<LookupKnowledgeArgs> = z.object({
   query: z.string().trim().min(1),
 });
@@ -218,12 +235,13 @@ async function dispatchTool(
   userId: string,
   conversationId: string,
   context: EntityContext,
+  now: Date,
 ): Promise<ToolDispatchResult> {
   const name = toolCall.function.name as ToolName;
   switch (name) {
     case "get_schedule": {
       const args = parseToolArgs(getScheduleArgsSchema, toolCall);
-      const result = await loadSchedule(supabase, userId, args.window);
+      const result = await loadSchedule(supabase, userId, args.window, now, undefined, args.date ?? undefined);
       return { payload: toScheduleToolPayload(result) };
     }
     case "get_person_schedule": {
@@ -235,7 +253,7 @@ async function dispatchTool(
       if (!context.people.some((person) => person.id === args.person_id)) {
         return { payload: { error: "Unknown person_id — not one of the user's tracked people." } };
       }
-      const result = await loadSchedule(supabase, userId, args.window, undefined, args.person_id);
+      const result = await loadSchedule(supabase, userId, args.window, now, args.person_id, args.date ?? undefined);
       return { payload: toScheduleToolPayload(result) };
     }
     case "lookup_knowledge": {
@@ -348,6 +366,15 @@ export const runConversationTurn: RunConversationTurnFn = async (supabase, userI
     const completion = await timed(`openai call (iteration ${iteration})`, () =>
       openai.chat.completions.create({
         model: "gpt-5-mini",
+        // A schedule-narration hallucination once observed here (the model
+        // fabricating a class meeting not in its own tool result) was
+        // traced to the tool payload leaking a course-name list the model
+        // over-trusted, NOT to reasoning_effort -- escalating to "medium"
+        // was tried and did not stop it, and cost several extra seconds per
+        // call besides. Fixed at the payload layer instead (see
+        // toScheduleToolPayload's doc comment in schedule-loader.ts); "low"
+        // effort is verified correct post-fix and keeps the full pipeline
+        // comfortably under the product's ~10s response-time budget.
         reasoning_effort: "low",
         verbosity: "low",
         tools: CONVERSATION_TOOLS,
@@ -413,7 +440,7 @@ export const runConversationTurn: RunConversationTurnFn = async (supabase, userI
       }
 
       const result = await timed(`tool dispatch (${toolCall.function.name})`, () =>
-        dispatchTool(toolCall, supabase, userId, activeConversationId, context),
+        dispatchTool(toolCall, supabase, userId, activeConversationId, context, now),
       );
       dispatchedPayloads.set(dedupeKey, result.payload);
       if (result.newConversationId) activeConversationId = result.newConversationId;

@@ -61,6 +61,38 @@ export function expandBlockInWeek(
 }
 
 /**
+ * For an explicit list of calendar dates ("YYYY-MM-DD" keys, caller-resolved
+ * — this function does no timezone reasoning of its own), which of them a
+ * block actually meets on, respecting [rangeStart, rangeEnd]. Unlike
+ * expandBlockInWeek, this deliberately never constructs a Date from a real
+ * timezone-anchored instant and calls local getters on it (that reads the
+ * SERVER PROCESS's own timezone, not the user's -- the exact bug class
+ * schedule-time-window.ts's header comment warns about). Day-of-week is
+ * instead derived via Date.UTC + getUTCDay() on the bare Y-M-D triple --
+ * "UTC" here is just an arbitrary fixed-offset calendar clock, mirroring
+ * resolveScheduleWindowDateKeys's own technique, never a timezone claim.
+ * Used server-side by schedule-loader.ts; expandBlockInWeek remains the
+ * right tool for build-week-events.ts's client-side (browser-local-time)
+ * usage and is untouched.
+ */
+export function expandBlockForDateKeys(
+  block: MeetingBlock,
+  dateKeys: string[],
+  rangeStart: string | null,
+  rangeEnd: string | null,
+): Array<{ dateKey: string; startMinutes: number; endMinutes: number }> {
+  const occurrences: Array<{ dateKey: string; startMinutes: number; endMinutes: number }> = [];
+  for (const dateKey of dateKeys) {
+    if (!isWithinRange(dateKey, rangeStart, rangeEnd)) continue;
+    const [year, month, day] = dateKey.split("-").map(Number);
+    const dayOfWeek = new Date(Date.UTC(year, month - 1, day)).getUTCDay();
+    if (!block.days.includes(dayOfWeek)) continue;
+    occurrences.push({ dateKey, startMinutes: block.startMinutes, endMinutes: block.endMinutes });
+  }
+  return occurrences;
+}
+
+/**
  * Nearest occurrence on/after referenceDate across every block, respecting
  * the date range. Scans day-by-day up to a year out rather than solving the
  * day-of-week arithmetic directly — recurrences are always a handful of
