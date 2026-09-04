@@ -1,9 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch, toQueryString } from "@/lib/http/client";
-import { deadlineKeys, reminderKeys } from "@/lib/query/keys";
+import { appointmentKeys, deadlineKeys, reminderKeys } from "@/lib/query/keys";
 import type { DeadlinePatch, DeadlinePayload } from "@/lib/api/schemas";
 import type { DeadlineRow } from "@/lib/api/entity-types";
 import type { DeadlineTransitionEvent } from "@/lib/api/transitions";
+
+export interface DeadlineDeleteResult {
+  id: string;
+  cascade: { sessionsAffected: number; remindersDismissed: number };
+}
 
 export interface DeadlineListFilters {
   courseId?: string;
@@ -71,14 +76,15 @@ export function useTransitionDeadline(id: string) {
 export function useDeleteDeadline(id: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    // No cascade block: only the deadline's own reminder is silently
-    // dismissed by a DB trigger, nothing cross-entity to disclose.
-    mutationFn: async () => (await apiFetch<{ id: string }>(`/api/deadlines/${id}`, { method: "DELETE" })).data,
+    // Cascades to the deadline's live Sessions (appointments), which are
+    // soft-deleted, not unlinked — see soft_delete_deadline_cascade.
+    mutationFn: async () => (await apiFetch<DeadlineDeleteResult>(`/api/deadlines/${id}`, { method: "DELETE" })).data,
     onSuccess: () => {
       // Removed, not just invalidated — see useDeleteTask's onSuccess for why.
       queryClient.removeQueries({ queryKey: deadlineKeys.detail(id) });
       queryClient.invalidateQueries({ queryKey: deadlineKeys.all });
       queryClient.invalidateQueries({ queryKey: reminderKeys.all });
+      queryClient.invalidateQueries({ queryKey: appointmentKeys.all });
     },
   });
 }

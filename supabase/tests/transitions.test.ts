@@ -5,6 +5,7 @@ import {
   createCourse,
   createDeadline,
   createReminder,
+  createSession,
   createTask,
   createVoiceSession,
   walkTransitions,
@@ -59,6 +60,29 @@ describe("transition-guard trigger", () => {
       const { error } = await admin.from("voice_sessions").insert({
         user_id: userId,
         state: "Executing",
+      });
+      expect(error).not.toBeNull();
+    });
+
+    it("rejects a session appointment inserted with a non-planned session_status", async () => {
+      const deadlineId = await createDeadline(admin, userId, courseId);
+      const { error } = await admin.from("appointments").insert({
+        user_id: userId,
+        title: "Bad session insert",
+        date: new Date().toISOString().slice(0, 10),
+        category: "Session",
+        deadline_id: deadlineId,
+        session_status: "done",
+      });
+      expect(error).not.toBeNull();
+    });
+
+    it("rejects a non-session appointment inserted with a non-null session_status", async () => {
+      const { error } = await admin.from("appointments").insert({
+        user_id: userId,
+        title: "Bad regular insert",
+        date: new Date().toISOString().slice(0, 10),
+        session_status: "planned",
       });
       expect(error).not.toBeNull();
     });
@@ -156,5 +180,103 @@ describe("transition-guard trigger", () => {
       const { error } = await admin.from("voice_sessions").update({ state: "Executing" }).eq("id", id);
       expect(error).not.toBeNull();
     });
+
+    it("[session_status] rejects done -> planned", async () => {
+      const deadlineId = await createDeadline(admin, userId, courseId);
+      const id = await createSession(admin, userId, deadlineId);
+      await walkTransitions(admin, "appointments", id, "session_status", ["done"]);
+      const { error } = await admin.from("appointments").update({ session_status: "planned" }).eq("id", id);
+      expect(error).not.toBeNull();
+    });
+
+    it("[session_status] rejects skipped -> planned", async () => {
+      const deadlineId = await createDeadline(admin, userId, courseId);
+      const id = await createSession(admin, userId, deadlineId);
+      await walkTransitions(admin, "appointments", id, "session_status", ["skipped"]);
+      const { error } = await admin.from("appointments").update({ session_status: "planned" }).eq("id", id);
+      expect(error).not.toBeNull();
+    });
+
+    it("[session_status] accepts the three legal edges: planned->done, planned->skipped, skipped->done", async () => {
+      const deadlineId = await createDeadline(admin, userId, courseId);
+
+      const doneId = await createSession(admin, userId, deadlineId);
+      const { error: plannedToDoneError } = await admin.from("appointments").update({ session_status: "done" }).eq("id", doneId);
+      expect(plannedToDoneError).toBeNull();
+
+      const skippedId = await createSession(admin, userId, deadlineId);
+      const { error: plannedToSkippedError } = await admin
+        .from("appointments")
+        .update({ session_status: "skipped" })
+        .eq("id", skippedId);
+      expect(plannedToSkippedError).toBeNull();
+
+      const makeUpId = await createSession(admin, userId, deadlineId);
+      await walkTransitions(admin, "appointments", makeUpId, "session_status", ["skipped", "done"]);
+      const { data: makeUpSession } = await admin.from("appointments").select("session_status").eq("id", makeUpId).single();
+      expect(makeUpSession?.session_status).toBe("done");
+    });
+  });
+});
+
+// Traces: supabase/migrations/0025_deadline_sessions.sql's
+// guard_appointment_deadline_ownership — a bare FK only enforces referential
+// existence, not same-owner.
+describe("guard_appointment_deadline_ownership trigger", () => {
+  const admin = adminClient();
+
+  it("rejects a session whose deadline_id points at another user's deadline", async () => {
+    const owner = await createAuthenticatedUser();
+    const otherUser = await createAuthenticatedUser();
+    const ownerCourseId = await createCourse(admin, owner.userId);
+    const ownerDeadlineId = await createDeadline(admin, owner.userId, ownerCourseId);
+
+    const { error } = await admin.from("appointments").insert({
+      user_id: otherUser.userId,
+      title: "Cross-owner session",
+      date: new Date().toISOString().slice(0, 10),
+      category: "Session",
+      deadline_id: ownerDeadlineId,
+      session_status: "planned",
+    });
+    expect(error).not.toBeNull();
+  });
+});
+
+// Traces: supabase/migrations/0025_deadline_sessions.sql's
+// advance_deadline_on_session_done — one step only, and every other current
+// status is a no-op via the `where status = 'Not Started'` guard.
+describe("advance_deadline_on_session_done trigger", () => {
+  const admin = adminClient();
+  let userId: string;
+  let courseId: string;
+
+  beforeAll(async () => {
+    const user = await createAuthenticatedUser();
+    userId = user.userId;
+    courseId = await createCourse(admin, userId);
+  });
+
+  it("completing a session on a Not Started deadline advances it to In Progress", async () => {
+    const deadlineId = await createDeadline(admin, userId, courseId);
+    const sessionId = await createSession(admin, userId, deadlineId);
+
+    const { error } = await admin.from("appointments").update({ session_status: "done" }).eq("id", sessionId);
+    expect(error).toBeNull();
+
+    const { data: deadline } = await admin.from("deadlines").select("status").eq("id", deadlineId).single();
+    expect(deadline?.status).toBe("In Progress");
+  });
+
+  it("completing a session on a Submitted deadline is a no-op, not an error", async () => {
+    const deadlineId = await createDeadline(admin, userId, courseId);
+    await walkTransitions(admin, "deadlines", deadlineId, "status", ["In Progress", "Submitted"]);
+    const sessionId = await createSession(admin, userId, deadlineId);
+
+    const { error } = await admin.from("appointments").update({ session_status: "done" }).eq("id", sessionId);
+    expect(error).toBeNull();
+
+    const { data: deadline } = await admin.from("deadlines").select("status").eq("id", deadlineId).single();
+    expect(deadline?.status).toBe("Submitted");
   });
 });

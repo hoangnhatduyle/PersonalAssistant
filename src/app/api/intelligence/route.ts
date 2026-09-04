@@ -4,6 +4,7 @@ import { requireEnv } from "@/lib/env";
 import { successResponse, serverErrorResponse } from "@/lib/api/response";
 import { buildSuggestion, type Suggestion } from "@/lib/dashboard/suggestion";
 import { generateSuggestionsForUser } from "@/lib/personalization/generate-for-user";
+import { buildSessionProgress } from "@/lib/deadlines/session-progress";
 import type { DeadlineRow, TaskRow, PersonalizationSuggestionRow } from "@/lib/api/entity-types";
 import type { StatusTone } from "@/lib/status-colors";
 
@@ -70,7 +71,7 @@ export async function POST() {
         .lte("trigger_at", todayEnd),
       supabase
         .from("appointments")
-        .select("title, date, time, location, category")
+        .select("title, date, time, location, category, deadline_id, duration_minutes, session_status")
         .eq("user_id", user.id)
         .is("deleted_at", null)
         .eq("date", todayStr),
@@ -105,6 +106,13 @@ export async function POST() {
         }));
     });
 
+    const deadlineTitleById = new Map(allDeadlines.map((d) => [d.id, d.title]));
+    const deadlineSessions = buildSessionProgress(appointmentsRes.data ?? []).map((progress) => ({
+      deadline_title: deadlineTitleById.get(progress.deadlineId) ?? null,
+      done: progress.done,
+      total: progress.total,
+    }));
+
     const llmContext = {
       now: now.toISOString(),
       day_of_week: now.toLocaleDateString("en-US", { weekday: "long" }),
@@ -127,6 +135,7 @@ export async function POST() {
         location: a.location,
         category: a.category,
       })),
+      deadline_sessions: deadlineSessions,
       workload_status: workload.message,
     };
 

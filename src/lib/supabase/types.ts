@@ -51,6 +51,9 @@ export type Database = {
           notes: string[]
           reminders_enabled: boolean
           reminder_lead_minutes: number
+          deadline_id: string | null
+          duration_minutes: number | null
+          session_status: Database["public"]["Enums"]["session_status"] | null
           deleted_at: string | null
           created_at: string
           updated_at: string
@@ -66,6 +69,9 @@ export type Database = {
           notes?: string[]
           reminders_enabled?: boolean
           reminder_lead_minutes?: number
+          deadline_id?: string | null
+          duration_minutes?: number | null
+          session_status?: Database["public"]["Enums"]["session_status"] | null
           deleted_at?: string | null
           created_at?: string
           updated_at?: string
@@ -81,6 +87,9 @@ export type Database = {
           notes?: string[]
           reminders_enabled?: boolean
           reminder_lead_minutes?: number
+          deadline_id?: string | null
+          duration_minutes?: number | null
+          session_status?: Database["public"]["Enums"]["session_status"] | null
           deleted_at?: string | null
           created_at?: string
           updated_at?: string
@@ -91,6 +100,13 @@ export type Database = {
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "appointments_deadline_id_fkey"
+            columns: ["deadline_id"]
+            isOneToOne: false
+            referencedRelation: "deadlines"
             referencedColumns: ["id"]
           },
         ]
@@ -1590,6 +1606,13 @@ export type Database = {
           todo_items_affected: number
         }[]
       }
+      soft_delete_deadline_cascade: {
+        Args: { p_deadline_id: string }
+        Returns: {
+          reminders_dismissed: number
+          sessions_affected: number
+        }[]
+      }
       soft_delete_person_cascade: {
         Args: { p_person_id: string }
         Returns: {
@@ -1638,6 +1661,7 @@ export type Database = {
         | "Dismissed"
         | "Snoozed"
         | "Expired"
+      session_status: "planned" | "done" | "skipped"
       task_status: "Open" | "Done" | "Cancelled"
       voice_conversation_end_reason: "explicit" | "timeout"
       voice_session_state:

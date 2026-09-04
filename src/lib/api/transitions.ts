@@ -3,10 +3,12 @@ import type { Database } from "@/lib/supabase/types";
 type DeadlineStatus = Database["public"]["Enums"]["deadline_status"];
 type TaskStatus = Database["public"]["Enums"]["task_status"];
 type ReminderStatus = Database["public"]["Enums"]["reminder_status"];
+type SessionStatus = Database["public"]["Enums"]["session_status"];
 
 export type DeadlineTransitionEvent = "user_marks_in_progress" | "user_marks_submitted" | "user_confirms_done" | "user_cancels";
 export type TaskTransitionEvent = "user_marks_done" | "user_cancels";
 export type ReminderTransitionEvent = "user_acknowledges" | "user_dismisses" | "user_snoozes";
+export type SessionTransitionEvent = "user_marks_session_done" | "user_marks_session_skipped";
 
 // Mirrors SPEC-CORE-005's deadline_assignment machine, restricted to the
 // user-initiated events (due_date_passed_incomplete is system-driven, fired
@@ -35,6 +37,14 @@ const reminderTransitions: Record<ReminderTransitionEvent, Partial<Record<Remind
   user_snoozes: { Delivered: "Snoozed" },
 };
 
+// Mirrors guard_session_status() in supabase/migrations/0025_deadline_sessions.sql:
+// planned -> done/skipped, and skipped -> done (a make-up session). No
+// transition out of 'done'.
+const sessionTransitions: Record<SessionTransitionEvent, Partial<Record<SessionStatus, SessionStatus>>> = {
+  user_marks_session_done: { planned: "done", skipped: "done" },
+  user_marks_session_skipped: { planned: "skipped" },
+};
+
 /**
  * NC-API-002/AC-2: state fields may only change through an explicit,
  * validated transition event — never an arbitrary value via a generic
@@ -57,6 +67,10 @@ export function resolveReminderTransition(event: ReminderTransitionEvent, curren
   return reminderTransitions[event]?.[currentStatus] ?? null;
 }
 
+export function resolveSessionTransition(event: SessionTransitionEvent, currentStatus: SessionStatus): SessionStatus | null {
+  return sessionTransitions[event]?.[currentStatus] ?? null;
+}
+
 export function isDeadlineTransitionEvent(value: string): value is DeadlineTransitionEvent {
   return value in deadlineTransitions;
 }
@@ -67,6 +81,10 @@ export function isTaskTransitionEvent(value: string): value is TaskTransitionEve
 
 export function isReminderTransitionEvent(value: string): value is ReminderTransitionEvent {
   return value in reminderTransitions;
+}
+
+export function isSessionTransitionEvent(value: string): value is SessionTransitionEvent {
+  return value in sessionTransitions;
 }
 
 /**
@@ -92,5 +110,11 @@ export function getValidTaskEvents(status: TaskStatus): TaskTransitionEvent[] {
 export function getValidReminderEvents(status: ReminderStatus): ReminderTransitionEvent[] {
   return (Object.keys(reminderTransitions) as ReminderTransitionEvent[]).filter(
     (event) => reminderTransitions[event]?.[status] !== undefined,
+  );
+}
+
+export function getValidSessionEvents(status: SessionStatus): SessionTransitionEvent[] {
+  return (Object.keys(sessionTransitions) as SessionTransitionEvent[]).filter(
+    (event) => sessionTransitions[event]?.[status] !== undefined,
   );
 }

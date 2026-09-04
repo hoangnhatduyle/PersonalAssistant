@@ -7,10 +7,12 @@ import { endConversation, loadConversationHistory, resolveActiveConversation } f
 import { loadSchedule, toScheduleToolPayload, type ScheduleToolPayload } from "@/lib/voice/schedule-loader";
 import { runKnowledgeLookup, type KnowledgeCitation } from "@/lib/knowledge/retrieval";
 import { runSuggestionsLookup } from "@/lib/voice/suggestions-lookup";
+import { runDeadlineProgressLookup } from "@/lib/voice/deadline-progress-lookup";
 import { loadEntityContext, loadUserTimezone, mutationSchema, toPendingMutation, type EntityContext } from "@/lib/voice/intent";
 import type { PendingMutation } from "@/lib/voice/mutations";
 import {
   CONVERSATION_TOOLS,
+  type GetDeadlineProgressArgs,
   type GetPersonScheduleArgs,
   type GetScheduleArgs,
   type LookupKnowledgeArgs,
@@ -78,6 +80,7 @@ You have tools to ground your answers in the user's real data, and to act on exp
 - get_person_schedule: call this instead of get_schedule when the question is about a specific tracked person other than the user themself — by name (e.g. "Châu") or by relationship (e.g. "my sister", "my girlfriend", "is she free right now", "do I need to pick her up"). Match the name/relationship mentioned against the "people" list in the entity context below (each entry has id, name, and relationship) and pass that person's id — never invent an id, and never guess when nothing in the list matches (respond that you don't have anyone tracked under that name/relationship instead). Never combine or compare more than one tracked person's schedule in a single answer unless the user explicitly asks to compare people — a plain "what's the schedule" with no name/relationship mentioned always means the user's own schedule via get_schedule, never a tracked person's.
 - lookup_knowledge: call this when the user asks about material they imported, saved, uploaded, captured, or previously provided ("what did that article say about research paths?", "summarize the notes I saved"), or names/refers to something that sounds like a saved source by its own title or topic. A bare verb in front of it ("test", "check", "look at", "open", "try", "go through") means look it up, not create or change anything. Its answer is already grounded in the user's own saved material — relay it faithfully rather than inventing your own facts, but weave it naturally into the rest of your response rather than just repeating it verbatim out of context. The entity context below lists each Knowledge Source's id and title ONLY, never its saved content — recognizing that a question matches a source's title is what tells you to call this tool, never a reason to skip calling it. Never answer from the title alone, and never tell the user there's "no saved content" without having actually called lookup_knowledge first — you cannot see a source's content any other way.
 - get_personalization_suggestions: call this when the user asks to check the app's generated personalization/reminder-timing suggestions ("check my suggestions", "did the app recommend changing my reminder timing?"). Relay its message near-verbatim — you don't have access to the suggestions' own detail, only the count it reports.
+- get_deadline_progress: call this when the user asks about planned-session progress toward a specific Deadline ("how much progress on Homework 1", "how many sessions do I have left", "did I finish my sessions for the project"). Match the deadline mentioned by title against the "deadlines" list in the entity context below and pass that deadline's id — never invent an id, and never guess when nothing in the list matches (respond that you don't have a matching deadline instead). Relay its message near-verbatim.
 - start_new_conversation: only when the user explicitly asks to start over, forget what was said before, or begin a new conversation. Never announce that you did it — just continue naturally with whatever else they asked in the same turn.
 - propose_mutation: call this when the user gives a clear instruction to change app data — create/update/delete a Deadline, Task, or Note; delete a Course; acknowledge/dismiss/snooze a Reminder. Call it alone, never alongside another tool call, and never in the same turn as respond_to_user. See "Deciding whether something is a mutation" below for when something is or isn't really a command — read it carefully, since acting on a data change the user didn't actually ask for is a much worse mistake than asking a question is.
 
@@ -131,6 +134,9 @@ const getPersonScheduleArgsSchema: z.ZodType<GetPersonScheduleArgs> = z.object({
 });
 const lookupKnowledgeArgsSchema: z.ZodType<LookupKnowledgeArgs> = z.object({
   query: z.string().trim().min(1),
+});
+const getDeadlineProgressArgsSchema: z.ZodType<GetDeadlineProgressArgs> = z.object({
+  deadline_id: z.uuid(),
 });
 const respondToUserArgsSchema: z.ZodType<RespondToUserArgs> = z.object({
   message: z.string().trim().min(1),
@@ -240,6 +246,16 @@ async function dispatchTool(
     case "get_personalization_suggestions": {
       const result = await runSuggestionsLookup(supabase, userId);
       return { payload: { message: result.message }, usedPersonalizationSuggestions: true };
+    }
+    case "get_deadline_progress": {
+      const args = parseToolArgs(getDeadlineProgressArgsSchema, toolCall);
+      // Enforcement point for "never invent a deadline_id" -- same pattern
+      // as get_person_schedule's person_id check above.
+      if (!context.deadlines.some((deadline) => deadline.id === args.deadline_id)) {
+        return { payload: { error: "Unknown deadline_id — not one of the user's deadlines." } };
+      }
+      const result = await runDeadlineProgressLookup(supabase, userId, args.deadline_id);
+      return { payload: { message: result.message } };
     }
     case "start_new_conversation": {
       await endConversation(supabase, userId, conversationId, "explicit");

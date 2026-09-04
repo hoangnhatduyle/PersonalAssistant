@@ -57,6 +57,31 @@ export async function cascadeDeleteTodoList(
   return { itemsAffected: data.items_affected ?? 0 };
 }
 
+export interface DeadlineDeleteCascadeResult {
+  sessionsAffected: number;
+  remindersDismissed: number;
+}
+
+/**
+ * Soft-deletes a Deadline and, atomically, its live Sessions (appointments
+ * with deadline_id set) — not unlink-and-keep. The deadline's own Reminder
+ * dismissal is handled by the existing trg_deadlines_soft_delete_dismiss_reminders
+ * trigger as part of the same UPDATE (see
+ * supabase/migrations/0025_deadline_sessions.sql's soft_delete_deadline_cascade).
+ */
+export async function cascadeDeleteDeadline(
+  supabase: SupabaseClient<Database>,
+  deadlineId: string,
+): Promise<DeadlineDeleteCascadeResult> {
+  const { data, error } = await supabase.rpc("soft_delete_deadline_cascade", { p_deadline_id: deadlineId }).single();
+  if (error) throw error;
+
+  return {
+    sessionsAffected: data.sessions_affected ?? 0,
+    remindersDismissed: data.reminders_dismissed ?? 0,
+  };
+}
+
 export interface PersonDeleteCascadeResult {
   coursesAffected: number;
   deadlinesAffected: number;

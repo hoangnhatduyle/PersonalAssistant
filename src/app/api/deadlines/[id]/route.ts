@@ -3,6 +3,7 @@ import { requireAuthenticatedContext } from "@/lib/api/auth";
 import { wantsIncludeDeleted } from "@/lib/api/pagination";
 import { deadlinePatchSchema } from "@/lib/api/schemas";
 import { syncReminderForTarget } from "@/lib/api/reminders";
+import { cascadeDeleteDeadline } from "@/lib/api/cascade";
 import {
   successResponse,
   notFoundResponse,
@@ -88,7 +89,12 @@ export async function PATCH(request: Request, { params }: RouteParams) {
   return successResponse(updated);
 }
 
-/** DELETE /api/deadlines/[id] — soft-delete; the DB trigger atomically dismisses its live Reminder (AC-7/AC-9, NC-API-006). */
+/**
+ * DELETE /api/deadlines/[id] — soft-delete, cascading atomically to the
+ * deadline's live Sessions (AC-7/AC-9, NC-API-006; deleting a deadline
+ * cascade-soft-deletes its linked sessions, not unlink-and-keep). The DB
+ * trigger dismisses the deadline's own Reminder as part of the same UPDATE.
+ */
 export async function DELETE(_request: Request, { params }: RouteParams) {
   const ctx = await requireAuthenticatedContext();
   if (!("supabase" in ctx)) return ctx;
@@ -105,11 +111,13 @@ export async function DELETE(_request: Request, { params }: RouteParams) {
   if (fetchError) return serverErrorResponse("deadline lookup failed", fetchError);
   if (!existing) return notFoundResponse();
 
-  const { error: deleteError } = await supabase
-    .from("deadlines")
-    .update({ deleted_at: new Date().toISOString() })
-    .eq("id", id);
-  if (deleteError) return serverErrorResponse("deadline delete failed", deleteError);
-
-  return successResponse({ id });
+  try {
+    const cascade = await cascadeDeleteDeadline(supabase, id);
+    return successResponse({
+      id,
+      cascade: { sessionsAffected: cascade.sessionsAffected, remindersDismissed: cascade.remindersDismissed },
+    });
+  } catch (error) {
+    return serverErrorResponse("deadline delete failed", error);
+  }
 }

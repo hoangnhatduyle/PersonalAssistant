@@ -93,6 +93,36 @@ export async function createDeadline(
   return data.id as string;
 }
 
+/**
+ * Deadline Sessions (supabase/migrations/0025_deadline_sessions.sql): a
+ * session is a plain appointments row with deadline_id set. Mirrors
+ * createDeadline/createTask's own defaults-plus-overrides shape — callers
+ * pass session_status via overrides when a test needs to start somewhere
+ * other than the guard's mandatory initial 'planned'.
+ */
+export async function createSession(
+  admin: SupabaseClient,
+  userId: string,
+  deadlineId: string,
+  overrides: Record<string, unknown> = {},
+): Promise<string> {
+  const { data, error } = await admin
+    .from("appointments")
+    .insert({
+      user_id: userId,
+      title: "Test Session",
+      date: new Date().toISOString().slice(0, 10),
+      category: "Session",
+      deadline_id: deadlineId,
+      session_status: "planned",
+      ...overrides,
+    })
+    .select("id")
+    .single();
+  if (error) throw new Error(`failed to create session: ${error.message}`, { cause: error });
+  return data.id as string;
+}
+
 export async function createTask(
   admin: SupabaseClient,
   userId: string,

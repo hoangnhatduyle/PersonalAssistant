@@ -2,12 +2,15 @@ import { describe, expect, it } from "vitest";
 import {
   getValidDeadlineEvents,
   getValidReminderEvents,
+  getValidSessionEvents,
   getValidTaskEvents,
   isDeadlineTransitionEvent,
   isReminderTransitionEvent,
+  isSessionTransitionEvent,
   isTaskTransitionEvent,
   resolveDeadlineTransition,
   resolveReminderTransition,
+  resolveSessionTransition,
   resolveTaskTransition,
 } from "../transitions";
 
@@ -43,6 +46,27 @@ describe("resolveTaskTransition", () => {
   });
 });
 
+// Traces: supabase/migrations/0025_deadline_sessions.sql's guard_session_status
+// — planned -> done/skipped, skipped -> done (a make-up session), and no
+// transition out of done.
+describe("resolveSessionTransition", () => {
+  it("applies a legal transition", () => {
+    expect(resolveSessionTransition("user_marks_session_done", "planned")).toBe("done");
+    expect(resolveSessionTransition("user_marks_session_done", "skipped")).toBe("done");
+    expect(resolveSessionTransition("user_marks_session_skipped", "planned")).toBe("skipped");
+  });
+
+  it("rejects an event that does not apply from the current status", () => {
+    // Skipping only applies from planned, never re-skipping an already-skipped session.
+    expect(resolveSessionTransition("user_marks_session_skipped", "skipped")).toBeNull();
+  });
+
+  it("never allows a transition out of done — the terminal state", () => {
+    expect(resolveSessionTransition("user_marks_session_done", "done")).toBeNull();
+    expect(resolveSessionTransition("user_marks_session_skipped", "done")).toBeNull();
+  });
+});
+
 describe("event-name guards", () => {
   it("recognize only their own machine's events", () => {
     expect(isDeadlineTransitionEvent("user_marks_in_progress")).toBe(true);
@@ -50,6 +74,10 @@ describe("event-name guards", () => {
     expect(isTaskTransitionEvent("user_marks_done")).toBe(true);
     expect(isTaskTransitionEvent("user_marks_in_progress")).toBe(false);
     expect(isDeadlineTransitionEvent("not_a_real_event")).toBe(false);
+    expect(isSessionTransitionEvent("user_marks_session_done")).toBe(true);
+    expect(isSessionTransitionEvent("user_marks_session_skipped")).toBe(true);
+    expect(isSessionTransitionEvent("user_marks_in_progress")).toBe(false);
+    expect(isSessionTransitionEvent("not_a_real_event")).toBe(false);
   });
 
   it("never exposes the system-only due_date_passed_incomplete event", () => {
@@ -113,6 +141,14 @@ describe("getValidTaskEvents", () => {
     expect(getValidTaskEvents("Open").sort()).toEqual(["user_cancels", "user_marks_done"].sort());
     expect(getValidTaskEvents("Done")).toEqual([]);
     expect(getValidTaskEvents("Cancelled")).toEqual([]);
+  });
+});
+
+describe("getValidSessionEvents", () => {
+  it("returns exactly the legal events per status, with no transition out of done", () => {
+    expect(getValidSessionEvents("planned").sort()).toEqual(["user_marks_session_done", "user_marks_session_skipped"].sort());
+    expect(getValidSessionEvents("skipped")).toEqual(["user_marks_session_done"]);
+    expect(getValidSessionEvents("done")).toEqual([]);
   });
 });
 

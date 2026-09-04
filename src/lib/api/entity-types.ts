@@ -21,22 +21,8 @@ export type PersonRow = Database["public"]["Tables"]["people"]["Row"];
 export type TodoListRow = Database["public"]["Tables"]["todo_lists"]["Row"];
 export type TodoItemRow = Database["public"]["Tables"]["todo_items"]["Row"];
 
-export interface AppointmentRow {
-  id: string;
-  user_id: string;
-  title: string;
-  /** YYYY-MM-DD */
-  date: string;
-  category: string;
-  time: string | null;
-  location: string | null;
-  notes: string[];
-  reminders_enabled: boolean;
-  reminder_lead_minutes: number;
-  deleted_at: string | null;
-  created_at: string;
-  updated_at: string;
-}
+export type AppointmentRow = Database["public"]["Tables"]["appointments"]["Row"];
+export type SessionStatus = Database["public"]["Enums"]["session_status"];
 
 // The knowledge list/detail routes select KNOWLEDGE_SOURCE_PUBLIC_COLUMNS,
 // not the full row (raw_content/storage_object_path are deliberately never

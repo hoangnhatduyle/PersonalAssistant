@@ -42,7 +42,7 @@ export async function PATCH(request: Request, { params }: RouteParams) {
 
   const { data: existing, error: fetchError } = await supabase
     .from("appointments")
-    .select("id")
+    .select("id, deadline_id")
     .eq("id", id)
     .eq("user_id", user.id)
     .is("deleted_at", null)
@@ -50,9 +50,13 @@ export async function PATCH(request: Request, { params }: RouteParams) {
   if (fetchError) return serverErrorResponse("appointment lookup failed", fetchError);
   if (!existing) return notFoundResponse();
 
+  // A session's category must stay 'Session' regardless of client input —
+  // keeps the Calendar tag from drifting on an otherwise-normal edit.
+  const updatePayload = existing.deadline_id ? { ...parsed.data, category: "Session" } : parsed.data;
+
   const { data: updated, error: updateError } = await supabase
     .from("appointments")
-    .update(parsed.data)
+    .update(updatePayload)
     .eq("id", id)
     .select("*")
     .single();

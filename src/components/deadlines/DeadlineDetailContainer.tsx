@@ -6,6 +6,7 @@ import { useCourse } from "@/hooks/useCourses";
 import { DeadlineForm } from "@/components/deadlines/DeadlineForm";
 import { DeadlineTransitionMenu } from "@/components/deadlines/DeadlineTransitionMenu";
 import { DeleteDeadlineButton } from "@/components/deadlines/DeleteDeadlineButton";
+import { SessionsSection } from "@/components/deadlines/SessionsSection";
 import { FeedbackControl } from "@/components/feedback/FeedbackControl";
 import { GlassPanel } from "@/components/ui/GlassPanel";
 import { StatusPill } from "@/components/ui/StatusPill";
@@ -65,6 +66,8 @@ export function DeadlineDetailContainer({ deadlineId }: Props) {
 
         {deadline.status === "Completed" && <FeedbackControl targetType="deadline" targetId={deadline.id} />}
       </GlassPanel>
+
+      <SessionsSection deadlineId={deadline.id} />
     </div>
   );
 }

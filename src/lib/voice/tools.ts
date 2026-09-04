@@ -16,6 +16,10 @@ export interface LookupKnowledgeArgs {
   query: string;
 }
 
+export interface GetDeadlineProgressArgs {
+  deadline_id: string;
+}
+
 export interface RespondToUserArgs {
   message: string;
   needs_follow_up: boolean;
@@ -61,6 +65,7 @@ export type EmptyToolArgs = Record<string, never>;
  *   get_person_schedule              -> loadSchedule(..., personId) (schedule-loader.ts)
  *   lookup_knowledge                 -> runKnowledgeLookup (knowledge/retrieval.ts)
  *   get_personalization_suggestions  -> runSuggestionsLookup (suggestions-lookup.ts)
+ *   get_deadline_progress            -> runDeadlineProgressLookup (deadline-progress-lookup.ts)
  *   start_new_conversation           -> endConversation + resolveActiveConversation (conversation-memory.ts)
  *   respond_to_user                  -> handled directly in conversation-core's loop, not dispatchTool
  *   propose_mutation                 -> handled directly in conversation-core's loop, not dispatchTool
@@ -144,6 +149,23 @@ export const CONVERSATION_TOOLS = [
       description: "Check for pending personalization suggestions (e.g. reminder-timing adjustments) generated from the user's recent feedback.",
       strict: true,
       parameters: { type: "object", properties: {}, required: [], additionalProperties: false },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_deadline_progress",
+      description:
+        "Look up planned-session progress toward a specific Deadline (\"how much progress on Homework 1\", \"how many sessions do I have left\"). deadline_id MUST be an id from the `deadlines` list in the entity context provided to you -- match it by the deadline's title as mentioned in the request. Never invent a deadline_id; if no deadline in the entity context matches what the user said, do not guess -- call respond_to_user explaining you don't have a matching deadline.",
+      strict: true,
+      parameters: {
+        type: "object",
+        properties: {
+          deadline_id: { type: "string", description: "An id from the `deadlines` array in the entity context. Never invented." },
+        },
+        required: ["deadline_id"],
+        additionalProperties: false,
+      },
     },
   },
   {

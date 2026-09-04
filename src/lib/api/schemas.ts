@@ -132,10 +132,20 @@ export const appointmentPayloadSchema = z.object({
   notes: z.array(z.string()).optional(),
   reminders_enabled: z.boolean().optional(),
   reminder_lead_minutes: z.number().int().nonnegative().optional(),
+  // Deadline Sessions (supabase/migrations/0025_deadline_sessions.sql):
+  // deadline_id links this appointment to a Deadline as a planned work
+  // session. Immutable after insert (NC-API-002-adjacent) — omitted from
+  // appointmentPatchSchema below, same pattern as deadlinePatchSchema
+  // omitting course_id.
+  deadline_id: z.uuid().nullable().optional(),
+  duration_minutes: z.number().int().positive().nullable().optional(),
 });
 export type AppointmentPayload = z.infer<typeof appointmentPayloadSchema>;
-export const appointmentPatchSchema = appointmentPayloadSchema.partial();
+export const appointmentPatchSchema = appointmentPayloadSchema.omit({ deadline_id: true }).partial();
 export type AppointmentPatch = z.infer<typeof appointmentPatchSchema>;
+// session_status is never in either schema above — it only changes through
+// the dedicated transition route (NC-API-002), like deadlines.status and
+// tasks.status.
 
 export const taskPayloadSchema = z.object({
   title: z.string().trim().min(1),
