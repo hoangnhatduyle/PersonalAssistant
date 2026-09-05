@@ -48,12 +48,20 @@ export interface RespondToUserArgs {
  * belong to other branches — getting full reuse of the existing validation
  * with no new logic and no dependency on nested-schema support in strict
  * tool-calling mode.
+ *
+ * `event`'s enum is the union of every target_type's own transition-event
+ * vocabulary (deadline/task/session/reminder each have a distinct, narrower
+ * one in intent.ts) -- the flat JSON schema can't discriminate which subset
+ * applies, but mutationSchema.parse's per-branch enum still rejects a value
+ * that doesn't belong to the target_type actually sent (e.g. event:
+ * "user_marks_done" with target_type "deadline" fails validation exactly
+ * like any other cross-branch field mismatch).
  */
 export interface ProposeMutationArgs {
   confidence: number;
   summary: string;
-  target_type: "course" | "deadline" | "task" | "note" | "reminder";
-  operation: "create" | "update" | "delete" | "acknowledge";
+  target_type: "course" | "deadline" | "task" | "note" | "reminder" | "session" | "todo_list" | "todo_item";
+  operation: "create" | "update" | "delete" | "acknowledge" | "transition";
   target_id: string | null;
   course_id: string | null;
   title: string | null;
@@ -61,8 +69,35 @@ export interface ProposeMutationArgs {
   body: string | null;
   priority: "Low" | "Medium" | "High" | "Urgent" | null;
   reminder_lead_minutes: number | null;
-  event: "user_acknowledges" | "user_dismisses" | "user_snoozes" | null;
+  event:
+    | "user_acknowledges"
+    | "user_dismisses"
+    | "user_snoozes"
+    | "user_marks_in_progress"
+    | "user_marks_submitted"
+    | "user_confirms_done"
+    | "user_marks_done"
+    | "user_cancels"
+    | "user_marks_session_done"
+    | "user_marks_session_skipped"
+    | null;
   snooze_until: string | null;
+  // Course (name/code/term) and Course To-Do list (name only, reusing the
+  // same field) create/update fields.
+  name: string | null;
+  code: string | null;
+  term: string | null;
+  // Deadline Session (appointments row, category "Session") create fields.
+  deadline_id: string | null;
+  date: string | null;
+  time: string | null;
+  duration_minutes: number | null;
+  // Course To-Do item fields -- list_id/due_date/done are distinct from a
+  // Deadline/Task's course_id/due_at/status-transition equivalents since a
+  // to-do item has its own (non-course, non-transition) shape.
+  list_id: string | null;
+  due_date: string | null;
+  done: boolean | null;
 }
 
 /** get_personalization_suggestions and start_new_conversation both take no arguments. */
@@ -226,24 +261,55 @@ export const CONVERSATION_TOOLS = [
     function: {
       name: "propose_mutation",
       description:
-        "Propose a single explicit, unambiguous data change (create/update/delete a Deadline, Task, or Note; delete a Course; acknowledge/dismiss/snooze a Reminder) the user just instructed. Call this by itself, never alongside another tool call. Never invent an id -- target_id/course_id must come from the entity context provided to you. If you are not confident this is really a command (versus a question or hypothetical) or an id does not clearly match the context, set confidence below 0.95 rather than guessing -- do not silently answer via respond_to_user instead just because you are unsure, since that skips the confirmation step entirely.",
+        "Propose a single explicit, unambiguous data change the user just instructed: create/update/delete a Deadline, Task, Note, or Course; mark a Deadline's or Task's status via transition (\"mark done\", \"mark in progress\", \"mark submitted\", \"cancel\"); acknowledge/dismiss/snooze a Reminder; create/delete a Deadline Session or mark one done/skipped; create a Course To-Do list; create/update/delete a Course To-Do item (including marking it done via `done`). Call this by itself, never alongside another tool call. Never invent an id -- target_id/course_id/deadline_id/list_id must come from the entity context provided to you. If you are not confident this is really a command (versus a question or hypothetical) or an id does not clearly match the context, set confidence below 0.95 rather than guessing -- do not silently answer via respond_to_user instead just because you are unsure, since that skips the confirmation step entirely.",
       strict: true,
       parameters: {
         type: "object",
         properties: {
           confidence: { type: "number", description: "0-1, your genuine confidence this is the right mutation to propose." },
           summary: { type: "string", description: "One sentence describing the action, to be spoken back to the user for confirmation." },
-          target_type: { type: "string", enum: ["course", "deadline", "task", "note", "reminder"] },
-          operation: { type: "string", enum: ["create", "update", "delete", "acknowledge"] },
-          target_id: { type: ["string", "null"], description: "An id from the provided entity context. Null only for a create." },
-          course_id: { type: ["string", "null"] },
-          title: { type: ["string", "null"] },
-          due_at: { type: ["string", "null"], description: "ISO 8601 datetime with a UTC offset." },
-          body: { type: ["string", "null"] },
-          priority: { type: ["string", "null"], enum: ["Low", "Medium", "High", "Urgent", null] },
+          target_type: { type: "string", enum: ["course", "deadline", "task", "note", "reminder", "session", "todo_list", "todo_item"] },
+          operation: { type: "string", enum: ["create", "update", "delete", "acknowledge", "transition"] },
+          target_id: {
+            type: ["string", "null"],
+            description:
+              "An id from the provided entity context (deadlines/tasks/todoItems/sessions lists as appropriate). Null only for a create.",
+          },
+          course_id: { type: ["string", "null"], description: "A course id from the entity context. Used by a Deadline create and, optionally, a Course To-Do list create." },
+          title: { type: ["string", "null"], description: "Deadline/Task title, or a new Deadline Session's title." },
+          due_at: { type: ["string", "null"], description: "Deadline/Task due date-time. ISO 8601 datetime with a UTC offset." },
+          body: { type: ["string", "null"], description: "Note body." },
+          priority: { type: ["string", "null"], enum: ["Low", "Medium", "High", "Urgent", null], description: "Deadline/Task/Course To-Do item priority." },
           reminder_lead_minutes: { type: ["integer", "null"] },
-          event: { type: ["string", "null"], enum: ["user_acknowledges", "user_dismisses", "user_snoozes", null] },
-          snooze_until: { type: ["string", "null"] },
+          event: {
+            type: ["string", "null"],
+            enum: [
+              "user_acknowledges",
+              "user_dismisses",
+              "user_snoozes",
+              "user_marks_in_progress",
+              "user_marks_submitted",
+              "user_confirms_done",
+              "user_marks_done",
+              "user_cancels",
+              "user_marks_session_done",
+              "user_marks_session_skipped",
+              null,
+            ],
+            description:
+              'Required for operation "transition"/"acknowledge". Deadline: user_marks_in_progress/user_marks_submitted/user_confirms_done/user_cancels. Task: user_marks_done/user_cancels. Session: user_marks_session_done/user_marks_session_skipped. Reminder (acknowledge): user_acknowledges/user_dismisses/user_snoozes. Null otherwise.',
+          },
+          snooze_until: { type: ["string", "null"], description: "Reminder acknowledge with event user_snoozes only." },
+          name: { type: ["string", "null"], description: "Course name, or a new Course To-Do list's name." },
+          code: { type: ["string", "null"], description: "Course code (e.g. \"CS 101\")." },
+          term: { type: ["string", "null"], description: "Course term (e.g. \"Fall 2026\")." },
+          deadline_id: { type: ["string", "null"], description: "A deadline id from the entity context. Required to create a Deadline Session." },
+          date: { type: ["string", "null"], description: "A Deadline Session's date, YYYY-MM-DD, resolved from relative phrasing the same way due_at is." },
+          time: { type: ["string", "null"], description: "A Deadline Session's free-text time label (e.g. \"7:00 PM\"), if the user gave one." },
+          duration_minutes: { type: ["integer", "null"], description: "A Deadline Session's planned duration in minutes, if the user gave one." },
+          list_id: { type: ["string", "null"], description: "A Course To-Do list id from the entity context. Required to create a to-do item." },
+          due_date: { type: ["string", "null"], description: "A Course To-Do item's due date, YYYY-MM-DD (no time-of-day)." },
+          done: { type: ["boolean", "null"], description: "Course To-Do item update only: true marks it complete, false marks it incomplete. Null otherwise." },
         },
         required: [
           "confidence",
@@ -259,6 +325,16 @@ export const CONVERSATION_TOOLS = [
           "reminder_lead_minutes",
           "event",
           "snooze_until",
+          "name",
+          "code",
+          "term",
+          "deadline_id",
+          "date",
+          "time",
+          "duration_minutes",
+          "list_id",
+          "due_date",
+          "done",
         ],
         additionalProperties: false,
       },

@@ -13,8 +13,8 @@ import {
   type TimeWindowFilter,
 } from "@/lib/dashboard/upcoming-items";
 import { formatRelativeTime } from "@/lib/format-relative-time";
-import { DEADLINE_STATUS_TONE, TASK_STATUS_TONE } from "@/lib/status-colors";
-import type { CourseRow, DeadlineRow, ReminderRow, TaskRow, TodoItemRow, TodoListRow } from "@/lib/api/entity-types";
+import { DEADLINE_STATUS_TONE, SESSION_STATUS_TONE, TASK_STATUS_TONE } from "@/lib/status-colors";
+import type { AppointmentRow, CourseRow, DeadlineRow, ReminderRow, TaskRow, TodoItemRow, TodoListRow } from "@/lib/api/entity-types";
 
 type Props = {
   deadlines: DeadlineRow[];
@@ -23,6 +23,8 @@ type Props = {
   todoItems: TodoItemRow[];
   todoLists: TodoListRow[];
   courses: CourseRow[];
+  /** Deadline Sessions — appointments rows tagged category "Session". */
+  appointments: AppointmentRow[];
 };
 
 const RING_ITEM_LIMIT = 5;
@@ -59,6 +61,7 @@ const KIND_FILL_CLASS: Record<UpcomingItem["kind"], string> = {
   task: "fill-accent-indigo",
   reminder: "fill-accent-teal",
   todo: "fill-accent-violet",
+  session: "fill-status-ok",
 };
 
 function clockHandAngles(now: Date): { hour: number; minute: number } {
@@ -95,7 +98,7 @@ function useIsMounted(): boolean {
  * filterable upcoming-items queue on the right. Replaces the old
  * NowWidget + NextSequenceQueue pair to eliminate redundant item lists.
  */
-export function UpNextPanel({ deadlines, tasks, reminders, todoItems, todoLists, courses }: Props) {
+export function UpNextPanel({ deadlines, tasks, reminders, todoItems, todoLists, courses, appointments }: Props) {
   const isMounted = useIsMounted();
   const [, forceTick] = useState(0);
   const [timeWindow, setTimeWindow] = useState<TimeWindowFilter>("today");
@@ -107,13 +110,14 @@ export function UpNextPanel({ deadlines, tasks, reminders, todoItems, todoLists,
 
   const now = isMounted ? new Date() : null;
 
-  // Clock ring items (top 5 from all entity types including reminders)
-  const ringItems = buildUpcomingItems({ deadlines, tasks, reminders }).slice(0, RING_ITEM_LIMIT);
+  // Clock ring items (top 5 from all entity types including reminders and sessions)
+  const ringItems = buildUpcomingItems({ deadlines, tasks, reminders, appointments }).slice(0, RING_ITEM_LIMIT);
 
-  // Queue items (deadlines, tasks, todos, reminders — full union)
-  const allQueueItems = buildUpcomingItems({ deadlines, tasks, reminders, todoItems });
+  // Queue items (deadlines, tasks, todos, reminders, sessions — full union)
+  const allQueueItems = buildUpcomingItems({ deadlines, tasks, reminders, todoItems, appointments });
   const deadlineById = new Map(deadlines.map((d) => [d.id, d]));
   const taskById = new Map(tasks.map((t) => [t.id, t]));
+  const appointmentById = new Map(appointments.map((a) => [a.id, a]));
 
   const todoItemLabelMap = useMemo(() => {
     const courseNameById = new Map(courses.map((c) => [c.id, c.name]));
@@ -222,9 +226,14 @@ export function UpNextPanel({ deadlines, tasks, reminders, todoItems, todoLists,
         </div>
       </div>
 
+      {/* Divider: a hairline on narrow screens where the two blocks stack,
+          a full-height rule on lg where they sit side by side — the two
+          blocks read as one fused card without it. */}
+      <div className="h-px w-full bg-panel-border lg:h-auto lg:w-px lg:self-stretch" aria-hidden="true" />
+
       {/* Filterable queue */}
       {/* Queue — 60% width on lg */}
-      <div className="flex min-w-0 flex-col gap-3 lg:w-3/5">
+      <div className="flex min-w-0 flex-col gap-3 pt-2 lg:w-3/5 lg:pt-0 lg:pl-2">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="font-mono text-xs uppercase tracking-wide text-text-eyebrow">Up Next</p>
           <div role="group" aria-label="Filter by due date" className="flex flex-wrap items-center gap-2">
@@ -257,13 +266,17 @@ export function UpNextPanel({ deadlines, tasks, reminders, todoItems, todoLists,
                   ? deadlineById.get(item.id)?.status
                   : item.kind === "task"
                     ? taskById.get(item.id)?.status
-                    : undefined;
+                    : item.kind === "session"
+                      ? appointmentById.get(item.id)?.session_status
+                      : undefined;
               const tone =
                 item.kind === "deadline"
                   ? DEADLINE_STATUS_TONE[status as DeadlineRow["status"]]
                   : item.kind === "task"
                     ? TASK_STATUS_TONE[status as TaskRow["status"]]
-                    : undefined;
+                    : item.kind === "session" && status
+                      ? SESSION_STATUS_TONE[status as NonNullable<AppointmentRow["session_status"]>]
+                      : undefined;
               const showPastDueTag = item.urgent && item.kind !== "deadline";
               const todoInfo = item.kind === "todo" ? todoItemLabelMap.get(item.id) : undefined;
               const kindLabel =
@@ -273,7 +286,9 @@ export function UpNextPanel({ deadlines, tasks, reminders, todoItems, todoLists,
                     ? "Task"
                     : item.kind === "reminder"
                       ? "Reminder"
-                      : todoInfo?.listName ?? "To-Do";
+                      : item.kind === "session"
+                        ? "Session"
+                        : (todoInfo?.listName ?? "To-Do");
 
               const courseName = todoInfo?.courseName;
               const taskTags = item.kind === "task" ? taskById.get(item.id)?.tags ?? [] : [];

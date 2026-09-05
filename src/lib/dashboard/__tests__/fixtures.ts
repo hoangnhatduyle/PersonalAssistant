@@ -1,4 +1,4 @@
-import type { CourseRow, DeadlineRow, ReminderRow, TaskRow, TodoItemRow, TodoListRow } from "@/lib/api/entity-types";
+import type { AppointmentRow, CourseRow, DeadlineRow, ReminderRow, TaskRow, TodoItemRow, TodoListRow } from "@/lib/api/entity-types";
 
 export function makeDeadline(overrides: Partial<DeadlineRow> = {}): DeadlineRow {
   return {
@@ -81,6 +81,28 @@ export function makeTodoList(overrides: Partial<TodoListRow> = {}): TodoListRow 
     course_id: "c-1",
     name: "To-Do List",
     position: 0,
+    created_at: "2026-01-01T00:00:00Z",
+    updated_at: "2026-01-01T00:00:00Z",
+    deleted_at: null,
+    user_id: "u-1",
+    ...overrides,
+  };
+}
+
+export function makeAppointment(overrides: Partial<AppointmentRow> = {}): AppointmentRow {
+  return {
+    id: "appt-1",
+    title: "Session",
+    date: "2026-01-04",
+    category: "Session",
+    time: null,
+    location: null,
+    notes: [],
+    reminders_enabled: false,
+    reminder_lead_minutes: 60,
+    deadline_id: "d-1",
+    duration_minutes: 60,
+    session_status: "planned",
     created_at: "2026-01-01T00:00:00Z",
     updated_at: "2026-01-01T00:00:00Z",
     deleted_at: null,

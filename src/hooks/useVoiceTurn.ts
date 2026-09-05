@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "@/lib/http/client";
-import { courseKeys, deadlineKeys, noteKeys, reminderKeys, taskKeys } from "@/lib/query/keys";
+import { appointmentKeys, courseKeys, deadlineKeys, noteKeys, reminderKeys, taskKeys, todoItemKeys, todoListKeys } from "@/lib/query/keys";
 import type { VoiceTurnResult } from "@/lib/voice/session";
 import type { MutationExecutionResult } from "@/lib/voice/mutations";
 
@@ -21,6 +21,11 @@ function invalidateAfterMutation(queryClient: ReturnType<typeof useQueryClient>)
   queryClient.invalidateQueries({ queryKey: taskKeys.all });
   queryClient.invalidateQueries({ queryKey: noteKeys.all });
   queryClient.invalidateQueries({ queryKey: reminderKeys.all });
+  // Deadline Sessions (appointments) and the Course To-Do board — also real
+  // PendingMutation target types now, same broad-invalidation approach.
+  queryClient.invalidateQueries({ queryKey: appointmentKeys.all });
+  queryClient.invalidateQueries({ queryKey: todoListKeys.all });
+  queryClient.invalidateQueries({ queryKey: todoItemKeys.all });
 }
 
 /**

@@ -5,7 +5,10 @@ import {
   createCourse,
   createDeadline,
   createReminder,
+  createSession,
   createTask,
+  createTodoItem,
+  createTodoList,
   walkTransitions,
   type TestUser,
 } from "../../../../supabase/tests/helpers";
@@ -69,6 +72,31 @@ describe("executePendingMutation", () => {
         }),
       ).rejects.toBeInstanceOf(MutationTargetNotFoundError);
     });
+
+    it("transitions Not Started -> In Progress", async () => {
+      const courseId = await createCourse(admin, userId);
+      const deadlineId = await createDeadline(admin, userId, courseId, { status: "Not Started" });
+      const result = await executePendingMutation(user.client, userId, {
+        targetType: "deadline",
+        operation: "transition",
+        targetId: deadlineId,
+        event: "user_marks_in_progress",
+      });
+      expect((result.data as { status: string }).status).toBe("In Progress");
+    });
+
+    it("rejects a transition that doesn't apply from the current status", async () => {
+      const courseId = await createCourse(admin, userId);
+      const deadlineId = await createDeadline(admin, userId, courseId, { status: "Not Started" });
+      await expect(
+        executePendingMutation(user.client, userId, {
+          targetType: "deadline",
+          operation: "transition",
+          targetId: deadlineId,
+          event: "user_confirms_done",
+        }),
+      ).rejects.toThrow(/Cannot apply/);
+    });
   });
 
   describe("task", () => {
@@ -107,6 +135,30 @@ describe("executePendingMutation", () => {
       await expect(
         executePendingMutation(user.client, userId, { targetType: "task", operation: "delete", targetId: "00000000-0000-0000-0000-000000000000" }),
       ).rejects.toBeInstanceOf(MutationTargetNotFoundError);
+    });
+
+    it("transitions Open -> Done", async () => {
+      const taskId = await createTask(admin, userId, { status: "Open" });
+      const result = await executePendingMutation(user.client, userId, {
+        targetType: "task",
+        operation: "transition",
+        targetId: taskId,
+        event: "user_marks_done",
+      });
+      expect((result.data as { status: string }).status).toBe("Done");
+    });
+
+    it("rejects a transition that doesn't apply from the current status", async () => {
+      const taskId = await createTask(admin, userId);
+      await walkTransitions(admin, "tasks", taskId, "status", ["Done"]);
+      await expect(
+        executePendingMutation(user.client, userId, {
+          targetType: "task",
+          operation: "transition",
+          targetId: taskId,
+          event: "user_cancels",
+        }),
+      ).rejects.toThrow(/Cannot apply/);
     });
   });
 
@@ -161,6 +213,185 @@ describe("executePendingMutation", () => {
 
       await expect(
         executePendingMutation(user.client, userId, { targetType: "course", operation: "delete", targetId: otherCourseId }),
+      ).rejects.toBeInstanceOf(MutationTargetNotFoundError);
+    });
+
+    it("creates a course", async () => {
+      const result = await executePendingMutation(user.client, userId, {
+        targetType: "course",
+        operation: "create",
+        payload: { name: "CS 101" },
+      });
+      expect((result.data as { name: string }).name).toBe("CS 101");
+    });
+
+    it("updates a course's name", async () => {
+      const courseId = await createCourse(admin, userId, { name: "Old name" });
+      const result = await executePendingMutation(user.client, userId, {
+        targetType: "course",
+        operation: "update",
+        targetId: courseId,
+        payload: { name: "New name" },
+      });
+      expect((result.data as { name: string }).name).toBe("New name");
+    });
+
+    it("throws MutationTargetNotFoundError updating a nonexistent course", async () => {
+      await expect(
+        executePendingMutation(user.client, userId, {
+          targetType: "course",
+          operation: "update",
+          targetId: "00000000-0000-0000-0000-000000000000",
+          payload: { name: "New name" },
+        }),
+      ).rejects.toBeInstanceOf(MutationTargetNotFoundError);
+    });
+  });
+
+  describe("session", () => {
+    it("creates a session under a live deadline, forcing category and session_status", async () => {
+      const courseId = await createCourse(admin, userId);
+      const deadlineId = await createDeadline(admin, userId, courseId);
+      const result = await executePendingMutation(user.client, userId, {
+        targetType: "session",
+        operation: "create",
+        payload: { deadline_id: deadlineId, title: "Read chapter 3", date: "2026-09-06" },
+      });
+      const session = result.data as { title: string; category: string; session_status: string };
+      expect(session.title).toBe("Read chapter 3");
+      expect(session.category).toBe("Session");
+      expect(session.session_status).toBe("planned");
+    });
+
+    it("throws MutationTargetNotFoundError creating a session under a nonexistent/foreign deadline", async () => {
+      await expect(
+        executePendingMutation(user.client, userId, {
+          targetType: "session",
+          operation: "create",
+          payload: { deadline_id: "00000000-0000-0000-0000-000000000000", title: "Read chapter 3", date: "2026-09-06" },
+        }),
+      ).rejects.toBeInstanceOf(MutationTargetNotFoundError);
+    });
+
+    it("deletes a session (soft-delete)", async () => {
+      const courseId = await createCourse(admin, userId);
+      const deadlineId = await createDeadline(admin, userId, courseId);
+      const sessionId = await createSession(admin, userId, deadlineId);
+      await executePendingMutation(user.client, userId, { targetType: "session", operation: "delete", targetId: sessionId });
+
+      const { data } = await admin.from("appointments").select("deleted_at").eq("id", sessionId).single();
+      expect(data?.deleted_at).not.toBeNull();
+    });
+
+    it("transitions planned -> done", async () => {
+      const courseId = await createCourse(admin, userId);
+      const deadlineId = await createDeadline(admin, userId, courseId);
+      const sessionId = await createSession(admin, userId, deadlineId);
+      const result = await executePendingMutation(user.client, userId, {
+        targetType: "session",
+        operation: "transition",
+        targetId: sessionId,
+        event: "user_marks_session_done",
+      });
+      expect((result.data as { session_status: string }).session_status).toBe("done");
+    });
+
+    it("rejects a transition from the terminal 'done' status", async () => {
+      const courseId = await createCourse(admin, userId);
+      const deadlineId = await createDeadline(admin, userId, courseId);
+      const sessionId = await createSession(admin, userId, deadlineId);
+      await walkTransitions(admin, "appointments", sessionId, "session_status", ["done"]);
+      await expect(
+        executePendingMutation(user.client, userId, {
+          targetType: "session",
+          operation: "transition",
+          targetId: sessionId,
+          event: "user_marks_session_skipped",
+        }),
+      ).rejects.toThrow(/Cannot apply/);
+    });
+  });
+
+  describe("todo_list", () => {
+    it("creates a freestanding to-do list (no course_id)", async () => {
+      const result = await executePendingMutation(user.client, userId, {
+        targetType: "todo_list",
+        operation: "create",
+        payload: { name: "Misc" },
+      });
+      expect((result.data as { name: string }).name).toBe("Misc");
+    });
+
+    it("creates a to-do list under a live course", async () => {
+      const courseId = await createCourse(admin, userId);
+      const result = await executePendingMutation(user.client, userId, {
+        targetType: "todo_list",
+        operation: "create",
+        payload: { name: "Homework", course_id: courseId },
+      });
+      expect((result.data as { course_id: string }).course_id).toBe(courseId);
+    });
+
+    it("throws MutationTargetNotFoundError creating a list under a nonexistent/foreign course", async () => {
+      await expect(
+        executePendingMutation(user.client, userId, {
+          targetType: "todo_list",
+          operation: "create",
+          payload: { name: "Homework", course_id: "00000000-0000-0000-0000-000000000000" },
+        }),
+      ).rejects.toBeInstanceOf(MutationTargetNotFoundError);
+    });
+  });
+
+  describe("todo_item", () => {
+    it("creates a to-do item under a live list", async () => {
+      const listId = await createTodoList(admin, userId);
+      const result = await executePendingMutation(user.client, userId, {
+        targetType: "todo_item",
+        operation: "create",
+        payload: { list_id: listId, title: "Read chapter 3" },
+      });
+      expect((result.data as { title: string }).title).toBe("Read chapter 3");
+    });
+
+    it("throws MutationTargetNotFoundError creating an item under a nonexistent/foreign list", async () => {
+      await expect(
+        executePendingMutation(user.client, userId, {
+          targetType: "todo_item",
+          operation: "create",
+          payload: { list_id: "00000000-0000-0000-0000-000000000000", title: "Read chapter 3" },
+        }),
+      ).rejects.toBeInstanceOf(MutationTargetNotFoundError);
+    });
+
+    it("marks a to-do item done via update", async () => {
+      const listId = await createTodoList(admin, userId);
+      const itemId = await createTodoItem(admin, userId, listId, { is_done: false });
+      const result = await executePendingMutation(user.client, userId, {
+        targetType: "todo_item",
+        operation: "update",
+        targetId: itemId,
+        payload: { is_done: true },
+      });
+      expect((result.data as { is_done: boolean }).is_done).toBe(true);
+    });
+
+    it("deletes a to-do item (soft-delete)", async () => {
+      const listId = await createTodoList(admin, userId);
+      const itemId = await createTodoItem(admin, userId, listId);
+      await executePendingMutation(user.client, userId, { targetType: "todo_item", operation: "delete", targetId: itemId });
+
+      const { data } = await admin.from("todo_items").select("deleted_at").eq("id", itemId).single();
+      expect(data?.deleted_at).not.toBeNull();
+    });
+
+    it("throws MutationTargetNotFoundError deleting a nonexistent to-do item", async () => {
+      await expect(
+        executePendingMutation(user.client, userId, {
+          targetType: "todo_item",
+          operation: "delete",
+          targetId: "00000000-0000-0000-0000-000000000000",
+        }),
       ).rejects.toBeInstanceOf(MutationTargetNotFoundError);
     });
   });

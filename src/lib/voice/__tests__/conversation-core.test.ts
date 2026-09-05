@@ -42,7 +42,9 @@ vi.mock("@/lib/voice/intent", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/voice/intent")>();
   return {
     ...actual,
-    loadEntityContext: vi.fn().mockResolvedValue({ courses: [], deadlines: [], tasks: [], knowledgeSources: [], people: [] }),
+    loadEntityContext: vi
+      .fn()
+      .mockResolvedValue({ courses: [], deadlines: [], tasks: [], todoLists: [], todoItems: [], sessions: [], knowledgeSources: [], people: [] }),
     loadUserTimezone: vi.fn().mockResolvedValue("UTC"),
   };
 });
@@ -227,6 +229,9 @@ describe("runConversationTurn", () => {
         courses: [],
         deadlines: [],
         tasks: [],
+        todoLists: [],
+        todoItems: [],
+        sessions: [],
         knowledgeSources: [],
         people: [{ id: PERSON_ID, name: "Châu", relationship: "sister" }],
       });
@@ -260,6 +265,9 @@ describe("runConversationTurn", () => {
         courses: [],
         deadlines: [],
         tasks: [],
+        todoLists: [],
+        todoItems: [],
+        sessions: [],
         knowledgeSources: [],
         people: [{ id: PERSON_ID, name: "Châu", relationship: null }],
       });
@@ -285,6 +293,9 @@ describe("runConversationTurn", () => {
         courses: [],
         deadlines: [],
         tasks: [],
+        todoLists: [],
+        todoItems: [],
+        sessions: [],
         knowledgeSources: [],
         people: [{ id: PERSON_ID, name: "Châu", relationship: "sister" }],
       });

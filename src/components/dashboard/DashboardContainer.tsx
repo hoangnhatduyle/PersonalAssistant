@@ -6,6 +6,7 @@ import { useReminders } from "@/hooks/useReminders";
 import { useTodoItems } from "@/hooks/useTodoItems";
 import { useTodoLists } from "@/hooks/useTodoLists";
 import { useCourses } from "@/hooks/useCourses";
+import { useAppointments } from "@/hooks/useAppointments";
 import { UpNextPanel } from "@/components/dashboard/UpNextPanel";
 import { MomentumCard } from "@/components/dashboard/MomentumCard";
 import { DailyIntelligenceCard } from "@/components/dashboard/DailyIntelligenceCard";
@@ -22,6 +23,7 @@ export function DashboardContainer() {
   const { data: todoItems, isLoading: todoItemsLoading } = useTodoItems({ limit: 100 });
   const { data: todoLists } = useTodoLists({ limit: 100 });
   const { data: courses } = useCourses({ limit: 100 });
+  const { data: appointments } = useAppointments({ limit: 100 });
 
   const isLoading = deadlinesLoading || tasksLoading || remindersLoading || todoItemsLoading;
 
@@ -58,6 +60,7 @@ export function DashboardContainer() {
               todoItems={todoItems?.rows ?? []}
               todoLists={todoLists?.rows ?? []}
               courses={courses?.rows ?? []}
+              appointments={appointments?.rows ?? []}
             />
             <MomentumCard deadlines={deadlines?.rows ?? []} tasks={tasks?.rows ?? []} todoItems={todoItems?.rows ?? []} />
           </div>

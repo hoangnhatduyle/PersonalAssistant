@@ -99,6 +99,155 @@ describe("mutationSchema", () => {
     expect(result.success).toBe(false);
   });
 
+  it("accepts a course create with just a name", () => {
+    const result = mutationSchema.safeParse({ target_type: "course", operation: "create", target_id: null, name: "CS 101" });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects a course create with no name", () => {
+    const result = mutationSchema.safeParse({ target_type: "course", operation: "create", target_id: null, name: null });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects a deadline transition with no event", () => {
+    const result = mutationSchema.safeParse({
+      target_type: "deadline",
+      operation: "transition",
+      target_id: VALID_TARGET_ID,
+      course_id: null,
+      title: null,
+      due_at: null,
+      priority: null,
+      event: null,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts a deadline transition with a valid event", () => {
+    const result = mutationSchema.safeParse({
+      target_type: "deadline",
+      operation: "transition",
+      target_id: VALID_TARGET_ID,
+      course_id: null,
+      title: null,
+      due_at: null,
+      priority: null,
+      event: "user_marks_submitted",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects a task transition with no event", () => {
+    const result = mutationSchema.safeParse({
+      target_type: "task",
+      operation: "transition",
+      target_id: VALID_TARGET_ID,
+      title: null,
+      due_at: null,
+      reminder_lead_minutes: null,
+      priority: null,
+      event: null,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts a session create with deadline_id, title, and date", () => {
+    const result = mutationSchema.safeParse({
+      target_type: "session",
+      operation: "create",
+      target_id: null,
+      deadline_id: VALID_TARGET_ID,
+      title: "Read chapter 3",
+      date: "2026-09-06",
+      time: null,
+      duration_minutes: null,
+      event: null,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects a session create missing deadline_id", () => {
+    const result = mutationSchema.safeParse({
+      target_type: "session",
+      operation: "create",
+      target_id: null,
+      deadline_id: null,
+      title: "Read chapter 3",
+      date: "2026-09-06",
+      time: null,
+      duration_minutes: null,
+      event: null,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects a session transition with no event", () => {
+    const result = mutationSchema.safeParse({
+      target_type: "session",
+      operation: "transition",
+      target_id: VALID_TARGET_ID,
+      deadline_id: null,
+      title: null,
+      date: null,
+      time: null,
+      duration_minutes: null,
+      event: null,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts a to-do list create with just a name", () => {
+    const result = mutationSchema.safeParse({ target_type: "todo_list", operation: "create", course_id: null, name: "Misc" });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects a to-do list create with no name", () => {
+    const result = mutationSchema.safeParse({ target_type: "todo_list", operation: "create", course_id: null, name: null });
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts a to-do item create with list_id and title", () => {
+    const result = mutationSchema.safeParse({
+      target_type: "todo_item",
+      operation: "create",
+      target_id: null,
+      list_id: VALID_TARGET_ID,
+      title: "Read chapter 3",
+      due_date: null,
+      priority: null,
+      done: null,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects a to-do item create missing list_id", () => {
+    const result = mutationSchema.safeParse({
+      target_type: "todo_item",
+      operation: "create",
+      target_id: null,
+      list_id: null,
+      title: "Read chapter 3",
+      due_date: null,
+      priority: null,
+      done: null,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts a to-do item update marking it done", () => {
+    const result = mutationSchema.safeParse({
+      target_type: "todo_item",
+      operation: "update",
+      target_id: VALID_TARGET_ID,
+      list_id: null,
+      title: null,
+      due_date: null,
+      priority: null,
+      done: true,
+    });
+    expect(result.success).toBe(true);
+  });
+
   it("accepts a task create with reminder_lead_minutes: 0 (explicit \"remind me at <time>\")", () => {
     const result = mutationSchema.safeParse({
       target_type: "task",
@@ -301,6 +450,116 @@ describe("toPendingMutation", () => {
       targetId: VALID_TARGET_ID,
       event: "user_snoozes",
       snoozeUntil: "2026-09-01T00:00:00.000Z",
+    });
+  });
+
+  it("maps a course create, dropping omitted optional fields", () => {
+    const raw = mutationSchema.parse({ target_type: "course", operation: "create", target_id: null, name: "CS 101" });
+    expect(toPendingMutation(raw)).toEqual({ targetType: "course", operation: "create", payload: { name: "CS 101" } });
+  });
+
+  it("maps a deadline transition", () => {
+    const raw = mutationSchema.parse({
+      target_type: "deadline",
+      operation: "transition",
+      target_id: VALID_TARGET_ID,
+      course_id: null,
+      title: null,
+      due_at: null,
+      priority: null,
+      event: "user_marks_submitted",
+    });
+    expect(toPendingMutation(raw)).toEqual({
+      targetType: "deadline",
+      operation: "transition",
+      targetId: VALID_TARGET_ID,
+      event: "user_marks_submitted",
+    });
+  });
+
+  it("maps a task transition", () => {
+    const raw = mutationSchema.parse({
+      target_type: "task",
+      operation: "transition",
+      target_id: VALID_TARGET_ID,
+      title: null,
+      due_at: null,
+      reminder_lead_minutes: null,
+      priority: null,
+      event: "user_marks_done",
+    });
+    expect(toPendingMutation(raw)).toEqual({
+      targetType: "task",
+      operation: "transition",
+      targetId: VALID_TARGET_ID,
+      event: "user_marks_done",
+    });
+  });
+
+  it("maps a session create, dropping omitted optional fields", () => {
+    const raw = mutationSchema.parse({
+      target_type: "session",
+      operation: "create",
+      target_id: null,
+      deadline_id: VALID_COURSE_ID,
+      title: "Read chapter 3",
+      date: "2026-09-06",
+      time: null,
+      duration_minutes: null,
+      event: null,
+    });
+    expect(toPendingMutation(raw)).toEqual({
+      targetType: "session",
+      operation: "create",
+      payload: { deadline_id: VALID_COURSE_ID, title: "Read chapter 3", date: "2026-09-06" },
+    });
+  });
+
+  it("maps a session transition", () => {
+    const raw = mutationSchema.parse({
+      target_type: "session",
+      operation: "transition",
+      target_id: VALID_TARGET_ID,
+      deadline_id: null,
+      title: null,
+      date: null,
+      time: null,
+      duration_minutes: null,
+      event: "user_marks_session_done",
+    });
+    expect(toPendingMutation(raw)).toEqual({
+      targetType: "session",
+      operation: "transition",
+      targetId: VALID_TARGET_ID,
+      event: "user_marks_session_done",
+    });
+  });
+
+  it("maps a to-do list create", () => {
+    const raw = mutationSchema.parse({ target_type: "todo_list", operation: "create", course_id: VALID_COURSE_ID, name: "Misc" });
+    expect(toPendingMutation(raw)).toEqual({
+      targetType: "todo_list",
+      operation: "create",
+      payload: { name: "Misc", course_id: VALID_COURSE_ID },
+    });
+  });
+
+  it("maps a to-do item update that marks it done", () => {
+    const raw = mutationSchema.parse({
+      target_type: "todo_item",
+      operation: "update",
+      target_id: VALID_TARGET_ID,
+      list_id: null,
+      title: null,
+      due_date: null,
+      priority: null,
+      done: true,
+    });
+    expect(toPendingMutation(raw)).toEqual({
+      targetType: "todo_item",
+      operation: "update",
+      targetId: VALID_TARGET_ID,
+      payload: { is_done: true },
     });
   });
 });

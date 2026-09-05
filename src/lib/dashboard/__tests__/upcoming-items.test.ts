@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { buildUpcomingItems, filterUpcomingItemsByTimeWindow, isOpenDeadline, isOpenTask } from "../upcoming-items";
 import type { UpcomingItem } from "../upcoming-items";
-import { makeDeadline, makeReminder, makeTask, makeTodoItem } from "./fixtures";
+import { makeAppointment, makeDeadline, makeReminder, makeTask, makeTodoItem } from "./fixtures";
 
 describe("isOpenDeadline / isOpenTask", () => {
   it("excludes terminal deadline statuses", () => {
@@ -120,6 +120,43 @@ describe("buildUpcomingItems", () => {
     });
     expect(items.map((item) => item.id)).toEqual(["todo-open"]);
     expect(items[0]).toMatchObject({ kind: "todo", href: "/courses/todos" });
+  });
+
+  it("includes only planned Deadline Sessions, linking to the parent deadline", () => {
+    const items = buildUpcomingItems({
+      deadlines: [],
+      tasks: [],
+      appointments: [
+        makeAppointment({ id: "s-planned", session_status: "planned", deadline_id: "d-9" }),
+        makeAppointment({ id: "s-done", session_status: "done" }),
+        makeAppointment({ id: "s-skipped", session_status: "skipped" }),
+        makeAppointment({ id: "s-other-category", category: "Personal", session_status: null }),
+      ],
+    });
+    expect(items.map((item) => item.id)).toEqual(["s-planned"]);
+    expect(items[0]).toMatchObject({ kind: "session", href: "/deadlines/d-9" });
+  });
+
+  it("marks a Deadline Session urgent once its date is in the past", () => {
+    const items = buildUpcomingItems({
+      deadlines: [],
+      tasks: [],
+      appointments: [
+        makeAppointment({ id: "s-past", date: "2020-01-01" }),
+        makeAppointment({ id: "s-future", date: "2999-01-01" }),
+      ],
+    });
+    expect(items.find((item) => item.id === "s-past")?.urgent).toBe(true);
+    expect(items.find((item) => item.id === "s-future")?.urgent).toBe(false);
+  });
+
+  it("links a Deadline Session with no deadline_id nowhere (defensive — sessions always have one in practice)", () => {
+    const items = buildUpcomingItems({
+      deadlines: [],
+      tasks: [],
+      appointments: [makeAppointment({ id: "s-1", deadline_id: null })],
+    });
+    expect(items[0].href).toBeNull();
   });
 
   it("uses snooze_until instead of trigger_at for a Snoozed reminder", () => {

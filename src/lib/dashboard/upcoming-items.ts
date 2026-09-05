@@ -1,6 +1,6 @@
-import type { DeadlineRow, DeadlineStatus, TaskRow, TaskStatus, ReminderRow, TodoItemRow } from "@/lib/api/entity-types";
+import type { AppointmentRow, DeadlineRow, DeadlineStatus, TaskRow, TaskStatus, ReminderRow, TodoItemRow } from "@/lib/api/entity-types";
 
-export type UpcomingItemKind = "deadline" | "task" | "reminder" | "todo";
+export type UpcomingItemKind = "deadline" | "task" | "reminder" | "todo" | "session";
 
 export type TimeWindowFilter = "today" | "tomorrow" | "3days" | "7days" | "all";
 
@@ -34,6 +34,8 @@ interface BuildUpcomingItemsInput {
   tasks: TaskRow[];
   reminders?: ReminderRow[];
   todoItems?: TodoItemRow[];
+  /** Deadline Sessions: appointments rows tagged category "Session". Only "planned" ones are actionable/upcoming. */
+  appointments?: AppointmentRow[];
 }
 
 /**
@@ -41,7 +43,13 @@ interface BuildUpcomingItemsInput {
  * ascending-sorted timeline. No `/api/dashboard` route exists — this
  * composes already-fetched, already-cached list data client-side.
  */
-export function buildUpcomingItems({ deadlines, tasks, reminders = [], todoItems = [] }: BuildUpcomingItemsInput): UpcomingItem[] {
+export function buildUpcomingItems({
+  deadlines,
+  tasks,
+  reminders = [],
+  todoItems = [],
+  appointments = [],
+}: BuildUpcomingItemsInput): UpcomingItem[] {
   const items: UpcomingItem[] = [];
   const now = Date.now();
 
@@ -95,6 +103,23 @@ export function buildUpcomingItems({ deadlines, tasks, reminders = [], todoItems
       at,
       href: "/courses/todos",
       urgent: item.due_date < today,
+    });
+  }
+
+  // Deadline Sessions: appointments rows tagged category "Session". Only
+  // "planned" ones are actionable/upcoming here — a done/skipped session has
+  // nothing left to act on, matching isOpenDeadline/isOpenTask's convention
+  // of excluding closed-out items from the queue.
+  for (const session of appointments) {
+    if (session.category !== "Session" || session.session_status !== "planned") continue;
+    const at = new Date(`${session.date}T23:59:59.999`);
+    items.push({
+      id: session.id,
+      kind: "session",
+      title: session.title,
+      at,
+      href: session.deadline_id ? `/deadlines/${session.deadline_id}` : null,
+      urgent: session.date < today,
     });
   }
 

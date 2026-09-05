@@ -14,8 +14,8 @@ import { Badge } from "@/components/ui/Badge";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { useToast } from "@/components/ui/Toast";
-import type { StatusTone } from "@/lib/status-colors";
-import type { AppointmentRow, SessionStatus } from "@/lib/api/entity-types";
+import { SESSION_STATUS_TONE } from "@/lib/status-colors";
+import type { AppointmentRow } from "@/lib/api/entity-types";
 
 type Props = {
   deadlineId: string;
@@ -24,12 +24,6 @@ type Props = {
 const EVENT_LABELS: Record<SessionTransitionEvent, string> = {
   user_marks_session_done: "Mark Done",
   user_marks_session_skipped: "Mark Skipped",
-};
-
-const SESSION_STATUS_TONE: Record<SessionStatus, StatusTone> = {
-  planned: "neutral",
-  done: "ok",
-  skipped: "warn",
 };
 
 function formatSessionDate(date: string): string {

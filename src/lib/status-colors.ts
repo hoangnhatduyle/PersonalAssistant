@@ -32,6 +32,7 @@ export function toneBarClasses(tone: StatusTone): string {
 type DeadlineStatus = Database["public"]["Enums"]["deadline_status"];
 type TaskStatus = Database["public"]["Enums"]["task_status"];
 type ReminderStatus = Database["public"]["Enums"]["reminder_status"];
+type SessionStatus = Database["public"]["Enums"]["session_status"];
 type KnowledgeSourceStatus = Database["public"]["Enums"]["knowledge_source_status"];
 type ItemPriority = Database["public"]["Enums"]["item_priority"];
 
@@ -48,6 +49,12 @@ export const TASK_STATUS_TONE: Record<TaskStatus, StatusTone> = {
   Open: "accent",
   Done: "ok",
   Cancelled: "neutral",
+};
+
+export const SESSION_STATUS_TONE: Record<SessionStatus, StatusTone> = {
+  planned: "neutral",
+  done: "ok",
+  skipped: "warn",
 };
 
 export const REMINDER_STATUS_TONE: Record<ReminderStatus, StatusTone> = {
