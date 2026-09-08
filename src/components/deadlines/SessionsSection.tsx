@@ -31,7 +31,14 @@ function formatSessionDate(date: string): string {
 }
 
 /** Inline status-transition buttons for one session — structurally identical to DeadlineTransitionMenu. */
-export function SessionTransitionButtons({ session }: { session: AppointmentRow }) {
+export function SessionTransitionButtons({
+  session,
+  size = "sm",
+}: {
+  session: AppointmentRow;
+  /** "lg" is Driving Mode's oversized touch target — everywhere else stays "sm". */
+  size?: "sm" | "lg";
+}) {
   const events = session.session_status ? getValidSessionEvents(session.session_status) : [];
   const transition = useTransitionAppointment(session.id);
   const { showToast } = useToast();
@@ -48,14 +55,15 @@ export function SessionTransitionButtons({ session }: { session: AppointmentRow 
   };
 
   return (
-    <div className="flex gap-2">
+    <div className={`flex gap-2 ${size === "lg" ? "flex-wrap" : ""}`}>
       {events.map((event) => (
         <Button
           key={event}
-          size="sm"
+          size={size === "lg" ? "md" : "sm"}
           variant={event === "user_marks_session_skipped" ? "secondary" : "primary"}
           isLoading={transition.isPending}
           onClick={() => handleTransition(event)}
+          className={size === "lg" ? "px-6 py-3 text-base" : ""}
         >
           {EVENT_LABELS[event]}
         </Button>

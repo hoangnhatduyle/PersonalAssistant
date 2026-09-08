@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
+import { useIsStandalone } from "@/hooks/useIsStandalone";
 
 type NavItem = {
   href: string;
@@ -64,6 +65,13 @@ const icons = {
       <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.04 1.56V21a2 2 0 1 1-4 0v-.09A1.7 1.7 0 0 0 9 19.36a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.64 15a1.7 1.7 0 0 0-1.56-1.04H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.64 9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.64a1.7 1.7 0 0 0 1.04-1.56V3a2 2 0 1 1 4 0v.09A1.7 1.7 0 0 0 15 4.64a1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.36 9a1.7 1.7 0 0 0 1.56 1.04H21a2 2 0 1 1 0 4h-.09A1.7 1.7 0 0 0 19.4 15z" />
     </svg>
   ),
+  driving: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} className="h-5 w-5">
+      <circle cx="12" cy="12" r="8" />
+      <circle cx="12" cy="12" r="2.5" />
+      <path d="M12 4v3.5M12 16.5V20M4 12h3.5M16.5 12H20" strokeLinecap="round" />
+    </svg>
+  ),
 };
 
 const NAV_ITEMS: NavItem[] = [
@@ -79,6 +87,7 @@ const NAV_ITEMS: NavItem[] = [
 
 export function IconRail({ email }: Props) {
   const pathname = usePathname();
+  const isStandalone = useIsStandalone();
   const [isMobileOpen, setIsMobileOpen] = useState(false);
 
   // Route changes (including nav-link taps) should close the mobile drawer
@@ -86,6 +95,9 @@ export function IconRail({ email }: Props) {
   useEffect(() => {
     setIsMobileOpen(false);
   }, [pathname]);
+
+  // Driving Mode renders its own full-screen chrome -- no sidebar there.
+  if (pathname.startsWith("/driving")) return null;
 
   return (
     <>
@@ -152,6 +164,15 @@ export function IconRail({ email }: Props) {
             </Link>
           );
         })}
+        {isStandalone && (
+          <Link
+            href="/driving"
+            className="mt-2 flex items-center gap-3 rounded-control border border-accent-teal/40 bg-accent-teal/10 px-3 py-2.5 text-sm text-accent-teal transition-colors hover:bg-accent-teal/20"
+          >
+            <span className="flex h-5 w-5 shrink-0 items-center justify-center">{icons.driving}</span>
+            <span className="truncate">Start Driving Mode</span>
+          </Link>
+        )}
       </nav>
     </>
   );

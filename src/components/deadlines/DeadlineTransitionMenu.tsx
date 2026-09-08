@@ -16,10 +16,12 @@ const EVENT_LABELS: Record<DeadlineTransitionEvent, string> = {
 type Props = {
   deadlineId: string;
   status: DeadlineStatus;
+  /** "lg" is Driving Mode's oversized touch target — everywhere else stays "sm". */
+  size?: "sm" | "lg";
 };
 
 /** Overdue never offers Cancel — reads the same transition table the server enforces (src/lib/api/transitions.ts). */
-export function DeadlineTransitionMenu({ deadlineId, status }: Props) {
+export function DeadlineTransitionMenu({ deadlineId, status, size = "sm" }: Props) {
   const events = getValidDeadlineEvents(status);
   const transition = useTransitionDeadline(deadlineId);
   const { showToast } = useToast();
@@ -36,14 +38,15 @@ export function DeadlineTransitionMenu({ deadlineId, status }: Props) {
   };
 
   return (
-    <div className="flex gap-2">
+    <div className={`flex gap-2 ${size === "lg" ? "flex-wrap" : ""}`}>
       {events.map((event) => (
         <Button
           key={event}
-          size="sm"
+          size={size === "lg" ? "md" : "sm"}
           variant={event === "user_cancels" ? "secondary" : "primary"}
           isLoading={transition.isPending}
           onClick={() => handleTransition(event)}
+          className={size === "lg" ? "px-6 py-3 text-base" : ""}
         >
           {EVENT_LABELS[event]}
         </Button>

@@ -24,6 +24,8 @@ type MicVisualState = LocalStatus | "speaking";
 
 type Props = {
   compact?: boolean;
+  /** Driving Mode's oversized mic — bigger touch target and text, same behavior. Mutually exclusive with `compact`. */
+  large?: boolean;
 };
 
 // listening's teal (not red) matches this app's existing "listening"
@@ -36,9 +38,9 @@ const MIC_STATE_CLASSES: Record<MicVisualState, string> = {
   speaking: "animate-mic-speaking border-accent-indigo bg-accent-indigo/20 text-accent-indigo",
 };
 
-export function MicIcon() {
+export function MicIcon({ className = "h-6 w-6" }: { className?: string }) {
   return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} className="h-6 w-6" aria-hidden="true">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} className={className} aria-hidden="true">
       <rect x="9" y="3" width="6" height="11" rx="3" />
       <path d="M5 11a7 7 0 0 0 14 0M12 18v3" strokeLinecap="round" />
     </svg>
@@ -82,7 +84,7 @@ async function describeMicrophoneAccessError(): Promise<string> {
  * VoiceCaptureProvider context so an in-flight turn survives navigating
  * away from and back to /assistant.
  */
-export function CaptureChannel({ compact = false }: Props) {
+export function CaptureChannel({ compact = false, large = false }: Props) {
   const { state, applyTurnResult } = useVoiceCapture();
   const { showToast } = useToast();
   const voiceTurn = useVoiceTurn();
@@ -219,7 +221,10 @@ export function CaptureChannel({ compact = false }: Props) {
   const micVisualState: MicVisualState = isRecording ? "listening" : speakResponse.isPending ? "speaking" : localStatus;
 
   return (
-    <GlassPanel variant={compact ? "default" : "raised"} className={`flex flex-col gap-4 ${compact ? "p-4" : "p-6"}`}>
+    <GlassPanel
+      variant={compact ? "default" : "raised"}
+      className={`flex flex-col gap-4 ${compact ? "p-4" : large ? "p-8" : "p-6"}`}
+    >
       <div className="flex flex-col items-center gap-3 py-2">
         <div className="relative flex items-center gap-2">
           <button
@@ -228,7 +233,7 @@ export function CaptureChannel({ compact = false }: Props) {
             aria-label="Tap to talk"
             disabled={localStatus === "transcribing"}
             onClick={handleMicClick}
-            className={`relative flex h-16 w-16 items-center justify-center rounded-full border transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${MIC_STATE_CLASSES[micVisualState]}`}
+            className={`relative flex items-center justify-center rounded-full border transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${large ? "h-28 w-28" : "h-16 w-16"} ${MIC_STATE_CLASSES[micVisualState]}`}
           >
             {micVisualState === "transcribing" && (
               <span
@@ -236,7 +241,7 @@ export function CaptureChannel({ compact = false }: Props) {
                 className="animate-mic-transcribing-ring absolute inset-1 rounded-full border-2 border-transparent border-t-accent-indigo"
               />
             )}
-            <MicIcon />
+            <MicIcon className={large ? "h-12 w-12" : "h-6 w-6"} />
           </button>
           <button
             type="button"
@@ -244,12 +249,12 @@ export function CaptureChannel({ compact = false }: Props) {
             title="New conversation"
             disabled={resetConversation.isPending}
             onClick={() => resetConversation.mutate()}
-            className="flex h-8 w-8 items-center justify-center rounded-full border border-panel-border text-text-secondary transition-colors hover:border-accent-indigo/50 hover:text-accent-indigo disabled:cursor-not-allowed disabled:opacity-50"
+            className={`flex items-center justify-center rounded-full border border-panel-border text-text-secondary transition-colors hover:border-accent-indigo/50 hover:text-accent-indigo disabled:cursor-not-allowed disabled:opacity-50 ${large ? "h-11 w-11" : "h-8 w-8"}`}
           >
             <NewConversationIcon />
           </button>
         </div>
-        <p className="text-xs text-text-secondary">
+        <p className={large ? "text-lg text-text-secondary" : "text-xs text-text-secondary"}>
           {isRecording ? "Tap to stop" : "Tap to talk"}
           {handsFree && " · Hands-free on"}
         </p>
@@ -270,9 +275,15 @@ export function CaptureChannel({ compact = false }: Props) {
           disabled={isBusy}
           aria-label="Text fallback for voice capture"
           rows={compact ? 3 : 5}
-          className="min-h-24 resize-y"
+          className={`min-h-24 resize-y ${large ? "text-lg" : ""}`}
         />
-        <Button type="submit" size="sm" variant="secondary" disabled={isBusy || textInput.trim().length === 0}>
+        <Button
+          type="submit"
+          size={large ? "md" : "sm"}
+          variant="secondary"
+          disabled={isBusy || textInput.trim().length === 0}
+          className={large ? "px-6 py-3 text-base" : ""}
+        >
           Send
         </Button>
       </form>

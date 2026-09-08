@@ -2,11 +2,10 @@ import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 import { createClient, getAuthenticatedUser } from "@/lib/supabase/server";
 import { IconRail } from "@/components/layout/IconRail";
-import { SignOutButton } from "@/components/auth/SignOutButton";
+import { AppHeader } from "@/components/layout/AppHeader";
 import { VoiceCaptureProvider } from "@/components/assistant/VoiceCaptureProvider";
-import { CaptureQuickAction } from "@/components/assistant/CaptureQuickAction";
 import { CommandPalette } from "@/components/search/CommandPalette";
-import { SearchTrigger } from "@/components/search/SearchTrigger";
+import { DrivingModePrompt } from "@/components/driving/DrivingModePrompt";
 
 /**
  * Defense-in-depth alongside src/proxy.ts's redirect: proxy.ts already
@@ -25,21 +24,10 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
       <div className="flex min-h-screen">
         <IconRail email={user.email ?? ""} />
         <div className="flex min-w-0 flex-1 flex-col">
-          <header className="flex items-center justify-between border-b border-panel-border bg-bg-void-elevated py-3 pl-16 pr-6 md:px-6">
-            <div className="flex items-center gap-2">
-              <span className="h-2 w-2 rounded-full bg-status-ok" aria-hidden="true" />
-              <span className="hidden text-xs uppercase tracking-wide text-text-eyebrow md:inline">
-                Signed in as {user.email}
-              </span>
-            </div>
-            <div className="flex items-center gap-3">
-              <SearchTrigger />
-              <CaptureQuickAction />
-              <SignOutButton />
-            </div>
-          </header>
+          <AppHeader email={user.email ?? ""} />
           <main className="min-w-0 flex-1 px-6 py-6">{children}</main>
           <CommandPalette />
+          <DrivingModePrompt />
         </div>
       </div>
     </VoiceCaptureProvider>
