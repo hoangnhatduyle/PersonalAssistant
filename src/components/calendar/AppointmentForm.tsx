@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Button } from "@/components/ui/Button";
 import { APPOINTMENT_CATEGORIES } from "@/lib/appointments/types";
-import { splitLinks, containsLink } from "@/lib/text/linkify";
+import { splitLinks } from "@/lib/text/linkify";
 import type { AppointmentRow } from "@/lib/api/entity-types";
 
 export type AppointmentFormValues = {
@@ -36,6 +36,7 @@ export function AppointmentForm({ appointment, onSubmit, onCancel }: Props) {
   const [duration, setDuration] = useState(appointment?.duration_minutes ? String(appointment.duration_minutes) : "");
   const [location, setLocation] = useState(appointment?.location ?? "");
   const [notes, setNotes] = useState((appointment?.notes ?? []).join("\n"));
+  const [isEditingNotes, setIsEditingNotes] = useState(() => (appointment?.notes ?? []).length === 0);
   const [error, setError] = useState<string | null>(null);
 
   const durationMinutes = Number(duration);
@@ -104,17 +105,30 @@ export function AppointmentForm({ appointment, onSubmit, onCancel }: Props) {
         <Input id="appointment-location" placeholder="e.g. Baldwin Hall 544" value={location} onChange={(event) => setLocation(event.target.value)} />
       </FormField>
 
-      <FormField label="Notes (one item per line)" htmlFor="appointment-notes">
-        <textarea
-          id="appointment-notes"
-          rows={5}
-          placeholder="Optional details, one per line"
-          value={notes}
-          onChange={(event) => setNotes(event.target.value)}
-          className="w-full rounded-control border border-panel-border bg-bg-void-elevated px-3 py-2 text-sm text-text-primary placeholder:text-text-secondary focus:outline-none focus:ring-2 focus:ring-accent-indigo/50 focus:border-panel-border-hover"
-        />
-        {containsLink(notes) && (
-          <div className="mt-2 flex flex-col gap-1 rounded-control border border-panel-border bg-bg-void px-3 py-2 text-sm text-text-secondary">
+      <div className="flex flex-col gap-1.5">
+        <div className="flex items-center justify-between gap-2">
+          <label htmlFor="appointment-notes" className="font-mono text-xs uppercase tracking-wide text-text-eyebrow">
+            Notes (one item per line)
+          </label>
+          <button
+            type="button"
+            onClick={() => setIsEditingNotes((current) => !current)}
+            className="font-mono text-[10px] uppercase tracking-wide text-accent-indigo hover:underline"
+          >
+            {isEditingNotes ? "Preview" : "Edit"}
+          </button>
+        </div>
+        {isEditingNotes ? (
+          <textarea
+            id="appointment-notes"
+            rows={5}
+            placeholder="Optional details, one per line"
+            value={notes}
+            onChange={(event) => setNotes(event.target.value)}
+            className="w-full rounded-control border border-panel-border bg-bg-void-elevated px-3 py-2 text-sm text-text-primary placeholder:text-text-secondary focus:outline-none focus:ring-2 focus:ring-accent-indigo/50 focus:border-panel-border-hover"
+          />
+        ) : (
+          <div className="flex min-h-[3rem] flex-col gap-1 rounded-control border border-panel-border bg-bg-void px-3 py-2 text-sm text-text-secondary">
             {notes
               .split("\n")
               .filter((line) => line.trim() !== "")
@@ -137,9 +151,10 @@ export function AppointmentForm({ appointment, onSubmit, onCancel }: Props) {
                   )}
                 </p>
               ))}
+            {notes.trim() === "" && <p className="italic">No notes</p>}
           </div>
         )}
-      </FormField>
+      </div>
       <div className="flex justify-end gap-2">
         <Button type="button" variant="secondary" onClick={onCancel}>
           Cancel

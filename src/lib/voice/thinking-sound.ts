@@ -10,7 +10,11 @@
 // source has a spoken watermark starting ~17s in.
 const THINKING_SOUND_URL = "/sounds/TunePocket-Happy-And-Quiet-Place-Loop.mp3";
 const FADE_IN_SECONDS = 0.35;
-const FADE_OUT_SECONDS = 0.25;
+// Deliberately longer than the clip's own baked-in 0.35s tail fade (see
+// trim-thinking-sound.mjs) -- this is the fade heard right as the assistant
+// is about to speak, so it needs to read as a graceful hand-off rather than
+// an abrupt cut.
+const FADE_OUT_SECONDS = 0.8;
 // This is a full mixed/mastered track, not a subtle synthesized tone -- kept
 // well under unity gain so it reads as quiet background music behind the UI
 // rather than competing for attention with it.
@@ -20,6 +24,14 @@ let audioContext: AudioContext | null = null;
 let bufferPromise: Promise<AudioBuffer> | null = null;
 let activeSource: AudioBufferSourceNode | null = null;
 let activeGain: GainNode | null = null;
+// Native AudioBufferSourceNode.loop restarts the clip unconditionally, with
+// no way to veto the next cycle once it's armed -- that's what caused the
+// clip's fade-in swell to audibly restart right as real speech was about to
+// start (a stop request landing a moment too late to stop it). Replaying
+// the buffer manually via onended instead means each next cycle only ever
+// starts if this is still true at that moment, so stopThinkingSound() (which
+// clears it synchronously, before anything else) always wins the race.
+let shouldContinue = false;
 
 function getAudioContext(): AudioContext {
   audioContext ??= new AudioContext();
@@ -31,6 +43,22 @@ function loadBuffer(context: AudioContext): Promise<AudioBuffer> {
     .then((response) => response.arrayBuffer())
     .then((data) => context.decodeAudioData(data));
   return bufferPromise;
+}
+
+function playSegment(context: AudioContext, gain: GainNode, buffer: AudioBuffer): void {
+  const source = context.createBufferSource();
+  source.buffer = buffer;
+  source.connect(gain);
+  source.onended = () => {
+    // Covers both a natural end-of-clip and stopThinkingSound()'s explicit
+    // stop() call below -- either way, only chain into another cycle if
+    // nothing vetoed it (via shouldContinue) and a newer call to
+    // startThinkingSound()/stopThinkingSound() hasn't already moved on
+    // (via activeSource).
+    if (shouldContinue && activeSource === source) playSegment(context, gain, buffer);
+  };
+  source.start();
+  activeSource = source;
 }
 
 /**
@@ -54,6 +82,7 @@ export function startThinkingSound(): void {
   gain.gain.linearRampToValueAtTime(TARGET_GAIN, context.currentTime + FADE_IN_SECONDS);
   gain.connect(context.destination);
   activeGain = gain;
+  shouldContinue = true;
 
   loadBuffer(context)
     .then((buffer) => {
@@ -61,15 +90,7 @@ export function startThinkingSound(): void {
       // in flight (nulling activeGain) -- treat that as "changed its mind
       // before this ever made a sound" rather than starting it anyway.
       if (activeGain !== gain) return;
-      const source = context.createBufferSource();
-      source.buffer = buffer;
-      // The 16s clip has short fades baked in at both ends (see
-      // trim-thinking-sound.mjs) specifically so this loop restart doesn't
-      // click/pop on a longer wait.
-      source.loop = true;
-      source.connect(gain);
-      source.start();
-      activeSource = source;
+      playSegment(context, gain, buffer);
     })
     .catch(() => {
       // Missing/undecodable asset -- the rest of the voice flow doesn't
@@ -81,9 +102,13 @@ export function startThinkingSound(): void {
 /**
  * Fades out and stops the thinking ambience. Safe to call even when nothing
  * is playing (e.g. a text-originated turn that never started one, or a
- * second cleanup call after onPlaybackStart already stopped it).
+ * second cleanup call after onPlaybackStart already stopped it). Clears
+ * shouldContinue synchronously, before anything else, so a replay that's
+ * about to be chained from the current segment's onended can never win a
+ * race against this.
  */
 export function stopThinkingSound(): void {
+  shouldContinue = false;
   const context = audioContext;
   const gain = activeGain;
   const source = activeSource;

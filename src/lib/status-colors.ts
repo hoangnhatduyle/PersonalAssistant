@@ -1,6 +1,6 @@
 import type { Database } from "@/lib/supabase/types";
 
-export type StatusTone = "ok" | "warn" | "urgent" | "neutral" | "accent";
+export type StatusTone = "ok" | "warn" | "urgent" | "neutral" | "accent" | "purple";
 
 const TONE_CLASSES: Record<StatusTone, string> = {
   ok: "bg-status-ok/15 text-status-ok border-status-ok/30",
@@ -8,6 +8,7 @@ const TONE_CLASSES: Record<StatusTone, string> = {
   urgent: "bg-status-urgent/15 text-status-urgent border-status-urgent/30",
   neutral: "bg-status-neutral/15 text-status-neutral border-status-neutral/30",
   accent: "bg-accent-indigo/15 text-accent-indigo border-accent-indigo/30",
+  purple: "bg-accent-violet/15 text-accent-violet border-accent-violet/30",
 };
 
 export function toneClasses(tone: StatusTone): string {
@@ -23,6 +24,7 @@ const TONE_BAR_CLASSES: Record<StatusTone, string> = {
   urgent: "bg-status-urgent",
   neutral: "bg-status-neutral",
   accent: "bg-accent-indigo",
+  purple: "bg-accent-violet",
 };
 
 export function toneBarClasses(tone: StatusTone): string {
@@ -46,7 +48,7 @@ export const DEADLINE_STATUS_TONE: Record<DeadlineStatus, StatusTone> = {
 };
 
 export const TASK_STATUS_TONE: Record<TaskStatus, StatusTone> = {
-  Open: "accent",
+  Open: "purple",
   Done: "ok",
   Cancelled: "neutral",
 };

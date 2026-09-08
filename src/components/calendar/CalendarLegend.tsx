@@ -5,7 +5,7 @@ import type { PersonRow } from "@/lib/api/entity-types";
 const LEGEND_ITEMS = [
   { label: "Course", tone: "accent" as const },
   { label: "Deadline", tone: "urgent" as const },
-  { label: "Task", tone: "accent" as const },
+  { label: "Task", tone: "purple" as const },
   { label: "Appointment", tone: "warn" as const },
 ];
 
