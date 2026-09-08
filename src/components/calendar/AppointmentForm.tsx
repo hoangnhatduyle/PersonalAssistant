@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Button } from "@/components/ui/Button";
 import { APPOINTMENT_CATEGORIES } from "@/lib/appointments/types";
+import { splitLinks, containsLink } from "@/lib/text/linkify";
 import type { AppointmentRow } from "@/lib/api/entity-types";
 
 export type AppointmentFormValues = {
@@ -106,12 +107,38 @@ export function AppointmentForm({ appointment, onSubmit, onCancel }: Props) {
       <FormField label="Notes (one item per line)" htmlFor="appointment-notes">
         <textarea
           id="appointment-notes"
-          rows={3}
+          rows={5}
           placeholder="Optional details, one per line"
           value={notes}
           onChange={(event) => setNotes(event.target.value)}
           className="w-full rounded-control border border-panel-border bg-bg-void-elevated px-3 py-2 text-sm text-text-primary placeholder:text-text-secondary focus:outline-none focus:ring-2 focus:ring-accent-indigo/50 focus:border-panel-border-hover"
         />
+        {containsLink(notes) && (
+          <div className="mt-2 flex flex-col gap-1 rounded-control border border-panel-border bg-bg-void px-3 py-2 text-sm text-text-secondary">
+            {notes
+              .split("\n")
+              .filter((line) => line.trim() !== "")
+              .map((line, lineIndex) => (
+                <p key={lineIndex} className="break-words">
+                  {splitLinks(line).map((segment, segmentIndex) =>
+                    segment.isLink ? (
+                      <a
+                        key={segmentIndex}
+                        href={segment.text}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-accent-indigo hover:underline"
+                      >
+                        {segment.text}
+                      </a>
+                    ) : (
+                      <span key={segmentIndex}>{segment.text}</span>
+                    ),
+                  )}
+                </p>
+              ))}
+          </div>
+        )}
       </FormField>
       <div className="flex justify-end gap-2">
         <Button type="button" variant="secondary" onClick={onCancel}>

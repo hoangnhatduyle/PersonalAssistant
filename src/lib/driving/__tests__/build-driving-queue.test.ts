@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildDrivingQueue } from "../build-driving-queue";
-import { makeAppointment, makeDeadline, makeTask, makeTodoItem } from "@/lib/dashboard/__tests__/fixtures";
+import { makeAppointment, makeDeadline, makePerson, makeTask, makeTodoItem } from "@/lib/dashboard/__tests__/fixtures";
 import type { CalendarEvent } from "@/lib/calendar/build-week-events";
 
 function makeCalendarEvent(overrides: Partial<CalendarEvent> = {}): CalendarEvent {
@@ -75,5 +75,17 @@ describe("buildDrivingQueue", () => {
 
     expect(queue.map((item) => item.kind)).toEqual(["appointment", "appointment"]);
     expect(queue.every((item) => item.conflict)).toBe(true);
+  });
+
+  it("forwards `people` through to label a tracked Person's Task", () => {
+    const chau = makePerson({ id: "p-chau", name: "Chau" });
+    const queue = buildDrivingQueue({
+      deadlines: [],
+      tasks: [makeTask({ id: "t-chau", due_at: "2026-01-04T09:00:00", person_id: "p-chau" })],
+      people: [chau],
+      referenceDate: REFERENCE_DATE,
+    });
+
+    expect(queue[0]).toMatchObject({ id: "t-chau", personId: "p-chau", personLabel: "Chau" });
   });
 });

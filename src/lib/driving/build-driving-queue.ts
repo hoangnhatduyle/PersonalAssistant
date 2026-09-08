@@ -1,4 +1,4 @@
-import type { AppointmentRow, DeadlineRow, TaskRow, TodoItemRow } from "@/lib/api/entity-types";
+import type { AppointmentRow, DeadlineRow, PersonRow, TaskRow, TodoItemRow } from "@/lib/api/entity-types";
 import { buildUpcomingItems, filterUpcomingItemsByTimeWindow, type UpcomingItem, type UpcomingItemKind } from "@/lib/dashboard/upcoming-items";
 import type { CalendarEvent } from "@/lib/calendar/build-week-events";
 
@@ -13,6 +13,8 @@ interface BuildDrivingQueueInput {
   tasks: TaskRow[];
   todoItems?: TodoItemRow[];
   appointments?: AppointmentRow[];
+  /** Tracked People (People feature) — for labeling a Task that belongs to someone other than the account owner. */
+  people?: PersonRow[];
   /** Today's DayColumn.events from buildWeekGridData -- minutes-of-day, converted below against referenceDate's calendar day. */
   todayCalendarEvents?: CalendarEvent[];
   referenceDate?: Date;
@@ -49,11 +51,12 @@ export function buildDrivingQueue({
   tasks,
   todoItems = [],
   appointments = [],
+  people = [],
   todayCalendarEvents = [],
   referenceDate = new Date(),
 }: BuildDrivingQueueInput): DrivingQueueItem[] {
   const upcoming = filterUpcomingItemsByTimeWindow(
-    buildUpcomingItems({ deadlines, tasks, todoItems, appointments }),
+    buildUpcomingItems({ deadlines, tasks, todoItems, appointments, people }),
     "today",
     referenceDate,
   );

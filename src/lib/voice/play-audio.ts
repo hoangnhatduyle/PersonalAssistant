@@ -57,6 +57,22 @@ export function unlockAudioPlayback(): void {
   }
 }
 
+type PlaybackStartListener = () => void;
+const playbackStartListeners = new Set<PlaybackStartListener>();
+
+/**
+ * Notified right as the shared <audio> element attempts a new playback
+ * (before success/failure is known). Used by thinking-sound.ts to end the
+ * ambient "thinking" loop the instant real speech takes over, without this
+ * module needing to know that feature exists.
+ */
+export function onPlaybackStart(listener: PlaybackStartListener): () => void {
+  playbackStartListeners.add(listener);
+  return () => {
+    playbackStartListeners.delete(listener);
+  };
+}
+
 function releaseCurrent(): void {
   if (sharedAudio) {
     sharedAudio.onended = null;
@@ -118,6 +134,7 @@ function startPlayback(audio: HTMLAudioElement, objectUrl: string): Promise<{ pl
     currentFinish = finish;
     audio.onended = () => finish(true);
     audio.onerror = () => finish(false);
+    for (const listener of playbackStartListeners) listener();
     audio.play().catch(() => finish(false));
   });
 }

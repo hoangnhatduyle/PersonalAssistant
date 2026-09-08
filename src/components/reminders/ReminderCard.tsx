@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { StatusPill } from "@/components/ui/StatusPill";
 import { GlassPanel } from "@/components/ui/GlassPanel";
+import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { SnoozeUntilPicker } from "@/components/reminders/SnoozeUntilPicker";
 import { FeedbackControl } from "@/components/feedback/FeedbackControl";
@@ -14,10 +15,12 @@ import type { ReminderRow } from "@/lib/api/entity-types";
 type Props = {
   reminder: ReminderRow;
   targetTitle: string;
+  /** Set only when the reminder's target (Task/Deadline) belongs to a tracked Person (People feature) rather than the account owner. */
+  personLabel?: string;
 };
 
 /** All three actions only apply from Delivered (SPEC-API-004 AC-5). */
-export function ReminderCard({ reminder, targetTitle }: Props) {
+export function ReminderCard({ reminder, targetTitle, personLabel }: Props) {
   const [isSnoozing, setIsSnoozing] = useState(false);
   const ack = useAckReminder(reminder.id);
   const { showToast } = useToast();
@@ -45,7 +48,10 @@ export function ReminderCard({ reminder, targetTitle }: Props) {
     <GlassPanel className="flex flex-col gap-3 p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="font-display text-base font-medium text-text-primary">{targetTitle}</p>
+          <div className="flex items-center gap-2">
+            <p className="font-display text-base font-medium text-text-primary">{targetTitle}</p>
+            {personLabel && <Badge tone="accent">For {personLabel}</Badge>}
+          </div>
           <p className="mt-0.5 font-mono text-xs text-text-secondary">Triggered {new Date(reminder.trigger_at).toLocaleString()}</p>
         </div>
         <StatusPill status={reminder.acknowledgment_state} tone={REMINDER_STATUS_TONE[reminder.acknowledgment_state]} />

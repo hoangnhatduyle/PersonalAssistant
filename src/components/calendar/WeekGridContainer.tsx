@@ -5,6 +5,7 @@ import { useCourses } from "@/hooks/useCourses";
 import { useDeadlines } from "@/hooks/useDeadlines";
 import { useTasks } from "@/hooks/useTasks";
 import { usePeople } from "@/hooks/usePeople";
+import { useAppointments } from "@/hooks/useAppointments";
 import { buildWeekGridData } from "@/lib/calendar/build-week-events";
 import { WeekGrid } from "@/components/calendar/WeekGrid";
 import { CalendarLegend } from "@/components/calendar/CalendarLegend";
@@ -22,6 +23,9 @@ export function WeekGridContainer() {
   const { data: deadlines, isLoading: deadlinesLoading } = useDeadlines();
   const { data: tasks, isLoading: tasksLoading } = useTasks();
   const { data: people, isLoading: peopleLoading } = usePeople();
+  // Same filters object as AppointmentsTimeline's own fetch below, so
+  // TanStack Query dedupes this into the one request/cache entry.
+  const { data: appointments, isLoading: appointmentsLoading } = useAppointments({ limit: 100 });
   // null = untouched, falls back to everyone overlaid (matches this
   // component's pre-People behavior of showing every fetched row
   // unfiltered, and the ride-planning use case this feature exists for).
@@ -30,18 +34,26 @@ export function WeekGridContainer() {
   // independently (e.g. Mine + Châu at the same time).
   const [personFilter, setPersonFilter] = useState<PersonFilterSelection | null>(null);
 
-  const isLoading = coursesLoading || deadlinesLoading || tasksLoading || peopleLoading;
+  const isLoading = coursesLoading || deadlinesLoading || tasksLoading || peopleLoading || appointmentsLoading;
   const selection = personFilter ?? defaultPersonFilterSelection(people?.rows ?? []);
 
   const matchesFilter = (personId: string | null) => selection.has(personId ?? "me");
 
+  // Appointments have no person_id — the People feature doesn't apply to
+  // them — so they're gated on the "me" bucket as a whole rather than
+  // per-row like courses/tasks. Deadlines are passed through unfiltered by
+  // the toggle — buildWeekGridData itself unconditionally excludes a
+  // tracked person's Deadline (see its own comment), so toggling a person
+  // on/off here never affects whether their Deadlines show — they never do.
   const weekGrid = isLoading
     ? null
     : buildWeekGridData(
         (courses?.rows ?? []).filter((course) => matchesFilter(course.person_id)),
-        (deadlines?.rows ?? []).filter((deadline) => matchesFilter(deadline.person_id)),
+        deadlines?.rows ?? [],
         (tasks?.rows ?? []).filter((task) => matchesFilter(task.person_id)),
         people?.rows ?? [],
+        undefined,
+        matchesFilter(null) ? (appointments?.rows ?? []) : [],
       );
 
   return (

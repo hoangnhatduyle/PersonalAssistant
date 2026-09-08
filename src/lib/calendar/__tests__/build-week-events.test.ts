@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildWeekGridData } from "../build-week-events";
-import { makeCourse, makeMeetingBlock, makeDeadline, makeTask, makePerson } from "./fixtures";
+import { makeCourse, makeMeetingBlock, makeDeadline, makeTask, makePerson, makeAppointment } from "./fixtures";
 
 // A fixed Wednesday, so the reference week is deterministic across runs.
 // REFERENCE week runs Sun 2026-01-04 .. Sat 2026-01-10.
@@ -187,7 +187,7 @@ describe("buildWeekGridData", () => {
     expect(data.days.every((day) => day.events.length === 0)).toBe(true);
   });
 
-  it("labels and colors a tracked Person's course/deadline/task from the people list, leaving the owner's own events uncolored", () => {
+  it("labels and colors a tracked Person's course/task from the people list, leaving the owner's own events uncolored, and never renders their Deadline", () => {
     const chau = makePerson({ id: "p-chau", name: "Chau", color: "#ec4899" });
     const data = buildWeekGridData(
       [
@@ -211,15 +211,75 @@ describe("buildWeekGridData", () => {
     const monday = data.days.find((day) => day.dayOfWeek === 1)!;
     const mineEvent = monday.events.find((event) => event.id === "course-c-mine-0-1")!;
     const chauCourse = monday.events.find((event) => event.id === "course-c-chau-0-1")!;
-    const chauDeadline = monday.events.find((event) => event.id === "deadline-d-chau")!;
     const chauTask = monday.events.find((event) => event.id === "task-t-chau")!;
 
     expect(mineEvent).toMatchObject({ personId: null, personLabel: "Me" });
     expect(mineEvent.color).toBeUndefined();
 
-    for (const event of [chauCourse, chauDeadline, chauTask]) {
+    for (const event of [chauCourse, chauTask]) {
       expect(event).toMatchObject({ personId: "p-chau", personLabel: "Chau", color: "#ec4899" });
     }
+
+    expect(monday.events.find((event) => event.id === "deadline-d-chau")).toBeUndefined();
+  });
+
+  it("never renders a tracked Person's Deadline, and it does not expand windowStart/windowEnd", () => {
+    const baseline = buildWeekGridData([], [], [], [], REFERENCE);
+    const data = buildWeekGridData(
+      [],
+      // 11pm is well outside the default 8am-6pm window -- if this deadline
+      // weren't excluded up front, it would stretch windowEnd past baseline.
+      [makeDeadline({ id: "d-chau", due_at: "2026-01-05T23:00:00", person_id: "p-chau" })],
+      [],
+      [makePerson({ id: "p-chau", name: "Chau" })],
+      REFERENCE,
+    );
+
+    expect(data.days.every((day) => day.events.length === 0)).toBe(true);
+    expect(data.windowStart).toBe(baseline.windowStart);
+    expect(data.windowEnd).toBe(baseline.windowEnd);
+  });
+
+  it("places an Appointment within the displayed week as a block sized by duration_minutes", () => {
+    const data = buildWeekGridData(
+      [],
+      [],
+      [],
+      [],
+      REFERENCE,
+      [makeAppointment({ id: "a-1", date: "2026-01-08", time: "14:00", duration_minutes: 60, category: "Career", location: "Microsoft Teams" })],
+    );
+    const thursday = data.days.find((day) => day.dayOfWeek === 4)!;
+    expect(thursday.events).toHaveLength(1);
+    expect(thursday.events[0]).toMatchObject({
+      id: "appointment-a-1",
+      title: "Job Search Webinar",
+      timeLabel: "2 PM–3 PM",
+      subtitle: "Microsoft Teams",
+      startMinutes: 840,
+      endMinutes: 900,
+      tone: "warn",
+      href: "/calendar#appointments-timeline",
+      personId: null,
+      personLabel: "Me",
+    });
+  });
+
+  it("excludes a Deadline Session (category 'Session') from the week grid", () => {
+    const data = buildWeekGridData(
+      [],
+      [],
+      [],
+      [],
+      REFERENCE,
+      [makeAppointment({ id: "a-session", date: "2026-01-08", time: "14:00", category: "Session" })],
+    );
+    expect(data.days.every((day) => day.events.length === 0)).toBe(true);
+  });
+
+  it("excludes an Appointment outside the displayed week", () => {
+    const data = buildWeekGridData([], [], [], [], REFERENCE, [makeAppointment({ id: "a-later", date: "2026-02-01", time: "14:00" })]);
+    expect(data.days.every((day) => day.events.length === 0)).toBe(true);
   });
 
   it("falls back to an 'Unknown' label when an event's person_id has no matching People row", () => {

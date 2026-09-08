@@ -527,13 +527,14 @@ async function executeTodoListMutation(
   mutation: Extract<PendingMutation, { targetType: "todo_list" }>,
 ): Promise<MutationExecutionResult> {
   if (mutation.payload.course_id) {
-    // Mirrors POST /api/todo-lists' course-ownership check.
+    // Mirrors POST /api/todo-lists' course-ownership + no-assigned-Person check.
     const { data: course, error: courseError } = await supabase
       .from("courses")
       .select("id")
       .eq("id", mutation.payload.course_id)
       .eq("user_id", userId)
       .is("deleted_at", null)
+      .is("person_id", null)
       .maybeSingle();
     if (courseError) throw courseError;
     if (!course) throw new MutationTargetNotFoundError(`course ${mutation.payload.course_id} not found`);

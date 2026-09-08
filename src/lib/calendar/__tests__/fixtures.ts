@@ -1,4 +1,4 @@
-import type { CourseRow, DeadlineRow, TaskRow, PersonRow } from "@/lib/api/entity-types";
+import type { CourseRow, DeadlineRow, TaskRow, PersonRow, AppointmentRow } from "@/lib/api/entity-types";
 import type { MeetingBlock } from "@/lib/calendar/recurrence";
 
 export function makeMeetingBlock(overrides: Partial<MeetingBlock> = {}): MeetingBlock {
@@ -60,6 +60,28 @@ export function makeTask(overrides: Partial<TaskRow> = {}): TaskRow {
     reminder_lead_minutes: 30,
     person_id: null,
     priority: null,
+    created_at: "2026-01-01T00:00:00Z",
+    updated_at: "2026-01-01T00:00:00Z",
+    deleted_at: null,
+    user_id: "u-1",
+    ...overrides,
+  };
+}
+
+export function makeAppointment(overrides: Partial<AppointmentRow> = {}): AppointmentRow {
+  return {
+    id: "a-1",
+    title: "Job Search Webinar",
+    date: "2026-01-05",
+    category: "Career",
+    time: "14:00",
+    location: null,
+    notes: [],
+    reminders_enabled: true,
+    reminder_lead_minutes: 30,
+    deadline_id: null,
+    duration_minutes: 60,
+    session_status: null,
     created_at: "2026-01-01T00:00:00Z",
     updated_at: "2026-01-01T00:00:00Z",
     deleted_at: null,

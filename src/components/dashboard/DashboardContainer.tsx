@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import { useDeadlines } from "@/hooks/useDeadlines";
 import { useTasks } from "@/hooks/useTasks";
 import { useReminders } from "@/hooks/useReminders";
@@ -7,6 +8,7 @@ import { useTodoItems } from "@/hooks/useTodoItems";
 import { useTodoLists } from "@/hooks/useTodoLists";
 import { useCourses } from "@/hooks/useCourses";
 import { useAppointments } from "@/hooks/useAppointments";
+import { usePeople } from "@/hooks/usePeople";
 import { UpNextPanel } from "@/components/dashboard/UpNextPanel";
 import { MomentumCard } from "@/components/dashboard/MomentumCard";
 import { DailyIntelligenceCard } from "@/components/dashboard/DailyIntelligenceCard";
@@ -17,15 +19,42 @@ import { Skeleton } from "@/components/ui/Skeleton";
 
 /** No /api/dashboard route exists — composes already-fetched entity hooks client-side. */
 export function DashboardContainer() {
-  const { data: deadlines, isLoading: deadlinesLoading } = useDeadlines();
+  // Deadlines are owner-only everywhere now (People feature — matches Voice
+  // Assistant's get_person_schedule, which never returns a tracked person's
+  // Deadlines either).
+  const { data: deadlines, isLoading: deadlinesLoading } = useDeadlines({ personId: "me" });
+  // Tasks stay unfiltered — a tracked person's Task is allowed to surface
+  // here (labeled with their name by UpNextPanel below), unlike every other
+  // kind on this page.
   const { data: tasks, isLoading: tasksLoading } = useTasks({ limit: 100 });
   const { data: reminders, isLoading: remindersLoading } = useReminders({ state: ["Delivered", "Snoozed"] });
   const { data: todoItems, isLoading: todoItemsLoading } = useTodoItems({ limit: 100 });
   const { data: todoLists } = useTodoLists({ limit: 100 });
   const { data: courses } = useCourses({ limit: 100 });
   const { data: appointments } = useAppointments({ limit: 100 });
+  const { data: people, isLoading: peopleLoading } = usePeople();
 
-  const isLoading = deadlinesLoading || tasksLoading || remindersLoading || todoItemsLoading;
+  const isLoading = deadlinesLoading || tasksLoading || remindersLoading || todoItemsLoading || peopleLoading;
+
+  const courseById = useMemo(() => new Map((courses?.rows ?? []).map((course) => [course.id, course])), [courses]);
+  const todoListById = useMemo(() => new Map((todoLists?.rows ?? []).map((list) => [list.id, list])), [todoLists]);
+  // Defensive: a todo_list's course_id can point to a tracked person's
+  // course (the API/DB trigger only check course ownership, not
+  // person_id IS NULL — a known gap, closed at the source separately).
+  // Course To-Do items are owner-only on every surface, unlike Tasks, so
+  // exclude any item whose list resolves to a person-owned course.
+  const ownedTodoItems = useMemo(() => {
+    return (todoItems?.rows ?? []).filter((item) => {
+      const list = todoListById.get(item.list_id);
+      const course = list?.course_id ? courseById.get(list.course_id) : undefined;
+      return !course || course.person_id === null;
+    });
+  }, [todoItems, todoListById, courseById]);
+  // MomentumCard/WorkloadDensityStrip/StaleItemsCard have no label-rendering
+  // capability of their own — feed them mine-only Tasks so a tracked
+  // person's Task never leaks into those widgets unlabeled. UpNextPanel
+  // below gets the full unfiltered list plus `people` so it can label them.
+  const mineOnlyTasks = useMemo(() => (tasks?.rows ?? []).filter((task) => task.person_id === null), [tasks]);
 
   return (
     <div className="flex flex-col gap-6">
@@ -46,8 +75,8 @@ export function DashboardContainer() {
           <DailyIntelligenceCard />
           <WorkloadDensityStrip
             deadlines={deadlines?.rows ?? []}
-            tasks={tasks?.rows ?? []}
-            todoItems={todoItems?.rows ?? []}
+            tasks={mineOnlyTasks}
+            todoItems={ownedTodoItems}
             todoLists={todoLists?.rows ?? []}
             courses={courses?.rows ?? []}
           />
@@ -56,18 +85,19 @@ export function DashboardContainer() {
             <UpNextPanel
               deadlines={deadlines?.rows ?? []}
               tasks={tasks?.rows ?? []}
+              people={people?.rows ?? []}
               reminders={reminders?.rows ?? []}
-              todoItems={todoItems?.rows ?? []}
+              todoItems={ownedTodoItems}
               todoLists={todoLists?.rows ?? []}
               courses={courses?.rows ?? []}
               appointments={appointments?.rows ?? []}
             />
-            <MomentumCard deadlines={deadlines?.rows ?? []} tasks={tasks?.rows ?? []} todoItems={todoItems?.rows ?? []} />
+            <MomentumCard deadlines={deadlines?.rows ?? []} tasks={mineOnlyTasks} todoItems={ownedTodoItems} />
           </div>
 
           <div className="grid gap-6 md:grid-cols-2">
-            <StaleItemsCard deadlines={deadlines?.rows ?? []} tasks={tasks?.rows ?? []} todoItems={todoItems?.rows ?? []} />
-            <CourseProgressList courses={courses?.rows ?? []} deadlines={deadlines?.rows ?? []} todoItems={todoItems?.rows ?? []} todoLists={todoLists?.rows ?? []} />
+            <StaleItemsCard deadlines={deadlines?.rows ?? []} tasks={mineOnlyTasks} todoItems={ownedTodoItems} />
+            <CourseProgressList courses={courses?.rows ?? []} deadlines={deadlines?.rows ?? []} todoItems={ownedTodoItems} todoLists={todoLists?.rows ?? []} />
           </div>
         </>
       )}

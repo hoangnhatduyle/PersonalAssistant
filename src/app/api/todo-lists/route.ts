@@ -33,9 +33,11 @@ export async function GET(request: NextRequest) {
 
 /**
  * POST /api/todo-lists — create. A non-null course_id must reference a
- * Course the caller owns (checked here; guard_todo_list_course_ownership
- * backstops it in the DB). course_id omitted/null makes a freestanding
- * custom list ("Misc", "Project: X").
+ * Course the caller owns with no assigned Person (checked here;
+ * guard_todo_list_course_ownership backstops it in the DB) — Course To-Do
+ * lists are an owner-only concept, like Deadlines and Deadline Sessions
+ * (People feature never applies to them). course_id omitted/null makes a
+ * freestanding custom list ("Misc", "Project: X").
  */
 export async function POST(request: NextRequest) {
   const ctx = await requireAuthenticatedContext();
@@ -52,6 +54,7 @@ export async function POST(request: NextRequest) {
       .eq("id", parsed.data.course_id)
       .eq("user_id", user.id)
       .is("deleted_at", null)
+      .is("person_id", null)
       .maybeSingle();
     if (courseError) return serverErrorResponse("course lookup failed", courseError);
     if (!course) return notFoundResponse();

@@ -4,19 +4,20 @@ import { useEffect } from "react";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 
-type DialogSize = "md" | "xl";
+type DialogSize = "md" | "lg" | "xl";
 
 type Props = {
   open: boolean;
   onClose: () => void;
   title: string;
   children: ReactNode;
-  /** "md" (default) fits the usual single-column forms; "xl" is for wider content like CourseForm's two-column recurrence picker. */
+  /** "md" (default) fits the usual single-column forms; "lg" gives a single-column form more breathing room; "xl" is for wider content like CourseForm's two-column recurrence picker. */
   size?: DialogSize;
 };
 
 const SIZE_CLASSES: Record<DialogSize, string> = {
   md: "max-w-lg",
+  lg: "max-w-2xl",
   xl: "max-w-5xl",
 };
 

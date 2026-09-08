@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { buildUpcomingItems, filterUpcomingItemsByTimeWindow, isOpenDeadline, isOpenTask } from "../upcoming-items";
 import type { UpcomingItem } from "../upcoming-items";
-import { makeAppointment, makeDeadline, makeReminder, makeTask, makeTodoItem } from "./fixtures";
+import { makeAppointment, makeDeadline, makePerson, makeReminder, makeTask, makeTodoItem } from "./fixtures";
 
 describe("isOpenDeadline / isOpenTask", () => {
   it("excludes terminal deadline statuses", () => {
@@ -60,6 +60,56 @@ describe("buildUpcomingItems", () => {
       reminders: [makeReminder({ id: "r-1", target_type: "deadline", target_id: "missing" })],
     });
     expect(items[0].title).toBe("Reminder");
+  });
+
+  it("excludes a reminder whose target Task belongs to a tracked Person (People feature) — reminders are owner-only, matching Voice Assistant", () => {
+    const items = buildUpcomingItems({
+      deadlines: [],
+      tasks: [makeTask({ id: "t-chau", person_id: "p-chau" })],
+      reminders: [makeReminder({ id: "r-1", target_type: "task", target_id: "t-chau" })],
+    });
+    expect(items.find((item) => item.id === "r-1")).toBeUndefined();
+  });
+
+  it("excludes a reminder whose target Deadline belongs to a tracked Person, even if the caller forgot to pre-filter deadlines to 'me'", () => {
+    const items = buildUpcomingItems({
+      deadlines: [makeDeadline({ id: "d-chau", person_id: "p-chau" })],
+      tasks: [],
+      reminders: [makeReminder({ id: "r-1", target_type: "deadline", target_id: "d-chau" })],
+    });
+    expect(items.find((item) => item.id === "r-1")).toBeUndefined();
+  });
+
+  it("includes a reminder for the owner's own Task/Deadline (person_id: null)", () => {
+    const items = buildUpcomingItems({
+      deadlines: [makeDeadline({ id: "d-1", person_id: null })],
+      tasks: [makeTask({ id: "t-1", person_id: null })],
+      reminders: [
+        makeReminder({ id: "r-deadline", target_type: "deadline", target_id: "d-1" }),
+        makeReminder({ id: "r-task", target_type: "task", target_id: "t-1" }),
+      ],
+    });
+    expect(items.map((item) => item.id)).toEqual(expect.arrayContaining(["r-deadline", "r-task"]));
+  });
+
+  it("labels a Task belonging to a tracked Person with that person's name, and defaults the owner's own Task to Me", () => {
+    const chau = makePerson({ id: "p-chau", name: "Chau" });
+    const items = buildUpcomingItems({
+      deadlines: [],
+      tasks: [makeTask({ id: "t-mine", person_id: null }), makeTask({ id: "t-chau", person_id: "p-chau" })],
+      people: [chau],
+    });
+    expect(items.find((item) => item.id === "t-mine")).toMatchObject({ personId: null, personLabel: "Me" });
+    expect(items.find((item) => item.id === "t-chau")).toMatchObject({ personId: "p-chau", personLabel: "Chau" });
+  });
+
+  it("falls back to an 'Unknown' label for a Task whose person_id has no matching People row", () => {
+    const items = buildUpcomingItems({
+      deadlines: [],
+      tasks: [makeTask({ id: "t-1", person_id: "missing" })],
+      people: [],
+    });
+    expect(items[0]).toMatchObject({ personId: "missing", personLabel: "Unknown" });
   });
 
   it("does not mark a todo item urgent on its due date — due_date is a calendar day, not midnight UTC", () => {

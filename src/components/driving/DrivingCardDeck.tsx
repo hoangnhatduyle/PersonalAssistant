@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { DrivingCard, type DrivingCardRow } from "@/components/driving/DrivingCard";
 import type { DrivingQueueItem } from "@/lib/driving/build-driving-queue";
 
-export type DrivingCardMeta = { subtitle?: string; tags?: string[] };
+export type DrivingCardMeta = { subtitle?: string; tags?: string[]; personLabel?: string };
 
 type Props = {
   items: DrivingQueueItem[];

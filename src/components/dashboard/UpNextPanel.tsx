@@ -14,11 +14,13 @@ import {
 } from "@/lib/dashboard/upcoming-items";
 import { formatRelativeTime } from "@/lib/format-relative-time";
 import { DEADLINE_STATUS_TONE, SESSION_STATUS_TONE, TASK_STATUS_TONE } from "@/lib/status-colors";
-import type { AppointmentRow, CourseRow, DeadlineRow, ReminderRow, TaskRow, TodoItemRow, TodoListRow } from "@/lib/api/entity-types";
+import type { AppointmentRow, CourseRow, DeadlineRow, PersonRow, ReminderRow, TaskRow, TodoItemRow, TodoListRow } from "@/lib/api/entity-types";
 
 type Props = {
   deadlines: DeadlineRow[];
   tasks: TaskRow[];
+  /** Tracked People (People feature) — for labeling a Task that belongs to someone other than the account owner. */
+  people: PersonRow[];
   reminders: ReminderRow[];
   todoItems: TodoItemRow[];
   todoLists: TodoListRow[];
@@ -98,7 +100,7 @@ function useIsMounted(): boolean {
  * filterable upcoming-items queue on the right. Replaces the old
  * NowWidget + NextSequenceQueue pair to eliminate redundant item lists.
  */
-export function UpNextPanel({ deadlines, tasks, reminders, todoItems, todoLists, courses, appointments }: Props) {
+export function UpNextPanel({ deadlines, tasks, people, reminders, todoItems, todoLists, courses, appointments }: Props) {
   const isMounted = useIsMounted();
   const [, forceTick] = useState(0);
   const [timeWindow, setTimeWindow] = useState<TimeWindowFilter>("today");
@@ -111,10 +113,10 @@ export function UpNextPanel({ deadlines, tasks, reminders, todoItems, todoLists,
   const now = isMounted ? new Date() : null;
 
   // Clock ring items (top 5 from all entity types including reminders and sessions)
-  const ringItems = buildUpcomingItems({ deadlines, tasks, reminders, appointments }).slice(0, RING_ITEM_LIMIT);
+  const ringItems = buildUpcomingItems({ deadlines, tasks, reminders, appointments, people }).slice(0, RING_ITEM_LIMIT);
 
   // Queue items (deadlines, tasks, todos, reminders, sessions — full union)
-  const allQueueItems = buildUpcomingItems({ deadlines, tasks, reminders, todoItems, appointments });
+  const allQueueItems = buildUpcomingItems({ deadlines, tasks, reminders, todoItems, appointments, people });
   const deadlineById = new Map(deadlines.map((d) => [d.id, d]));
   const taskById = new Map(tasks.map((t) => [t.id, t]));
   const appointmentById = new Map(appointments.map((a) => [a.id, a]));
@@ -309,6 +311,7 @@ export function UpNextPanel({ deadlines, tasks, reminders, todoItems, todoLists,
                         {kindLabel} · {now ? formatRelativeTime(item.at, now) : ""}
                       </span>
                       {courseName && <Badge tone="accent">{courseName}</Badge>}
+                      {item.kind === "task" && item.personId && <Badge tone="accent">For {item.personLabel}</Badge>}
                       {taskTags.map((tag) => (
                         <Badge key={tag} tone="neutral">{tag}</Badge>
                       ))}

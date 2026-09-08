@@ -17,8 +17,8 @@ import type { DeadlinePayload } from "@/lib/api/schemas";
 export function DeadlineListContainer() {
   const [courseFilter, setCourseFilter] = useState("");
   const [isCreateOpen, setCreateOpen] = useState(false);
-  const { data: courses } = useCourses();
-  const { data, isLoading } = useDeadlines(courseFilter ? { courseId: courseFilter } : undefined);
+  const { data: courses } = useCourses({ personId: "me" });
+  const { data, isLoading } = useDeadlines({ personId: "me", ...(courseFilter ? { courseId: courseFilter } : {}) });
   // limit reuses AppointmentsTimeline's existing cap — a known v1 scaling
   // limitation (a user with 100+ live appointments loses card-level progress
   // for sessions past that page), not a blocker for this feature.

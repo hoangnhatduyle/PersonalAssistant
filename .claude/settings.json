@@ -31,7 +31,21 @@
       "Bash(git -C /home/hoang/projects/PersonalAssistant diff .claude/settings.json)",
       "Bash(echo \"TSC EXIT:$?\")",
       "Bash(pkill -f \"next-server\")",
-      "Bash(pkill -f \"npm run dev\")"
+      "Bash(pkill -f \"npm run dev\")",
+      "Bash(git -C /home/hoang/projects/PersonalAssistant status --short)",
+      "Bash(git -C /home/hoang/projects/PersonalAssistant diff --stat .claude/settings.json)",
+      "Bash(git -C /home/hoang/projects/PersonalAssistant diff -- src/components/dashboard/DashboardContainer.tsx src/components/driving/DrivingHub.tsx)",
+      "Bash(kill 43057)",
+      "Bash(pkill -9 -f \"next-server\")",
+      "Bash(pkill -9 -f \"next dev\")",
+      "Bash(psql \"postgresql://postgres:postgres@127.0.0.1:54332/postgres\" -v ON_ERROR_STOP=1)",
+      "Bash(echo \"--- exit: $? ---\")",
+      "Bash(curl -s -X POST http://127.0.0.1:54321/auth/v1/admin/users -H 'apikey: __TRACKED_VAR__' -H 'Authorization: Bearer __TRACKED_VAR__' -H 'Content-Type: application/json' -d '{\"email\":\"playwright-test@example.com\",\"password\":\"Test1234!\",\"email_confirm\":true}')",
+      "Bash(curl -s http://127.0.0.1:54321/auth/v1/admin/users?per_page=50 -H 'apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU' -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU')",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); [print\\(u['id'], u['email']\\) for u in d.get\\('users',[]\\)]\")",
+      "Bash(echo playwright-verify-__CMDSUB_OUTPUT__@example.com)",
+      "Bash(curl -s -X POST http://127.0.0.1:54321/auth/v1/admin/users -H 'apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU' -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU' -H 'Content-Type: application/json' -d '{\"email\":\"playwright-verify-__CMDSUB_OUTPUT__@example.com\",\"password\":\"Test1234!\",\"email_confirm\":true}')",
+      "Bash(curl -s -X DELETE http://127.0.0.1:54321/auth/v1/admin/users/9cda00fc-a096-4dd6-8db1-fc4b0786d2b2 -H 'apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU' -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU')"
     ]
   }
 }

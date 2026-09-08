@@ -6,13 +6,14 @@ const LEGEND_ITEMS = [
   { label: "Course", tone: "accent" as const },
   { label: "Deadline", tone: "urgent" as const },
   { label: "Task", tone: "accent" as const },
+  { label: "Appointment", tone: "warn" as const },
 ];
 
 type Props = {
   people?: PersonRow[];
 };
 
-/** Static Course/Deadline/Task tone entries (the account owner's own events) plus one hex-colored swatch per tracked Person (People feature). */
+/** Static Course/Deadline/Task/Appointment tone entries (the account owner's own events) plus one hex-colored swatch per tracked Person (People feature). */
 export function CalendarLegend({ people = [] }: Props) {
   return (
     <div className="flex flex-wrap items-center gap-4 font-mono text-xs text-text-secondary">

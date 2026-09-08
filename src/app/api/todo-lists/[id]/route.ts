@@ -25,7 +25,11 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
   return successResponse(data);
 }
 
-/** PATCH /api/todo-lists/[id] — rename a list or relink/unlink its course. */
+/**
+ * PATCH /api/todo-lists/[id] — rename a list or relink/unlink its course. A
+ * relinked course_id must also have no assigned Person (owner-only concept,
+ * same rule as POST /api/todo-lists — see that route's doc comment).
+ */
 export async function PATCH(request: Request, { params }: RouteParams) {
   const ctx = await requireAuthenticatedContext();
   if (!("supabase" in ctx)) return ctx;
@@ -53,6 +57,7 @@ export async function PATCH(request: Request, { params }: RouteParams) {
       .eq("id", parsed.data.course_id)
       .eq("user_id", user.id)
       .is("deleted_at", null)
+      .is("person_id", null)
       .maybeSingle();
     if (courseError) return serverErrorResponse("course lookup failed", courseError);
     if (!course) return notFoundResponse();

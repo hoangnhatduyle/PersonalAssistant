@@ -1,7 +1,7 @@
 import { expandBlockInWeek, formatMinutesOfDay } from "@/lib/calendar/recurrence";
 import { isOpenDeadline, isOpenTask } from "@/lib/dashboard/upcoming-items";
 import { DEADLINE_STATUS_TONE, TASK_STATUS_TONE, type StatusTone } from "@/lib/status-colors";
-import type { CourseRow, DeadlineRow, TaskRow, PersonRow } from "@/lib/api/entity-types";
+import type { CourseRow, DeadlineRow, TaskRow, PersonRow, AppointmentRow } from "@/lib/api/entity-types";
 
 export interface CalendarEvent {
   id: string;
@@ -46,6 +46,8 @@ const WINDOW_PADDING = 30;
 /** Deadlines/Tasks have no duration — give their marker a fixed visual height on the grid. */
 const DEADLINE_MARKER_MINUTES = 45;
 const TASK_MARKER_MINUTES = 45;
+/** Fallback when an Appointment somehow has no duration_minutes — normal (non-Session) appointments always set one via AppointmentForm. */
+const APPOINTMENT_MARKER_MINUTES = 45;
 
 function startOfWeek(date: Date): Date {
   const start = new Date(date.getFullYear(), date.getMonth(), date.getDate());
@@ -57,12 +59,32 @@ function sameDay(a: Date, b: Date): boolean {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 }
 
+/** "14:00" / "14:00:00" -> 840. Returns null for a missing or unparseable time so the caller can skip that row. */
+function parseTimeToMinutes(time: string | null): number | null {
+  if (!time) return null;
+  const match = /^(\d{1,2}):(\d{2})/.exec(time);
+  if (!match) return null;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (hours > 23 || minutes > 59) return null;
+  return hours * 60 + minutes;
+}
+
 /**
  * Composes the current week's grid from already-fetched Courses (recurring
  * meeting_blocks, each expanded to this week's matching weekdays and bounded
  * by recurrence_start_date/recurrence_end_date), Deadlines (single-day
- * markers on due_at), and open Tasks with a due_at (single-day markers, same
- * treatment as Deadlines) — only those falling within the displayed week.
+ * markers on due_at), open Tasks with a due_at (single-day markers, same
+ * treatment as Deadlines), and Appointments with a structured time (blocks
+ * sized by duration_minutes, same treatment as Course occurrences) — only
+ * those falling within the displayed week. Deadline Sessions (appointments
+ * rows tagged category "Session") are excluded — they're managed through
+ * their own dedicated flow (SessionsSection/SessionForm on a Deadline's
+ * page) and have no person_id (the People feature doesn't apply to them),
+ * unlike every other row here. A tracked person's Deadline is also always
+ * excluded, regardless of any PersonFilterToggle selection a caller applies
+ * to courses/tasks — matches Voice Assistant's get_person_schedule, which
+ * never returns a tracked person's Deadlines either (Courses/Tasks only).
  * People (tracked schedules — see supabase/migrations/0013_people.sql)
  * supplies the personId -> name/color lookup used to color-code and label
  * events that belong to someone other than the account owner. No
@@ -75,6 +97,7 @@ export function buildWeekGridData(
   tasks: TaskRow[] = [],
   people: PersonRow[] = [],
   referenceDate: Date = new Date(),
+  appointments: AppointmentRow[] = [],
 ): WeekGridData {
   const weekStart = startOfWeek(referenceDate);
   const weekEnd = new Date(weekStart.getTime() + 7 * 24 * 60 * 60 * 1000);
@@ -115,6 +138,12 @@ export function buildWeekGridData(
 
   const weekDeadlines = deadlines.filter((deadline) => {
     if (!isOpenDeadline(deadline.status)) return false;
+    // A tracked person's Deadline never renders on the calendar (People
+    // feature) — matches Voice Assistant's get_person_schedule, which only
+    // ever returns a tracked person's Courses/Tasks. This holds regardless
+    // of PersonFilterToggle state, and also keeps a tracked person's
+    // deadline from silently stretching windowStart/windowEnd below.
+    if (deadline.person_id !== null) return false;
     const dueAt = new Date(deadline.due_at);
     return dueAt >= weekStart && dueAt < weekEnd;
   });
@@ -123,6 +152,12 @@ export function buildWeekGridData(
     if (!isOpenTask(task.status) || !task.due_at) return false;
     const dueAt = new Date(task.due_at);
     return dueAt >= weekStart && dueAt < weekEnd;
+  });
+
+  const weekAppointments = appointments.filter((appointment) => {
+    if (appointment.category === "Session") return false;
+    const appointmentDate = new Date(`${appointment.date}T00:00:00`);
+    return appointmentDate >= weekStart && appointmentDate < weekEnd;
   });
 
   let windowStart = DEFAULT_WINDOW_START;
@@ -142,6 +177,13 @@ export function buildWeekGridData(
     const minutesOfDay = dueAt.getHours() * 60 + dueAt.getMinutes();
     windowStart = Math.min(windowStart, minutesOfDay);
     windowEnd = Math.max(windowEnd, minutesOfDay + TASK_MARKER_MINUTES);
+  }
+  for (const appointment of weekAppointments) {
+    const minutesOfDay = parseTimeToMinutes(appointment.time);
+    if (minutesOfDay === null) continue;
+    const durationMinutes = appointment.duration_minutes ?? APPOINTMENT_MARKER_MINUTES;
+    windowStart = Math.min(windowStart, minutesOfDay);
+    windowEnd = Math.max(windowEnd, minutesOfDay + durationMinutes);
   }
   windowStart = Math.max(0, Math.floor((windowStart - WINDOW_PADDING) / HOUR) * HOUR);
   windowEnd = Math.min(24 * HOUR, Math.ceil((windowEnd + WINDOW_PADDING) / HOUR) * HOUR);
@@ -198,6 +240,28 @@ export function buildWeekGridData(
         tone: TASK_STATUS_TONE[task.status],
         href: `/tasks/${task.id}`,
         ...personInfo(task.person_id),
+      });
+    }
+
+    for (const appointment of weekAppointments) {
+      const appointmentDate = new Date(`${appointment.date}T00:00:00`);
+      if (!sameDay(appointmentDate, date)) continue;
+      const minutesOfDay = parseTimeToMinutes(appointment.time);
+      if (minutesOfDay === null) continue;
+      const durationMinutes = appointment.duration_minutes ?? APPOINTMENT_MARKER_MINUTES;
+      events.push({
+        id: `appointment-${appointment.id}`,
+        title: appointment.title,
+        timeLabel: `${formatMinutesOfDay(minutesOfDay)}–${formatMinutesOfDay(minutesOfDay + durationMinutes)}`,
+        subtitle: appointment.location ?? appointment.category,
+        startMinutes: minutesOfDay,
+        endMinutes: minutesOfDay + durationMinutes,
+        tone: "warn",
+        // No dedicated Appointment detail page — links back to this page's
+        // own Appointments & Events Timeline panel (AppointmentsTimeline),
+        // where it's actually editable.
+        href: "/calendar#appointments-timeline",
+        ...personInfo(null),
       });
     }
 

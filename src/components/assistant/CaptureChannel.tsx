@@ -14,7 +14,8 @@ import { useVoiceTurn, type VoiceTurnClientInput } from "@/hooks/useVoiceTurn";
 import { useSpeakVoiceResponse } from "@/hooks/useSpeakVoiceResponse";
 import { useResetVoiceConversation } from "@/hooks/useResetVoiceConversation";
 import { useAutoStopRecorder } from "@/hooks/useAutoStopRecorder";
-import { unlockAudioPlayback } from "@/lib/voice/play-audio";
+import { onPlaybackStart, unlockAudioPlayback } from "@/lib/voice/play-audio";
+import { startThinkingSound, stopThinkingSound } from "@/lib/voice/thinking-sound";
 import { useSettings } from "@/hooks/useSettings";
 import { usePersonalizationSuggestions } from "@/hooks/usePersonalizationSuggestions";
 import { useReviewSuggestionsAloud } from "@/hooks/useReviewSuggestionsAloud";
@@ -118,6 +119,12 @@ export function CaptureChannel({ compact = false, large = false }: Props) {
   // speakAndMaybeResume needs to call the recorder's `start`).
   const startRecordingRef = useRef<() => Promise<void>>(async () => {});
 
+  // Ends the ambient "thinking" loop (if one is running) the instant any
+  // real speech audio takes over — covers every speak call below, including
+  // ones inside useReviewSuggestionsAloud that this component doesn't
+  // invoke directly.
+  useEffect(() => onPlaybackStart(stopThinkingSound), []);
+
   /**
    * Speaks text aloud and optionally re-arms the mic for hands-free.
    * Re-arm only happens when `shouldResume` is true AND audio actually
@@ -131,6 +138,12 @@ export function CaptureChannel({ compact = false, large = false }: Props) {
         played = result?.played ?? false;
       } catch {
         // Toast already surfaced by useSpeakVoiceResponse's onError.
+      } finally {
+        // Fallback for this fire-and-forget path (see submitTurn below): if
+        // speech failed before ever reaching play(), onPlaybackStart never
+        // fired to stop the thinking sound started for this turn. A no-op
+        // otherwise.
+        stopThinkingSound();
       }
       if (handsFree && shouldResume && played) void startRecordingRef.current();
     },
@@ -141,6 +154,16 @@ export function CaptureChannel({ compact = false, large = false }: Props) {
     async (input: VoiceTurnClientInput, origin: VoiceTurnOrigin) => {
       setLocalStatus("transcribing");
       setConfirmationReady(false);
+      // Only a voice-originated turn ever triggers TTS (see below), so only
+      // it gets the "thinking" ambience while STT/LLM/TTS-synthesis run.
+      const isThinking = origin === "voice";
+      if (isThinking) startThinkingSound();
+      // Set for the fire-and-forget speakAndMaybeResume branch below, whose
+      // own finally handles stopping the sound once *that* async work
+      // settles — stopping it here in this function's finally would cut it
+      // off immediately, before the TTS request it kicked off even
+      // resolves.
+      let deferThinkingSoundStop = false;
       try {
         const result = await voiceTurn.mutateAsync(input);
         applyTurnResult(result, origin);
@@ -171,6 +194,7 @@ export function CaptureChannel({ compact = false, large = false }: Props) {
             }
             if (handsFree && played) void startRecordingRef.current();
           } else {
+            deferThinkingSoundStop = true;
             void speakAndMaybeResume(result.message, result.needsFollowUp === true);
           }
         }
@@ -178,6 +202,7 @@ export function CaptureChannel({ compact = false, large = false }: Props) {
         showToast("Could not process that — try again", "error");
       } finally {
         setLocalStatus("idle");
+        if (isThinking && !deferThinkingSoundStop) stopThinkingSound();
       }
     },
     [voiceTurn, applyTurnResult, showToast, speakResponse, speakAndMaybeResume, refetchSuggestions, reviewAloud, handsFree],

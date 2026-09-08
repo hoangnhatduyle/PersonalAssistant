@@ -1,4 +1,4 @@
-import type { AppointmentRow, DeadlineRow, DeadlineStatus, TaskRow, TaskStatus, ReminderRow, TodoItemRow } from "@/lib/api/entity-types";
+import type { AppointmentRow, DeadlineRow, DeadlineStatus, TaskRow, TaskStatus, ReminderRow, TodoItemRow, PersonRow } from "@/lib/api/entity-types";
 import { findConflictingAppointmentIds, parseStructuredTime } from "@/lib/appointments/conflicts";
 
 export type UpcomingItemKind = "deadline" | "task" | "reminder" | "todo" | "session" | "appointment";
@@ -22,6 +22,10 @@ export interface UpcomingItem {
   urgent: boolean;
   /** Appointment-kind only: this appointment's time range overlaps another appointment on the same day (see src/lib/appointments/conflicts.ts). */
   conflict?: boolean;
+  /** Task-kind only: set when this Task belongs to a tracked Person (People feature) rather than the account owner. null/undefined = the owner's own item. */
+  personId?: string | null;
+  /** Task-kind only: "Me" when personId is null/undefined, else that Person's name. */
+  personLabel?: string;
 }
 
 export function isOpenDeadline(status: DeadlineStatus): boolean {
@@ -39,6 +43,8 @@ interface BuildUpcomingItemsInput {
   todoItems?: TodoItemRow[];
   /** Deadline Sessions: appointments rows tagged category "Session". Only "planned" ones are actionable/upcoming. */
   appointments?: AppointmentRow[];
+  /** Tracked People (People feature), for resolving a Task's person_id to a display name. Deadlines/Sessions/Todo items/Appointments are always the account owner's own by this point — only Tasks can belong to a tracked person. */
+  people?: PersonRow[];
 }
 
 /**
@@ -52,9 +58,16 @@ export function buildUpcomingItems({
   reminders = [],
   todoItems = [],
   appointments = [],
+  people = [],
 }: BuildUpcomingItemsInput): UpcomingItem[] {
   const items: UpcomingItem[] = [];
   const now = Date.now();
+
+  const personById = new Map(people.map((person) => [person.id, person]));
+  function personInfo(personId: string | null): { personId: string | null; personLabel: string } {
+    if (!personId) return { personId: null, personLabel: "Me" };
+    return { personId, personLabel: personById.get(personId)?.name ?? "Unknown" };
+  }
 
   for (const deadline of deadlines) {
     if (!isOpenDeadline(deadline.status)) continue;
@@ -83,6 +96,7 @@ export function buildUpcomingItems({
       at,
       href: `/tasks/${task.id}`,
       urgent: at.getTime() < now,
+      ...personInfo(task.person_id),
     });
   }
 
@@ -150,17 +164,24 @@ export function buildUpcomingItems({
   }
 
   if (reminders.length > 0) {
-    const deadlineTitleById = new Map(deadlines.map((deadline) => [deadline.id, deadline.title]));
-    const taskTitleById = new Map(tasks.map((task) => [task.id, task.title]));
+    const deadlineById = new Map(deadlines.map((deadline) => [deadline.id, deadline]));
+    const taskById = new Map(tasks.map((task) => [task.id, task]));
 
     for (const reminder of reminders) {
+      const target = reminder.target_type === "deadline" ? deadlineById.get(reminder.target_id) : taskById.get(reminder.target_id);
+      // Reminders are owner-only, matching Voice Assistant (which has no
+      // reminder concept for a tracked Person at all) — a reminder whose
+      // target resolves to a tracked person's Deadline/Task is excluded
+      // here rather than trusting callers to have pre-filtered `deadlines`/
+      // `tasks`; an unresolvable target (deleted item) is NOT excluded, it
+      // still falls back to the generic "Reminder" title below.
+      if (target?.person_id) continue;
+
       // A Snoozed reminder's next-relevant time is snooze_until, not its
       // original (now-past) trigger_at.
       const at =
         reminder.acknowledgment_state === "Snoozed" && reminder.snooze_until ? reminder.snooze_until : reminder.trigger_at;
-      const title =
-        (reminder.target_type === "deadline" ? deadlineTitleById.get(reminder.target_id) : taskTitleById.get(reminder.target_id)) ??
-        "Reminder";
+      const title = target?.title ?? "Reminder";
 
       items.push({
         id: reminder.id,

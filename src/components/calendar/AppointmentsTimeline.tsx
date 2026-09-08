@@ -67,7 +67,7 @@ export function AppointmentsTimeline() {
   const deleteMutation = useDeleteAppointment(deletingId ?? "");
 
   return (
-    <GlassPanel className="flex flex-col gap-3 p-4">
+    <GlassPanel id="appointments-timeline" className="flex flex-col gap-3 p-4">
       <div className="flex items-center justify-between gap-3">
         <p className="font-mono text-xs uppercase tracking-wide text-text-eyebrow">Appointments &amp; Events Timeline</p>
         <Button size="sm" onClick={openCreate}>
@@ -116,6 +116,7 @@ export function AppointmentsTimeline() {
           setEditingId(null);
         }}
         title={editingAppointment ? "Edit Appointment" : "Add Appointment"}
+        size="lg"
       >
         <AppointmentForm
           appointment={editingAppointment}

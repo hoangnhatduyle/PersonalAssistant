@@ -19,7 +19,12 @@ import { Skeleton } from "@/components/ui/Skeleton";
 
 export function DrivingHub() {
   const router = useRouter();
-  const { data: deadlines, isLoading: deadlinesLoading } = useDeadlines();
+  // Deadlines are owner-only everywhere now (People feature) — matches
+  // Voice Assistant's get_person_schedule, which never returns a tracked
+  // person's Deadlines either.
+  const { data: deadlines, isLoading: deadlinesLoading } = useDeadlines({ personId: "me" });
+  // Tasks stay unfiltered — a tracked person's Task is allowed to surface
+  // here (labeled with their name), unlike every other kind in this queue.
   const { data: tasks, isLoading: tasksLoading } = useTasks({ limit: 100 });
   const { data: todoItems, isLoading: todoItemsLoading } = useTodoItems({ limit: 100 });
   const { data: appointments, isLoading: appointmentsLoading } = useAppointments({ limit: 100 });
@@ -36,24 +41,38 @@ export function DrivingHub() {
   const weekGrid = useMemo(() => buildWeekGridData(courses?.rows ?? [], [], [], people?.rows ?? []), [courses, people]);
   const todayCalendarEvents = useMemo(() => weekGrid.days.find((day) => day.isToday)?.events ?? [], [weekGrid]);
 
+  const courseById = useMemo(() => new Map((courses?.rows ?? []).map((row) => [row.id, row])), [courses]);
+  const todoListById = useMemo(() => new Map((todoLists?.rows ?? []).map((row) => [row.id, row])), [todoLists]);
+  // Defensive: a todo_list's course_id can point to a tracked person's
+  // course (the API/DB trigger only check course ownership, not
+  // person_id IS NULL — a known gap, closed at the source separately).
+  // Course To-Do items are owner-only, unlike Tasks, so exclude any item
+  // whose list resolves to a person-owned course.
+  const ownedTodoItems = useMemo(() => {
+    return (todoItems?.rows ?? []).filter((item) => {
+      const list = todoListById.get(item.list_id);
+      const course = list?.course_id ? courseById.get(list.course_id) : undefined;
+      return !course || course.person_id === null;
+    });
+  }, [todoItems, todoListById, courseById]);
+
   const queue = useMemo(
     () =>
       buildDrivingQueue({
         deadlines: deadlines?.rows ?? [],
         tasks: tasks?.rows ?? [],
-        todoItems: todoItems?.rows ?? [],
+        todoItems: ownedTodoItems,
         appointments: appointments?.rows ?? [],
+        people: people?.rows ?? [],
         todayCalendarEvents,
       }),
-    [deadlines, tasks, todoItems, appointments, todayCalendarEvents],
+    [deadlines, tasks, ownedTodoItems, appointments, people, todayCalendarEvents],
   );
 
   const deadlineById = useMemo(() => new Map((deadlines?.rows ?? []).map((row) => [row.id, row])), [deadlines]);
   const taskById = useMemo(() => new Map((tasks?.rows ?? []).map((row) => [row.id, row])), [tasks]);
   const appointmentById = useMemo(() => new Map((appointments?.rows ?? []).map((row) => [row.id, row])), [appointments]);
   const todoItemById = useMemo(() => new Map((todoItems?.rows ?? []).map((row) => [row.id, row])), [todoItems]);
-  const courseById = useMemo(() => new Map((courses?.rows ?? []).map((row) => [row.id, row])), [courses]);
-  const todoListById = useMemo(() => new Map((todoLists?.rows ?? []).map((row) => [row.id, row])), [todoLists]);
 
   function getRow(item: DrivingQueueItem): DrivingCardRow {
     switch (item.kind) {
@@ -76,7 +95,7 @@ export function DrivingHub() {
         return { subtitle: deadline ? courseById.get(deadline.course_id)?.name : undefined };
       }
       case "task":
-        return { tags: taskById.get(item.id)?.tags };
+        return { tags: taskById.get(item.id)?.tags, personLabel: item.personId ? item.personLabel : undefined };
       case "todo": {
         const todoItem = todoItemById.get(item.id);
         const list = todoItem ? todoListById.get(todoItem.list_id) : undefined;

@@ -24,6 +24,8 @@ type Props = {
   subtitle?: string;
   /** Task tags only. */
   tags?: string[];
+  /** "For {name}" -- set only when the item belongs to a tracked Person (People feature) other than the account owner. */
+  personLabel?: string;
 };
 
 const BADGE_CLASS = "w-fit px-4 py-1.5 text-base";
@@ -115,7 +117,7 @@ function cardBadgeAndActions(item: DrivingQueueItem, row: DrivingCardRow): { bad
   }
 }
 
-export function DrivingCard({ item, row, subtitle, tags }: Props) {
+export function DrivingCard({ item, row, subtitle, tags, personLabel }: Props) {
   const router = useRouter();
   const { badge, actions } = cardBadgeAndActions(item, row);
 
@@ -133,6 +135,11 @@ export function DrivingCard({ item, row, subtitle, tags }: Props) {
               </Badge>
             ))}
           </div>
+        )}
+        {personLabel && (
+          <Badge tone="accent" className={BADGE_CLASS}>
+            For {personLabel}
+          </Badge>
         )}
         {badge}
       </div>
