@@ -5,12 +5,13 @@ import { useRouter } from "next/navigation";
 import { useDeadlines } from "@/hooks/useDeadlines";
 import { useTasks } from "@/hooks/useTasks";
 import { useTodoItems } from "@/hooks/useTodoItems";
+import { useTodoLists } from "@/hooks/useTodoLists";
 import { useAppointments } from "@/hooks/useAppointments";
 import { useCourses } from "@/hooks/useCourses";
 import { usePeople } from "@/hooks/usePeople";
 import { buildWeekGridData } from "@/lib/calendar/build-week-events";
 import { buildDrivingQueue, type DrivingQueueItem } from "@/lib/driving/build-driving-queue";
-import { DrivingCardDeck } from "@/components/driving/DrivingCardDeck";
+import { DrivingCardDeck, type DrivingCardMeta } from "@/components/driving/DrivingCardDeck";
 import type { DrivingCardRow } from "@/components/driving/DrivingCard";
 import { CaptureChannel } from "@/components/assistant/CaptureChannel";
 import { Button } from "@/components/ui/Button";
@@ -22,6 +23,7 @@ export function DrivingHub() {
   const { data: tasks, isLoading: tasksLoading } = useTasks({ limit: 100 });
   const { data: todoItems, isLoading: todoItemsLoading } = useTodoItems({ limit: 100 });
   const { data: appointments, isLoading: appointmentsLoading } = useAppointments({ limit: 100 });
+  const { data: todoLists } = useTodoLists({ limit: 100 });
   const { data: courses } = useCourses({ limit: 100 });
   const { data: people } = usePeople();
 
@@ -49,6 +51,9 @@ export function DrivingHub() {
   const deadlineById = useMemo(() => new Map((deadlines?.rows ?? []).map((row) => [row.id, row])), [deadlines]);
   const taskById = useMemo(() => new Map((tasks?.rows ?? []).map((row) => [row.id, row])), [tasks]);
   const appointmentById = useMemo(() => new Map((appointments?.rows ?? []).map((row) => [row.id, row])), [appointments]);
+  const todoItemById = useMemo(() => new Map((todoItems?.rows ?? []).map((row) => [row.id, row])), [todoItems]);
+  const courseById = useMemo(() => new Map((courses?.rows ?? []).map((row) => [row.id, row])), [courses]);
+  const todoListById = useMemo(() => new Map((todoLists?.rows ?? []).map((row) => [row.id, row])), [todoLists]);
 
   function getRow(item: DrivingQueueItem): DrivingCardRow {
     switch (item.kind) {
@@ -63,6 +68,30 @@ export function DrivingHub() {
     }
   }
 
+  function getMeta(item: DrivingQueueItem): DrivingCardMeta {
+    switch (item.kind) {
+      case "deadline": {
+        const deadline = deadlineById.get(item.id);
+        return { subtitle: deadline ? courseById.get(deadline.course_id)?.name : undefined };
+      }
+      case "task":
+        return { tags: taskById.get(item.id)?.tags };
+      case "todo": {
+        const todoItem = todoItemById.get(item.id);
+        const list = todoItem ? todoListById.get(todoItem.list_id) : undefined;
+        const course = list?.course_id ? courseById.get(list.course_id) : undefined;
+        return { subtitle: course?.name ?? list?.name };
+      }
+      case "session": {
+        const session = appointmentById.get(item.id);
+        const deadline = session?.deadline_id ? deadlineById.get(session.deadline_id) : undefined;
+        return { subtitle: deadline?.title };
+      }
+      default:
+        return {};
+    }
+  }
+
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
@@ -72,7 +101,7 @@ export function DrivingHub() {
         </Button>
       </div>
 
-      {isLoading ? <Skeleton className="h-72 w-full" /> : <DrivingCardDeck items={queue} getRow={getRow} />}
+      {isLoading ? <Skeleton className="h-72 w-full" /> : <DrivingCardDeck items={queue} getRow={getRow} getMeta={getMeta} />}
 
       <CaptureChannel large />
     </div>

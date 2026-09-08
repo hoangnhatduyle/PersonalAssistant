@@ -6,15 +6,18 @@ import { Button } from "@/components/ui/Button";
 import { DrivingCard, type DrivingCardRow } from "@/components/driving/DrivingCard";
 import type { DrivingQueueItem } from "@/lib/driving/build-driving-queue";
 
+export type DrivingCardMeta = { subtitle?: string; tags?: string[] };
+
 type Props = {
   items: DrivingQueueItem[];
   getRow: (item: DrivingQueueItem) => DrivingCardRow;
+  getMeta: (item: DrivingQueueItem) => DrivingCardMeta;
 };
 
 const SWIPE_THRESHOLD_PX = 50;
 const NAV_BUTTON_CLASS = "px-8 py-4 text-lg";
 
-export function DrivingCardDeck({ items, getRow }: Props) {
+export function DrivingCardDeck({ items, getRow, getMeta }: Props) {
   const [index, setIndex] = useState(0);
   const touchStartX = useRef<number | null>(null);
 
@@ -40,7 +43,7 @@ export function DrivingCardDeck({ items, getRow }: Props) {
 
   if (items.length === 0 || !current) {
     return (
-      <GlassPanel className="flex h-[26rem] w-full items-center justify-center p-12 text-lg text-text-secondary">
+      <GlassPanel className="flex h-96 w-full items-center justify-center p-12 text-lg text-text-secondary">
         Nothing left today
       </GlassPanel>
     );
@@ -48,7 +51,7 @@ export function DrivingCardDeck({ items, getRow }: Props) {
 
   return (
     <div className="flex flex-col gap-4" onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
-      <DrivingCard item={current} row={getRow(current)} />
+      <DrivingCard item={current} row={getRow(current)} {...getMeta(current)} />
       <div className="flex items-center justify-between gap-4">
         <Button
           variant="secondary"

@@ -20,6 +20,10 @@ export type DrivingCardRow = DeadlineRow | TaskRow | AppointmentRow | null;
 type Props = {
   item: DrivingQueueItem;
   row: DrivingCardRow;
+  /** Course name, custom to-do list name, or parent deadline name -- whatever "which course/parent this belongs to" context applies for the item's kind. */
+  subtitle?: string;
+  /** Task tags only. */
+  tags?: string[];
 };
 
 const BADGE_CLASS = "w-fit px-4 py-1.5 text-base";
@@ -95,15 +99,25 @@ function cardBadgeAndActions(item: DrivingQueueItem, row: DrivingCardRow): { bad
   }
 }
 
-export function DrivingCard({ item, row }: Props) {
+export function DrivingCard({ item, row, subtitle, tags }: Props) {
   const router = useRouter();
   const { badge, actions } = cardBadgeAndActions(item, row);
 
   return (
-    <GlassPanel variant="raised" className="flex h-[26rem] w-full flex-col gap-6 overflow-y-auto p-8">
-      <div className="flex flex-col gap-3">
+    <GlassPanel variant="raised" className="flex h-96 w-full flex-col gap-4 overflow-y-auto p-8">
+      <div className="flex flex-col gap-2">
         <span className="text-lg uppercase tracking-wide text-text-eyebrow">{formatTime(item.at)}</span>
         <h2 className="font-display text-3xl font-semibold text-text-primary">{item.title}</h2>
+        {subtitle && <p className="text-base text-text-secondary">{subtitle}</p>}
+        {tags && tags.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {tags.map((tag) => (
+              <Badge key={tag} tone="neutral" className="text-sm">
+                {tag}
+              </Badge>
+            ))}
+          </div>
+        )}
         {badge}
       </div>
       <div className="flex flex-wrap gap-3">
