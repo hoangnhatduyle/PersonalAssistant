@@ -1,7 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { useAppointments, useCreateAppointment, useDeleteAppointment, useTransitionAppointment } from "@/hooks/useAppointments";
+import {
+  useAppointments,
+  useCreateAppointment,
+  useUpdateAppointment,
+  useDeleteAppointment,
+  useTransitionAppointment,
+} from "@/hooks/useAppointments";
 import { SessionForm, type SessionFormValues } from "@/components/deadlines/SessionForm";
 import { buildSessionProgress } from "@/lib/deadlines/session-progress";
 import { getValidSessionEvents, type SessionTransitionEvent } from "@/lib/api/transitions";
@@ -87,6 +93,9 @@ export function SessionsSection({ deadlineId }: Props) {
   const { showToast } = useToast();
 
   const [isFormOpen, setFormOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const editingSession = sessions.find((session) => session.id === editingId);
+  const updateSession = useUpdateAppointment(editingId ?? "");
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const deletingSession = sessions.find((session) => session.id === deletingId);
   const deleteSession = useDeleteAppointment(deletingId ?? "");
@@ -99,6 +108,13 @@ export function SessionsSection({ deadlineId }: Props) {
         onError: () => showToast("Could not add session", "error"),
       },
     );
+  };
+
+  const handleUpdate = (values: SessionFormValues) => {
+    updateSession.mutate(values, {
+      onSuccess: () => setEditingId(null),
+      onError: () => showToast("Could not update session", "error"),
+    });
   };
 
   return (
@@ -143,9 +159,14 @@ export function SessionsSection({ deadlineId }: Props) {
                   </span>
                   <SessionTransitionButtons session={session} />
                 </div>
-                <Button variant="ghost" size="sm" onClick={() => setDeletingId(session.id)}>
-                  Delete
-                </Button>
+                <div className="flex shrink-0 gap-2">
+                  <Button variant="ghost" size="sm" onClick={() => setEditingId(session.id)}>
+                    Edit
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={() => setDeletingId(session.id)}>
+                    Delete
+                  </Button>
+                </div>
               </li>
             ))}
           </ul>
@@ -154,6 +175,10 @@ export function SessionsSection({ deadlineId }: Props) {
 
       <Dialog open={isFormOpen} onClose={() => setFormOpen(false)} title="Add Session">
         <SessionForm onSubmit={handleCreate} onCancel={() => setFormOpen(false)} />
+      </Dialog>
+
+      <Dialog open={Boolean(editingId)} onClose={() => setEditingId(null)} title="Edit Session">
+        <SessionForm session={editingSession} onSubmit={handleUpdate} onCancel={() => setEditingId(null)} />
       </Dialog>
 
       <ConfirmDialog
