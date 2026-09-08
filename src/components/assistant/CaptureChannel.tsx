@@ -261,7 +261,7 @@ export function CaptureChannel({ compact = false, large = false }: Props) {
         {displayStatus !== "idle" && <TranscriptBubble status={displayStatus} />}
       </div>
 
-      <form onSubmit={handleTextSubmit} className="flex items-end gap-2">
+      <form onSubmit={handleTextSubmit} className="flex flex-col gap-2">
         <Textarea
           value={textInput}
           onChange={(event) => setTextInput(event.target.value)}
@@ -275,14 +275,14 @@ export function CaptureChannel({ compact = false, large = false }: Props) {
           disabled={isBusy}
           aria-label="Text fallback for voice capture"
           rows={compact ? 3 : 5}
-          className={`min-h-24 resize-y ${large ? "text-lg" : ""}`}
+          className={`min-h-24 w-full resize-y ${large ? "text-lg" : ""}`}
         />
         <Button
           type="submit"
           size={large ? "md" : "sm"}
           variant="secondary"
           disabled={isBusy || textInput.trim().length === 0}
-          className={large ? "px-6 py-3 text-base" : ""}
+          className={`w-full ${large ? "py-5 text-xl" : "py-3 text-base"}`}
         >
           Send
         </Button>

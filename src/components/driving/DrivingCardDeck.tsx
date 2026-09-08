@@ -40,7 +40,7 @@ export function DrivingCardDeck({ items, getRow }: Props) {
 
   if (items.length === 0 || !current) {
     return (
-      <GlassPanel className="flex items-center justify-center p-12 text-lg text-text-secondary">
+      <GlassPanel className="flex h-[26rem] w-full items-center justify-center p-12 text-lg text-text-secondary">
         Nothing left today
       </GlassPanel>
     );

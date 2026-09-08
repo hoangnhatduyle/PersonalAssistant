@@ -18,15 +18,15 @@ export function DrivingModePrompt() {
 
   return (
     <Dialog open={isStandalone && !dismissed} onClose={() => setDismissed(true)} title="Are you driving?">
-      <div className="flex flex-col gap-4">
-        <p className="text-sm text-text-secondary">
+      <div className="flex flex-col gap-5">
+        <p className="text-base text-text-secondary">
           Switch to Driving Mode for bigger text, bigger buttons, and a simplified queue you can page through at a
           glance.
         </p>
-        <div className="flex flex-col gap-2 sm:flex-row">
+        <div className="flex flex-col gap-3">
           <Button
             variant="primary"
-            className="flex-1 py-3 text-base"
+            className="w-full py-6 text-xl"
             onClick={() => {
               setDismissed(true);
               router.push("/driving");
@@ -34,7 +34,7 @@ export function DrivingModePrompt() {
           >
             Yes, I&apos;m driving
           </Button>
-          <Button variant="secondary" className="flex-1 py-3 text-base" onClick={() => setDismissed(true)}>
+          <Button variant="secondary" className="w-full py-6 text-xl" onClick={() => setDismissed(true)}>
             No
           </Button>
         </div>

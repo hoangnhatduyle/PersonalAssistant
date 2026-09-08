@@ -100,7 +100,7 @@ export function DrivingCard({ item, row }: Props) {
   const { badge, actions } = cardBadgeAndActions(item, row);
 
   return (
-    <GlassPanel variant="raised" className="flex flex-col gap-6 p-8">
+    <GlassPanel variant="raised" className="flex h-[26rem] w-full flex-col gap-6 overflow-y-auto p-8">
       <div className="flex flex-col gap-3">
         <span className="text-lg uppercase tracking-wide text-text-eyebrow">{formatTime(item.at)}</span>
         <h2 className="font-display text-3xl font-semibold text-text-primary">{item.title}</h2>
