@@ -62,6 +62,7 @@ export function DrivingHub() {
       case "task":
         return taskById.get(item.id) ?? null;
       case "session":
+      case "appointment":
         return appointmentById.get(item.id) ?? null;
       default:
         return null;
@@ -86,6 +87,10 @@ export function DrivingHub() {
         const session = appointmentById.get(item.id);
         const deadline = session?.deadline_id ? deadlineById.get(session.deadline_id) : undefined;
         return { subtitle: deadline?.title };
+      }
+      case "appointment": {
+        const appointment = appointmentById.get(item.id);
+        return { subtitle: [appointment?.category, appointment?.location].filter(Boolean).join(" · ") || undefined };
       }
       default:
         return {};

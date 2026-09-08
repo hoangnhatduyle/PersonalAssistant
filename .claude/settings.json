@@ -26,7 +26,12 @@
       "Bash(TZ=UTC node -e ' *)",
       "Bash(git add *)",
       "Bash(git commit -m ' *)",
-      "mcp__playwright__browser_evaluate"
+      "mcp__playwright__browser_evaluate",
+      "Bash(nohup npm run dev)",
+      "Bash(git -C /home/hoang/projects/PersonalAssistant diff .claude/settings.json)",
+      "Bash(echo \"TSC EXIT:$?\")",
+      "Bash(pkill -f \"next-server\")",
+      "Bash(pkill -f \"npm run dev\")"
     ]
   }
 }

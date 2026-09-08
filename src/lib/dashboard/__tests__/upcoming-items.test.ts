@@ -130,11 +130,35 @@ describe("buildUpcomingItems", () => {
         makeAppointment({ id: "s-planned", session_status: "planned", deadline_id: "d-9" }),
         makeAppointment({ id: "s-done", session_status: "done" }),
         makeAppointment({ id: "s-skipped", session_status: "skipped" }),
-        makeAppointment({ id: "s-other-category", category: "Personal", session_status: null }),
       ],
     });
     expect(items.map((item) => item.id)).toEqual(["s-planned"]);
     expect(items[0]).toMatchObject({ kind: "session", href: "/deadlines/d-9" });
+  });
+
+  it("includes a non-Session appointment as kind 'appointment', linking to the calendar", () => {
+    const items = buildUpcomingItems({
+      deadlines: [],
+      tasks: [],
+      appointments: [makeAppointment({ id: "a-1", category: "Personal", session_status: null, deadline_id: null })],
+    });
+    expect(items.map((item) => item.id)).toEqual(["a-1"]);
+    expect(items[0]).toMatchObject({ kind: "appointment", href: "/calendar", conflict: false });
+  });
+
+  it("flags two overlapping same-day appointments with conflict: true, and leaves a non-overlapping one alone", () => {
+    const items = buildUpcomingItems({
+      deadlines: [],
+      tasks: [],
+      appointments: [
+        makeAppointment({ id: "a-1", category: "Personal", session_status: null, deadline_id: null, time: "14:00", duration_minutes: 60 }),
+        makeAppointment({ id: "a-2", category: "Career", session_status: null, deadline_id: null, time: "14:30", duration_minutes: 30 }),
+        makeAppointment({ id: "a-3", category: "Health", session_status: null, deadline_id: null, time: "09:00", duration_minutes: 30 }),
+      ],
+    });
+    expect(items.find((item) => item.id === "a-1")?.conflict).toBe(true);
+    expect(items.find((item) => item.id === "a-2")?.conflict).toBe(true);
+    expect(items.find((item) => item.id === "a-3")?.conflict).toBe(false);
   });
 
   it("marks a Deadline Session urgent once its date is in the past", () => {
@@ -197,9 +221,14 @@ describe("filterUpcomingItemsByTimeWindow", () => {
     expect(filterUpcomingItemsByTimeWindow(items, "today", now).map((item) => item.id)).toEqual(["overdue", "today"]);
   });
 
-  it("only includes tomorrow in Tomorrow", () => {
-    const items = [itemAt("today", "2026-09-01T08:00:00"), itemAt("tomorrow", "2026-09-02T08:00:00")];
-    expect(filterUpcomingItemsByTimeWindow(items, "tomorrow", now).map((item) => item.id)).toEqual(["tomorrow"]);
+  it("includes today and tomorrow in Tomorrow — a rolling cumulative window, not an exact-day match", () => {
+    const items = [
+      itemAt("overdue", "2026-08-31T12:00:00"),
+      itemAt("today", "2026-09-01T08:00:00"),
+      itemAt("tomorrow", "2026-09-02T08:00:00"),
+      itemAt("day-2", "2026-09-03T08:00:00"),
+    ];
+    expect(filterUpcomingItemsByTimeWindow(items, "tomorrow", now).map((item) => item.id)).toEqual(["overdue", "today", "tomorrow"]);
   });
 
   it("includes the next three calendar days in 3 Days", () => {

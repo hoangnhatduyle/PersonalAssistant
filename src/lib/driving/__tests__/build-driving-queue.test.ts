@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildDrivingQueue } from "../build-driving-queue";
-import { makeDeadline, makeTask, makeTodoItem } from "@/lib/dashboard/__tests__/fixtures";
+import { makeAppointment, makeDeadline, makeTask, makeTodoItem } from "@/lib/dashboard/__tests__/fixtures";
 import type { CalendarEvent } from "@/lib/calendar/build-week-events";
 
 function makeCalendarEvent(overrides: Partial<CalendarEvent> = {}): CalendarEvent {
@@ -60,5 +60,20 @@ describe("buildDrivingQueue", () => {
     expect(queue[0].at.getMonth()).toBe(0);
     expect(queue[0].at.getDate()).toBe(4);
     expect(queue[0].at.getHours()).toBe(23);
+  });
+
+  it("includes today's general Appointments as kind 'appointment', carrying the conflict flag through from buildUpcomingItems", () => {
+    const queue = buildDrivingQueue({
+      deadlines: [],
+      tasks: [],
+      appointments: [
+        makeAppointment({ id: "a-1", category: "Career", session_status: null, deadline_id: null, date: "2026-01-04", time: "14:00", duration_minutes: 60 }),
+        makeAppointment({ id: "a-2", category: "Academic", session_status: null, deadline_id: null, date: "2026-01-04", time: "14:30", duration_minutes: 30 }),
+      ],
+      referenceDate: REFERENCE_DATE,
+    });
+
+    expect(queue.map((item) => item.kind)).toEqual(["appointment", "appointment"]);
+    expect(queue.every((item) => item.conflict)).toBe(true);
   });
 });

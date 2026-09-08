@@ -238,6 +238,75 @@ describe("loadSchedule", () => {
     expect(result.scheduleItems.map((item) => item.title)).not.toContain("My own session");
   });
 
+  it("includes a general Appointment/Event as kind 'appointment', with category and location as context", async () => {
+    const { userId: freshUserId, client } = await createAuthenticatedUser();
+    const todayDateKey = new Date().toISOString().slice(0, 10);
+    await admin.from("appointments").insert({
+      user_id: freshUserId,
+      title: "Career fair",
+      date: todayDateKey,
+      category: "Career",
+      time: "14:00",
+      duration_minutes: 60,
+      location: "Student Union",
+    });
+
+    const result = await loadSchedule(client, freshUserId, "today");
+
+    const item = result.scheduleItems.find((entry) => entry.kind === "appointment" && entry.title === "Career fair");
+    expect(item).toBeDefined();
+    expect(item?.context).toBe("Career — Student Union");
+  });
+
+  it("flags a scheduling conflict between two overlapping Appointments in context, for both sides", async () => {
+    const { userId: freshUserId, client } = await createAuthenticatedUser();
+    const todayDateKey = new Date().toISOString().slice(0, 10);
+    await admin.from("appointments").insert([
+      {
+        user_id: freshUserId,
+        title: "Conference A",
+        date: todayDateKey,
+        category: "Career",
+        time: "14:00",
+        duration_minutes: 60,
+      },
+      {
+        user_id: freshUserId,
+        title: "Conference B",
+        date: todayDateKey,
+        category: "Academic",
+        time: "14:30",
+        duration_minutes: 30,
+      },
+    ]);
+
+    const result = await loadSchedule(client, freshUserId, "today");
+
+    const conferenceA = result.scheduleItems.find((entry) => entry.title === "Conference A");
+    const conferenceB = result.scheduleItems.find((entry) => entry.title === "Conference B");
+    expect(conferenceA?.context).toContain("conflicts with another appointment");
+    expect(conferenceB?.context).toContain("conflicts with another appointment");
+  });
+
+  it("with a personId, never includes the account owner's own Appointments", async () => {
+    const { userId: freshUserId, client } = await createAuthenticatedUser();
+    const personId = await createPerson(admin, freshUserId, { name: "Sister" });
+    const todayDateKey = new Date().toISOString().slice(0, 10);
+    await admin.from("appointments").insert({
+      user_id: freshUserId,
+      title: "My own appointment",
+      date: todayDateKey,
+      category: "Personal",
+      time: "14:00",
+      duration_minutes: 30,
+    });
+
+    const result = await loadSchedule(client, freshUserId, "today", undefined, personId);
+
+    expect(result.scheduleItems.map((item) => item.kind)).not.toContain("appointment");
+    expect(result.scheduleItems.map((item) => item.title)).not.toContain("My own appointment");
+  });
+
   it("includes the account owner's own Course meeting occurrences for today's weekday", async () => {
     const { userId: freshUserId, client } = await createAuthenticatedUser();
     const now = new Date();

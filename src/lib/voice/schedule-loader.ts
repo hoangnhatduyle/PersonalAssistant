@@ -12,6 +12,7 @@ import {
 } from "@/lib/voice/schedule-time-window";
 import { rankScheduleItems, type Priority, type ScheduleItem } from "@/lib/voice/schedule-formatting";
 import { expandBlockForDateKeys, formatMinutesOfDay, type MeetingBlock } from "@/lib/calendar/recurrence";
+import { findConflictingAppointmentIds, parseStructuredTime } from "@/lib/appointments/conflicts";
 
 const OPEN_DEADLINE_STATUSES = ["Not Started", "In Progress", "Submitted", "Overdue"] as const;
 
@@ -147,6 +148,17 @@ export async function loadSchedule(
     .eq("category", "Session")
     .eq("session_status", "planned")
     .is("deleted_at", null);
+  // General Appointments/Events (every other category) -- same owner-only
+  // scoping as sessionsQuery above (appointments has no person_id column).
+  // duration_minutes is fetched alongside time so conflicts between two
+  // same-day appointments can be computed once, in-memory, before narration
+  // (findConflictingAppointmentIds) -- no extra round trip.
+  let appointmentsQuery = supabase
+    .from("appointments")
+    .select("id, title, date, time, duration_minutes, category, location")
+    .eq("user_id", userId)
+    .neq("category", "Session")
+    .is("deleted_at", null);
   // Session rows only carry a deadline_id, not the Deadline's own title --
   // fetched unscoped (all the owner's open Deadlines, not window-bounded)
   // since a session's linked Deadline may be due well outside the window
@@ -183,6 +195,11 @@ export async function loadSchedule(
       .lt("date", dateKeys.endDateKeyExclusive)
       .order("date", { ascending: true })
       .limit(20);
+    appointmentsQuery = appointmentsQuery
+      .gte("date", dateKeys.startDateKey)
+      .lt("date", dateKeys.endDateKeyExclusive)
+      .order("date", { ascending: true })
+      .limit(20);
   } else {
     // "unscoped": next-5-of-each, anchored to "today" for the date-only
     // todo_items/appointments.date columns.
@@ -191,6 +208,7 @@ export async function loadSchedule(
     tasksQuery = tasksQuery.gte("due_at", now.toISOString()).order("due_at", { ascending: true }).limit(5);
     todoItemsQuery = todoItemsQuery.gte("due_date", todayKeyForUnscoped).order("due_date", { ascending: true }).limit(5);
     sessionsQuery = sessionsQuery.gte("date", todayKeyForUnscoped).order("date", { ascending: true }).limit(5);
+    appointmentsQuery = appointmentsQuery.gte("date", todayKeyForUnscoped).order("date", { ascending: true }).limit(5);
   }
 
   // Resolved-empty stand-ins (never touch the DB) for the owner-only
@@ -199,22 +217,32 @@ export async function loadSchedule(
   // for a real empty result below.
   const skippedResult = Promise.resolve({ data: null, error: null });
 
-  const [deadlinesResult, tasksResult, todoItemsResult, coursesResult, todoListsResult, sessionsResult, deadlineTitlesResult] =
-    await Promise.all([
-      includeOwnerOnlyData ? deadlinesQuery : skippedResult,
-      tasksQuery,
-      includeOwnerOnlyData ? todoItemsQuery : skippedResult,
-      coursesQuery,
-      todoListsQuery,
-      includeOwnerOnlyData ? sessionsQuery : skippedResult,
-      includeOwnerOnlyData ? deadlineTitlesQuery : skippedResult,
-    ]);
+  const [
+    deadlinesResult,
+    tasksResult,
+    todoItemsResult,
+    coursesResult,
+    todoListsResult,
+    sessionsResult,
+    appointmentsResult,
+    deadlineTitlesResult,
+  ] = await Promise.all([
+    includeOwnerOnlyData ? deadlinesQuery : skippedResult,
+    tasksQuery,
+    includeOwnerOnlyData ? todoItemsQuery : skippedResult,
+    coursesQuery,
+    todoListsQuery,
+    includeOwnerOnlyData ? sessionsQuery : skippedResult,
+    includeOwnerOnlyData ? appointmentsQuery : skippedResult,
+    includeOwnerOnlyData ? deadlineTitlesQuery : skippedResult,
+  ]);
   if (deadlinesResult.error) throw deadlinesResult.error;
   if (tasksResult.error) throw tasksResult.error;
   if (todoItemsResult.error) throw todoItemsResult.error;
   if (coursesResult.error) throw coursesResult.error;
   if (todoListsResult.error) throw todoListsResult.error;
   if (sessionsResult.error) throw sessionsResult.error;
+  if (appointmentsResult.error) throw appointmentsResult.error;
   if (deadlineTitlesResult.error) throw deadlineTitlesResult.error;
 
   // meeting_blocks/recurrence_start_date/recurrence_end_date are typed
@@ -226,6 +254,7 @@ export async function loadSchedule(
   const courseNameById = new Map(courses.map((course) => [course.id, course.name]));
   const listNameById = new Map((todoListsResult.data ?? []).map((list) => [list.id, list.name]));
   const deadlineTitleById = new Map((deadlineTitlesResult.data ?? []).map((d) => [d.id, d.title]));
+  const appointmentConflictIds = findConflictingAppointmentIds(appointmentsResult.data ?? []);
 
   const courseScheduleItems = buildCourseScheduleItems(courses, dateKeys, todayKeyForUnscoped, timezone);
 
@@ -276,6 +305,30 @@ export async function loadSchedule(
         kind: "session",
         priority: null,
         context,
+      };
+    }),
+    // General Appointments/Events (every non-Session category). Unlike a
+    // Session, these have a real structured HH:MM time (enforced at create
+    // time -- see appointmentPayloadSchema/POST /api/appointments), so
+    // conflicts between two same-day appointments are computed once here,
+    // entirely in-memory before the model ever runs, and folded into context
+    // as a plain-language note the assistant is instructed (conversation-core
+    // .ts) to always relay rather than omit.
+    ...(appointmentsResult.data ?? []).map((appointment): ScheduleItem => {
+      const [year, month, day] = appointment.date.split("-").map(Number);
+      const structuredMinutes = parseStructuredTime(appointment.time);
+      const conflictNote = appointmentConflictIds.has(appointment.id) ? "conflicts with another appointment at the same time" : null;
+      const contextParts = [appointment.category, appointment.location, conflictNote].filter((part): part is string => Boolean(part));
+      return {
+        id: appointment.id,
+        title: appointment.title,
+        dueAt:
+          structuredMinutes === null
+            ? localEndOfDayUtc(year, month, day, timezone)
+            : new Date(localMidnightUtc(year, month, day, timezone).getTime() + structuredMinutes * 60_000),
+        kind: "appointment",
+        priority: null,
+        context: contextParts.length > 0 ? contextParts.join(" — ") : null,
       };
     }),
     ...courseScheduleItems,

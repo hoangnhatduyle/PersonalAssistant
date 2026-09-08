@@ -12,7 +12,8 @@ export type AppointmentFormValues = {
   title: string;
   date: string;
   category: string;
-  time?: string;
+  time: string;
+  duration_minutes: number;
   location?: string;
   notes?: string[];
 };
@@ -27,22 +28,30 @@ export function AppointmentForm({ appointment, onSubmit, onCancel }: Props) {
   const [title, setTitle] = useState(appointment?.title ?? "");
   const [date, setDate] = useState(appointment?.date ?? "");
   const [category, setCategory] = useState(appointment?.category ?? APPOINTMENT_CATEGORIES[0]);
+  // Structured HH:MM (not free text) — required so appointment-vs-appointment
+  // conflict detection (src/lib/appointments/conflicts.ts) has a real start
+  // time to compare, unlike a Deadline Session's free-text time.
   const [time, setTime] = useState(appointment?.time ?? "");
+  const [duration, setDuration] = useState(appointment?.duration_minutes ? String(appointment.duration_minutes) : "");
   const [location, setLocation] = useState(appointment?.location ?? "");
   const [notes, setNotes] = useState((appointment?.notes ?? []).join("\n"));
   const [error, setError] = useState<string | null>(null);
 
+  const durationMinutes = Number(duration);
+  const isDurationValid = duration.trim() !== "" && Number.isInteger(durationMinutes) && durationMinutes > 0;
+
   const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault();
-    if (!title.trim() || !date) {
-      setError("Title and date are required.");
+    if (!title.trim() || !date || !time || !isDurationValid) {
+      setError("Title, date, time, and duration are required.");
       return;
     }
     onSubmit({
       title: title.trim(),
       date,
       category,
-      time: time.trim() || undefined,
+      time,
+      duration_minutes: durationMinutes,
       location: location.trim() || undefined,
       notes: notes
         .split("\n")
@@ -73,13 +82,26 @@ export function AppointmentForm({ appointment, onSubmit, onCancel }: Props) {
       </div>
 
       <div className="grid grid-cols-2 gap-4">
-        <FormField label="Time" htmlFor="appointment-time">
-          <Input id="appointment-time" placeholder="e.g. Arrive by 9:00 AM" value={time} onChange={(event) => setTime(event.target.value)} />
+        <FormField label="Time" htmlFor="appointment-time" error={!time ? error ?? undefined : undefined}>
+          <Input id="appointment-time" type="time" required value={time} onChange={(event) => setTime(event.target.value)} />
         </FormField>
-        <FormField label="Location" htmlFor="appointment-location">
-          <Input id="appointment-location" placeholder="e.g. Baldwin Hall 544" value={location} onChange={(event) => setLocation(event.target.value)} />
+        <FormField label="Duration (minutes)" htmlFor="appointment-duration" error={!isDurationValid ? error ?? undefined : undefined}>
+          <Input
+            id="appointment-duration"
+            type="number"
+            min={1}
+            step={5}
+            required
+            placeholder="e.g. 60"
+            value={duration}
+            onChange={(event) => setDuration(event.target.value)}
+          />
         </FormField>
       </div>
+
+      <FormField label="Location" htmlFor="appointment-location">
+        <Input id="appointment-location" placeholder="e.g. Baldwin Hall 544" value={location} onChange={(event) => setLocation(event.target.value)} />
+      </FormField>
 
       <FormField label="Notes (one item per line)" htmlFor="appointment-notes">
         <textarea

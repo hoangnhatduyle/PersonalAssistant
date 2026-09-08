@@ -95,6 +95,19 @@ function cardBadgeAndActions(item: DrivingQueueItem, row: DrivingCardRow): { bad
     }
     case "todo":
       return { badge: null, actions: <MarkTodoDoneButton todoItemId={item.id} /> };
+    // Same "Conflict" badge treatment as UpNextPanel/AppointmentsTimeline —
+    // this is the one place the user is actively about to drive somewhere,
+    // so a double-booked event needs to be at least as visible here as it
+    // is on the dashboard.
+    case "appointment":
+      return {
+        badge: item.conflict ? (
+          <Badge tone="urgent" className={BADGE_CLASS}>
+            Conflict
+          </Badge>
+        ) : null,
+        actions: null,
+      };
     case "event":
     case "reminder":
     default:

@@ -1,6 +1,7 @@
 import type { AppointmentRow, DeadlineRow, DeadlineStatus, TaskRow, TaskStatus, ReminderRow, TodoItemRow } from "@/lib/api/entity-types";
+import { findConflictingAppointmentIds, parseStructuredTime } from "@/lib/appointments/conflicts";
 
-export type UpcomingItemKind = "deadline" | "task" | "reminder" | "todo" | "session";
+export type UpcomingItemKind = "deadline" | "task" | "reminder" | "todo" | "session" | "appointment";
 
 export type TimeWindowFilter = "today" | "tomorrow" | "3days" | "7days" | "all";
 
@@ -19,6 +20,8 @@ export interface UpcomingItem {
   href: string | null;
   /** Overdue deadlines and Delivered reminders need action now, not "soon". */
   urgent: boolean;
+  /** Appointment-kind only: this appointment's time range overlaps another appointment on the same day (see src/lib/appointments/conflicts.ts). */
+  conflict?: boolean;
 }
 
 export function isOpenDeadline(status: DeadlineStatus): boolean {
@@ -110,16 +113,39 @@ export function buildUpcomingItems({
   // "planned" ones are actionable/upcoming here — a done/skipped session has
   // nothing left to act on, matching isOpenDeadline/isOpenTask's convention
   // of excluding closed-out items from the queue.
-  for (const session of appointments) {
-    if (session.category !== "Session" || session.session_status !== "planned") continue;
-    const at = new Date(`${session.date}T23:59:59.999`);
+  //
+  // Every other category is a general Appointment/Event (AppointmentForm on
+  // /calendar) — these carry a real structured time, so conflicts between
+  // them are computed once up front and surfaced per item below.
+  const conflictingAppointmentIds = findConflictingAppointmentIds(appointments);
+  for (const appointment of appointments) {
+    if (appointment.category === "Session") {
+      if (appointment.session_status !== "planned") continue;
+      const at = new Date(`${appointment.date}T23:59:59.999`);
+      items.push({
+        id: appointment.id,
+        kind: "session",
+        title: appointment.title,
+        at,
+        href: appointment.deadline_id ? `/deadlines/${appointment.deadline_id}` : null,
+        urgent: appointment.date < today,
+      });
+      continue;
+    }
+
+    const structuredMinutes = parseStructuredTime(appointment.time);
+    const at =
+      structuredMinutes === null
+        ? new Date(`${appointment.date}T23:59:59.999`)
+        : new Date(`${appointment.date}T${appointment.time}:00`);
     items.push({
-      id: session.id,
-      kind: "session",
-      title: session.title,
+      id: appointment.id,
+      kind: "appointment",
+      title: appointment.title,
       at,
-      href: session.deadline_id ? `/deadlines/${session.deadline_id}` : null,
-      urgent: session.date < today,
+      href: "/calendar",
+      urgent: appointment.date < today,
+      conflict: conflictingAppointmentIds.has(appointment.id),
     });
   }
 
@@ -160,7 +186,7 @@ export function filterUpcomingItemsByTimeWindow(items: UpcomingItem[], window: T
       case "today":
         return offset <= 0;
       case "tomorrow":
-        return offset === 1;
+        return offset <= 1;
       case "3days":
         return offset <= 2;
       case "7days":

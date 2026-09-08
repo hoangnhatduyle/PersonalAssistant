@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Badge } from "@/components/ui/Badge";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { findConflictingAppointmentIds } from "@/lib/appointments/conflicts";
 import type { AppointmentRow } from "@/lib/api/entity-types";
 
 function formatDate(date: string): string {
@@ -18,7 +19,12 @@ function formatDate(date: string): string {
 
 export function AppointmentsTimeline() {
   const { data, isLoading } = useAppointments({ limit: 100 });
-  const appointments = data?.rows ?? [];
+  // Deadline Sessions (category "Session") are managed through their own
+  // dedicated flow (SessionsSection/SessionForm on a Deadline's page, with
+  // a free-text time field) — excluded here so this generic form's required
+  // structured time + duration (needed for conflict detection) never applies
+  // to a Session row edited through this list.
+  const appointments = (data?.rows ?? []).filter((row) => row.category !== "Session");
   const createMutation = useCreateAppointment();
 
   const [isFormOpen, setFormOpen] = useState(false);
@@ -27,6 +33,7 @@ export function AppointmentsTimeline() {
 
   const editingAppointment = appointments.find((item) => item.id === editingId);
   const deletingAppointment = appointments.find((item) => item.id === deletingId);
+  const conflictingIds = findConflictingAppointmentIds(appointments);
 
   const openCreate = () => {
     setEditingId(null);
@@ -80,10 +87,12 @@ export function AppointmentsTimeline() {
                 <div className="flex items-center gap-2">
                   <p className="truncate text-sm text-text-primary">{appointment.title}</p>
                   <Badge tone="neutral">{appointment.category}</Badge>
+                  {conflictingIds.has(appointment.id) && <Badge tone="urgent">Conflict</Badge>}
                 </div>
                 <span className="font-mono text-xs text-text-secondary">
                   {formatDate(appointment.date)}
                   {appointment.time ? ` · ${appointment.time}` : ""}
+                  {appointment.duration_minutes ? ` (${appointment.duration_minutes}m)` : ""}
                   {appointment.location ? ` · ${appointment.location}` : ""}
                 </span>
               </div>

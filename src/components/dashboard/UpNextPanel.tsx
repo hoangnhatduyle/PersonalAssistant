@@ -28,7 +28,6 @@ type Props = {
 };
 
 const RING_ITEM_LIMIT = 5;
-const QUEUE_LIMIT = 8;
 const CLOCK_TICK_MS = 1_000;
 const CENTER = 150;
 const FACE_RADIUS = 100;
@@ -50,7 +49,7 @@ const TIME_WINDOW_FILTERS: Array<{ value: TimeWindowFilter; label: string }> = [
 
 const EMPTY_COPY: Record<TimeWindowFilter, { title: string; description: string }> = {
   today: { title: "Nothing due today", description: "No open deadlines or tasks due today." },
-  tomorrow: { title: "Nothing due tomorrow", description: "No open deadlines or tasks due tomorrow." },
+  tomorrow: { title: "Nothing due tomorrow", description: "No open deadlines or tasks due through tomorrow." },
   "3days": { title: "Nothing due soon", description: "No open deadlines or tasks due in the next 3 days." },
   "7days": { title: "Nothing due this week", description: "No open deadlines or tasks due in the next 7 days." },
   all: { title: "Queue is clear", description: "No open deadlines or tasks with a due date." },
@@ -62,6 +61,7 @@ const KIND_FILL_CLASS: Record<UpcomingItem["kind"], string> = {
   reminder: "fill-accent-teal",
   todo: "fill-accent-violet",
   session: "fill-status-ok",
+  appointment: "fill-status-warn",
 };
 
 function clockHandAngles(now: Date): { hour: number; minute: number } {
@@ -134,8 +134,7 @@ export function UpNextPanel({ deadlines, tasks, reminders, todoItems, todoLists,
     return result;
   }, [todoItems, todoLists, courses]);
 
-  const filtered = now ? filterUpcomingItemsByTimeWindow(allQueueItems, timeWindow, now) : allQueueItems;
-  const queueItems = timeWindow === "all" ? filtered : filtered.slice(0, QUEUE_LIMIT);
+  const queueItems = now ? filterUpcomingItemsByTimeWindow(allQueueItems, timeWindow, now) : allQueueItems;
   const emptyCopy = EMPTY_COPY[timeWindow];
 
   const minuteIndices = Array.from({ length: 60 }, (_, index) => index * 6);
@@ -259,7 +258,7 @@ export function UpNextPanel({ deadlines, tasks, reminders, todoItems, todoLists,
         {queueItems.length === 0 ? (
           <EmptyState title={emptyCopy.title} description={emptyCopy.description} />
         ) : (
-          <ul className="flex flex-col divide-y divide-panel-border">
+          <ul className="flex max-h-[28rem] flex-col divide-y divide-panel-border overflow-y-auto pr-1">
             {queueItems.map((item) => {
               const status =
                 item.kind === "deadline"
@@ -288,7 +287,9 @@ export function UpNextPanel({ deadlines, tasks, reminders, todoItems, todoLists,
                       ? "Reminder"
                       : item.kind === "session"
                         ? "Session"
-                        : (todoInfo?.listName ?? "To-Do");
+                        : item.kind === "appointment"
+                          ? "Event"
+                          : (todoInfo?.listName ?? "To-Do");
 
               const courseName = todoInfo?.courseName;
               const taskTags = item.kind === "task" ? taskById.get(item.id)?.tags ?? [] : [];
@@ -314,6 +315,7 @@ export function UpNextPanel({ deadlines, tasks, reminders, todoItems, todoLists,
                     </div>
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
+                    {item.kind === "appointment" && item.conflict && <Badge tone="urgent">Conflict</Badge>}
                     {showPastDueTag && (
                       <span className="rounded-full bg-status-urgent/15 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide text-status-urgent">
                         Past due

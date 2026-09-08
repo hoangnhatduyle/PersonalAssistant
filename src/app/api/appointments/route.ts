@@ -3,6 +3,7 @@ import { requireAuthenticatedContext } from "@/lib/api/auth";
 import { parsePagination, wantsIncludeDeleted } from "@/lib/api/pagination";
 import { appointmentPayloadSchema } from "@/lib/api/schemas";
 import { syncReminderForTarget } from "@/lib/api/reminders";
+import { parseStructuredTime } from "@/lib/appointments/conflicts";
 import {
   successResponse,
   notFoundResponse,
@@ -52,6 +53,19 @@ export async function POST(request: NextRequest) {
 
   const parsed = appointmentPayloadSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return validationErrorResponse(parsed.error.message);
+
+  // A Deadline Session (deadline_id set) keeps its existing free-text/optional
+  // time — this requirement is only for general Appointments/Events, which
+  // need a real structured start time + duration for conflict detection
+  // (src/lib/appointments/conflicts.ts) to work at all.
+  if (!parsed.data.deadline_id) {
+    if (parseStructuredTime(parsed.data.time) === null) {
+      return validationErrorResponse("time is required in HH:MM format for an appointment");
+    }
+    if (!parsed.data.duration_minutes) {
+      return validationErrorResponse("duration_minutes is required for an appointment");
+    }
+  }
 
   const insertPayload: typeof parsed.data & { category?: string; session_status?: "planned" } = { ...parsed.data };
 
