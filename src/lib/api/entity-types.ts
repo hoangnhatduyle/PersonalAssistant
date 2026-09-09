@@ -23,6 +23,7 @@ export type TodoItemRow = Database["public"]["Tables"]["todo_items"]["Row"];
 
 export type AppointmentRow = Database["public"]["Tables"]["appointments"]["Row"];
 export type SessionStatus = Database["public"]["Enums"]["session_status"];
+export type EventStatus = Database["public"]["Enums"]["event_status"];
 
 // The knowledge list/detail routes select KNOWLEDGE_SOURCE_PUBLIC_COLUMNS,
 // not the full row (raw_content/storage_object_path are deliberately never

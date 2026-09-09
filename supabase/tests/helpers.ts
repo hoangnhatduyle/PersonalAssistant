@@ -123,6 +123,36 @@ export async function createSession(
   return data.id as string;
 }
 
+/**
+ * General Event/Appointment (supabase/migrations/0027_appointment_event_status.sql):
+ * a plain appointments row with deadline_id null, mirroring createSession's
+ * defaults-plus-overrides shape — callers pass event_status via overrides
+ * when a test needs to start somewhere other than the guard's mandatory
+ * initial 'planned'.
+ */
+export async function createAppointment(
+  admin: SupabaseClient,
+  userId: string,
+  overrides: Record<string, unknown> = {},
+): Promise<string> {
+  const { data, error } = await admin
+    .from("appointments")
+    .insert({
+      user_id: userId,
+      title: "Test Event",
+      date: new Date().toISOString().slice(0, 10),
+      category: "Personal",
+      time: "14:00",
+      duration_minutes: 60,
+      event_status: "planned",
+      ...overrides,
+    })
+    .select("id")
+    .single();
+  if (error) throw new Error(`failed to create appointment: ${error.message}`, { cause: error });
+  return data.id as string;
+}
+
 export async function createTask(
   admin: SupabaseClient,
   userId: string,

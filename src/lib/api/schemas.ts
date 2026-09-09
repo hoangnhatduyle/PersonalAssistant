@@ -143,9 +143,9 @@ export const appointmentPayloadSchema = z.object({
 export type AppointmentPayload = z.infer<typeof appointmentPayloadSchema>;
 export const appointmentPatchSchema = appointmentPayloadSchema.omit({ deadline_id: true }).partial();
 export type AppointmentPatch = z.infer<typeof appointmentPatchSchema>;
-// session_status is never in either schema above — it only changes through
-// the dedicated transition route (NC-API-002), like deadlines.status and
-// tasks.status.
+// session_status/event_status are never in either schema above — both only
+// change through the dedicated transition route (NC-API-002), like
+// deadlines.status and tasks.status.
 
 export const taskPayloadSchema = z.object({
   title: z.string().trim().min(1),

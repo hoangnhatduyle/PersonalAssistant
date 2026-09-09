@@ -13,7 +13,8 @@ import {
   type TimeWindowFilter,
 } from "@/lib/dashboard/upcoming-items";
 import { formatRelativeTime } from "@/lib/format-relative-time";
-import { DEADLINE_STATUS_TONE, SESSION_STATUS_TONE, TASK_STATUS_TONE } from "@/lib/status-colors";
+import { DEADLINE_STATUS_TONE, EVENT_STATUS_TONE, SESSION_STATUS_TONE, TASK_STATUS_TONE } from "@/lib/status-colors";
+import { EventTransitionButtons } from "@/components/calendar/EventTransitionButtons";
 import type { AppointmentRow, CourseRow, DeadlineRow, PersonRow, ReminderRow, TaskRow, TodoItemRow, TodoListRow } from "@/lib/api/entity-types";
 
 type Props = {
@@ -113,10 +114,10 @@ export function UpNextPanel({ deadlines, tasks, people, reminders, todoItems, to
   const now = isMounted ? new Date() : null;
 
   // Clock ring items (top 5 from all entity types including reminders and sessions)
-  const ringItems = buildUpcomingItems({ deadlines, tasks, reminders, appointments, people }).slice(0, RING_ITEM_LIMIT);
+  const ringItems = buildUpcomingItems({ deadlines, tasks, reminders, appointments, people, courses }).slice(0, RING_ITEM_LIMIT);
 
   // Queue items (deadlines, tasks, todos, reminders, sessions — full union)
-  const allQueueItems = buildUpcomingItems({ deadlines, tasks, reminders, todoItems, appointments, people });
+  const allQueueItems = buildUpcomingItems({ deadlines, tasks, reminders, todoItems, appointments, people, courses });
   const deadlineById = new Map(deadlines.map((d) => [d.id, d]));
   const taskById = new Map(tasks.map((t) => [t.id, t]));
   const appointmentById = new Map(appointments.map((a) => [a.id, a]));
@@ -269,7 +270,9 @@ export function UpNextPanel({ deadlines, tasks, people, reminders, todoItems, to
                     ? taskById.get(item.id)?.status
                     : item.kind === "session"
                       ? appointmentById.get(item.id)?.session_status
-                      : undefined;
+                      : item.kind === "appointment"
+                        ? appointmentById.get(item.id)?.event_status
+                        : undefined;
               const tone =
                 item.kind === "deadline"
                   ? DEADLINE_STATUS_TONE[status as DeadlineRow["status"]]
@@ -277,7 +280,9 @@ export function UpNextPanel({ deadlines, tasks, people, reminders, todoItems, to
                     ? TASK_STATUS_TONE[status as TaskRow["status"]]
                     : item.kind === "session" && status
                       ? SESSION_STATUS_TONE[status as NonNullable<AppointmentRow["session_status"]>]
-                      : undefined;
+                      : item.kind === "appointment" && status
+                        ? EVENT_STATUS_TONE[status as NonNullable<AppointmentRow["event_status"]>]
+                        : undefined;
               const showPastDueTag = item.urgent && item.kind !== "deadline";
               const todoInfo = item.kind === "todo" ? todoItemLabelMap.get(item.id) : undefined;
               const kindLabel =
@@ -316,9 +321,13 @@ export function UpNextPanel({ deadlines, tasks, people, reminders, todoItems, to
                         <Badge key={tag} tone="neutral">{tag}</Badge>
                       ))}
                     </div>
+                    {item.kind === "appointment" && (
+                      <EventTransitionButtons appointment={appointmentById.get(item.id)!} suggestMissed={item.courseConflict} />
+                    )}
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
                     {item.kind === "appointment" && item.conflict && <Badge tone="urgent">Conflict</Badge>}
+                    {item.kind === "appointment" && item.courseConflict && <Badge tone="purple">Course Conflict</Badge>}
                     {showPastDueTag && (
                       <span className="rounded-full bg-status-urgent/15 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide text-status-urgent">
                         Past due

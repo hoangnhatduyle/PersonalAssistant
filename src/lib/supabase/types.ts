@@ -54,6 +54,7 @@ export type Database = {
           deadline_id: string | null
           duration_minutes: number | null
           session_status: Database["public"]["Enums"]["session_status"] | null
+          event_status: Database["public"]["Enums"]["event_status"] | null
           deleted_at: string | null
           created_at: string
           updated_at: string
@@ -72,6 +73,7 @@ export type Database = {
           deadline_id?: string | null
           duration_minutes?: number | null
           session_status?: Database["public"]["Enums"]["session_status"] | null
+          event_status?: Database["public"]["Enums"]["event_status"] | null
           deleted_at?: string | null
           created_at?: string
           updated_at?: string
@@ -90,6 +92,7 @@ export type Database = {
           deadline_id?: string | null
           duration_minutes?: number | null
           session_status?: Database["public"]["Enums"]["session_status"] | null
+          event_status?: Database["public"]["Enums"]["event_status"] | null
           deleted_at?: string | null
           created_at?: string
           updated_at?: string
@@ -1650,6 +1653,7 @@ export type Database = {
         | "Overdue"
         | "Completed"
         | "Cancelled"
+      event_status: "planned" | "done" | "missed"
       item_priority: "Low" | "Medium" | "High" | "Urgent"
       knowledge_source_status: "Pending" | "Processing" | "Ready" | "Failed"
       knowledge_source_type: "url" | "pasted_text" | "image" | "video" | "audio"

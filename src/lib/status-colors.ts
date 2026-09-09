@@ -35,6 +35,7 @@ type DeadlineStatus = Database["public"]["Enums"]["deadline_status"];
 type TaskStatus = Database["public"]["Enums"]["task_status"];
 type ReminderStatus = Database["public"]["Enums"]["reminder_status"];
 type SessionStatus = Database["public"]["Enums"]["session_status"];
+type EventStatus = Database["public"]["Enums"]["event_status"];
 type KnowledgeSourceStatus = Database["public"]["Enums"]["knowledge_source_status"];
 type ItemPriority = Database["public"]["Enums"]["item_priority"];
 
@@ -57,6 +58,12 @@ export const SESSION_STATUS_TONE: Record<SessionStatus, StatusTone> = {
   planned: "neutral",
   done: "ok",
   skipped: "warn",
+};
+
+export const EVENT_STATUS_TONE: Record<EventStatus, StatusTone> = {
+  planned: "neutral",
+  done: "ok",
+  missed: "warn",
 };
 
 export const REMINDER_STATUS_TONE: Record<ReminderStatus, StatusTone> = {

@@ -44,7 +44,9 @@ export async function GET(request: NextRequest) {
  * regardless of client input — session_status must start 'planned'
  * (NC-API-002-adjacent state-machine invariant, guard_session_status backs
  * this up at the DB level too) and category tags the row 'Session' so it's
- * visually distinct in the Calendar tab.
+ * visually distinct in the Calendar tab. Otherwise (a general Event),
+ * event_status is server-forced to 'planned' instead — guard_event_status
+ * backs this up at the DB level (supabase/migrations/0027_appointment_event_status.sql).
  */
 export async function POST(request: NextRequest) {
   const ctx = await requireAuthenticatedContext();
@@ -67,7 +69,11 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  const insertPayload: typeof parsed.data & { category?: string; session_status?: "planned" } = { ...parsed.data };
+  const insertPayload: typeof parsed.data & {
+    category?: string;
+    session_status?: "planned";
+    event_status?: "planned";
+  } = { ...parsed.data };
 
   if (parsed.data.deadline_id) {
     const { data: deadline, error: deadlineError } = await supabase
@@ -82,6 +88,8 @@ export async function POST(request: NextRequest) {
 
     insertPayload.category = "Session";
     insertPayload.session_status = "planned";
+  } else {
+    insertPayload.event_status = "planned";
   }
 
   const { data: appointment, error: insertError } = await supabase

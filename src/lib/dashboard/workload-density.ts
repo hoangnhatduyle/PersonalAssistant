@@ -30,10 +30,23 @@ export interface DensityItem {
   kind: "deadline" | "task" | "todo";
   title: string;
   href: string;
+  /** To-Do items only — the name of the list it belongs to. */
+  listName?: string;
   /** To-Do items only — the course their list belongs to, when it has one. */
   courseName?: string;
   /** Tasks only. */
   tags?: string[];
+}
+
+export interface PastDueSummary {
+  count: number;
+  deadlineCount: number;
+  taskCount: number;
+  todoCount: number;
+}
+
+function isPastDue(dateKey: string, todayKey: string): boolean {
+  return dateKey < todayKey;
 }
 
 /**
@@ -91,10 +104,97 @@ export function buildWorkloadDensity(
 }
 
 /**
+ * Counts open Deadlines/Tasks/To-Do items whose due date is before today —
+ * the mirror image of `buildWorkloadDensity`'s window, which deliberately
+ * drops these. Calendar-day granularity throughout, consistent with the
+ * rest of this file (not the instant-based `urgent` flag `upcoming-items.ts`
+ * uses for deadlines).
+ */
+export function countPastDueItems(
+  deadlines: DeadlineRow[],
+  tasks: TaskRow[],
+  todoItems: TodoItemRow[] = [],
+  now: Date = new Date(),
+): PastDueSummary {
+  const todayKey = toDateKey(startOfDay(now));
+
+  let deadlineCount = 0;
+  for (const deadline of deadlines) {
+    if (!isOpenDeadline(deadline.status)) continue;
+    if (isPastDue(toDateKey(new Date(deadline.due_at)), todayKey)) deadlineCount += 1;
+  }
+
+  let taskCount = 0;
+  for (const task of tasks) {
+    if (!isOpenTask(task.status) || !task.due_at) continue;
+    if (isPastDue(toDateKey(new Date(task.due_at)), todayKey)) taskCount += 1;
+  }
+
+  let todoCount = 0;
+  for (const item of todoItems) {
+    if (item.is_done || !item.due_date) continue;
+    if (isPastDue(item.due_date, todayKey)) todoCount += 1;
+  }
+
+  return { count: deadlineCount + taskCount + todoCount, deadlineCount, taskCount, todoCount };
+}
+
+/**
+ * The raw items behind `countPastDueItems`' counts — same shape and
+ * enrichment as `itemsForDensityDay`, feeding a "past due" expand/detail
+ * view instead of a specific day's.
+ */
+export function pastDueItemsFor(
+  deadlines: DeadlineRow[],
+  tasks: TaskRow[],
+  todoItems: TodoItemRow[] = [],
+  todoLists: TodoListRow[] = [],
+  courses: CourseRow[] = [],
+  now: Date = new Date(),
+): DensityItem[] {
+  const todayKey = toDateKey(startOfDay(now));
+  const items: DensityItem[] = [];
+
+  const courseNameById = new Map(courses.map((course) => [course.id, course.name]));
+  const courseNameByListId = new Map(
+    todoLists.filter((list) => list.course_id).map((list) => [list.id, courseNameById.get(list.course_id as string)]),
+  );
+  const listNameById = new Map(todoLists.map((list) => [list.id, list.name]));
+
+  for (const deadline of deadlines) {
+    if (!isOpenDeadline(deadline.status)) continue;
+    if (!isPastDue(toDateKey(new Date(deadline.due_at)), todayKey)) continue;
+    items.push({ id: deadline.id, kind: "deadline", title: deadline.title, href: `/deadlines/${deadline.id}` });
+  }
+
+  for (const task of tasks) {
+    if (!isOpenTask(task.status) || !task.due_at) continue;
+    if (!isPastDue(toDateKey(new Date(task.due_at)), todayKey)) continue;
+    items.push({ id: task.id, kind: "task", title: task.title, href: `/tasks/${task.id}`, tags: task.tags });
+  }
+
+  for (const item of todoItems) {
+    if (item.is_done || !item.due_date) continue;
+    if (!isPastDue(item.due_date, todayKey)) continue;
+    items.push({
+      id: item.id,
+      kind: "todo",
+      title: item.title,
+      href: "/courses/todos",
+      listName: listNameById.get(item.list_id),
+      courseName: courseNameByListId.get(item.list_id),
+    });
+  }
+
+  return items;
+}
+
+/**
  * The raw items behind one bucket's counts — feeds a day's expand/detail
- * view. `todoLists`/`courses` are optional and only used to resolve a To-Do
- * item's course name (mirrors NextSequenceQueue's courseName enrichment,
- * which likewise only applies to todos, not deadlines).
+ * view. `todoLists`/`courses` are optional and used to resolve a To-Do
+ * item's list name and, when the list belongs to one, its course name
+ * (mirrors NextSequenceQueue's courseName enrichment, which likewise only
+ * applies to todos, not deadlines).
  */
 export function itemsForDensityDay(
   deadlines: DeadlineRow[],
@@ -110,6 +210,7 @@ export function itemsForDensityDay(
   const courseNameByListId = new Map(
     todoLists.filter((list) => list.course_id).map((list) => [list.id, courseNameById.get(list.course_id as string)]),
   );
+  const listNameById = new Map(todoLists.map((list) => [list.id, list.name]));
 
   for (const deadline of deadlines) {
     if (!isOpenDeadline(deadline.status)) continue;
@@ -130,6 +231,7 @@ export function itemsForDensityDay(
       kind: "todo",
       title: item.title,
       href: "/courses/todos",
+      listName: listNameById.get(item.list_id),
       courseName: courseNameByListId.get(item.list_id),
     });
   }

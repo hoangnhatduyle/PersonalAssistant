@@ -67,8 +67,8 @@ describe("buildDrivingQueue", () => {
       deadlines: [],
       tasks: [],
       appointments: [
-        makeAppointment({ id: "a-1", category: "Career", session_status: null, deadline_id: null, date: "2026-01-04", time: "14:00", duration_minutes: 60 }),
-        makeAppointment({ id: "a-2", category: "Academic", session_status: null, deadline_id: null, date: "2026-01-04", time: "14:30", duration_minutes: 30 }),
+        makeAppointment({ id: "a-1", category: "Career", session_status: null, event_status: "planned", deadline_id: null, date: "2026-01-04", time: "14:00", duration_minutes: 60 }),
+        makeAppointment({ id: "a-2", category: "Academic", session_status: null, event_status: "planned", deadline_id: null, date: "2026-01-04", time: "14:30", duration_minutes: 30 }),
       ],
       referenceDate: REFERENCE_DATE,
     });

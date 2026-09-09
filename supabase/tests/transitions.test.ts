@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import {
   adminClient,
+  createAppointment,
   createAuthenticatedUser,
   createCourse,
   createDeadline,
@@ -83,6 +84,30 @@ describe("transition-guard trigger", () => {
         title: "Bad regular insert",
         date: new Date().toISOString().slice(0, 10),
         session_status: "planned",
+      });
+      expect(error).not.toBeNull();
+    });
+
+    it("rejects a session appointment inserted with a non-null event_status", async () => {
+      const deadlineId = await createDeadline(admin, userId, courseId);
+      const { error } = await admin.from("appointments").insert({
+        user_id: userId,
+        title: "Bad session insert",
+        date: new Date().toISOString().slice(0, 10),
+        category: "Session",
+        deadline_id: deadlineId,
+        session_status: "planned",
+        event_status: "planned",
+      });
+      expect(error).not.toBeNull();
+    });
+
+    it("rejects a non-session appointment inserted with a non-planned event_status", async () => {
+      const { error } = await admin.from("appointments").insert({
+        user_id: userId,
+        title: "Bad regular insert",
+        date: new Date().toISOString().slice(0, 10),
+        event_status: "done",
       });
       expect(error).not.toBeNull();
     });
@@ -215,6 +240,38 @@ describe("transition-guard trigger", () => {
       await walkTransitions(admin, "appointments", makeUpId, "session_status", ["skipped", "done"]);
       const { data: makeUpSession } = await admin.from("appointments").select("session_status").eq("id", makeUpId).single();
       expect(makeUpSession?.session_status).toBe("done");
+    });
+
+    it("[event_status] rejects done -> planned", async () => {
+      const id = await createAppointment(admin, userId);
+      await walkTransitions(admin, "appointments", id, "event_status", ["done"]);
+      const { error } = await admin.from("appointments").update({ event_status: "planned" }).eq("id", id);
+      expect(error).not.toBeNull();
+    });
+
+    it("[event_status] rejects missed -> planned", async () => {
+      const id = await createAppointment(admin, userId);
+      await walkTransitions(admin, "appointments", id, "event_status", ["missed"]);
+      const { error } = await admin.from("appointments").update({ event_status: "planned" }).eq("id", id);
+      expect(error).not.toBeNull();
+    });
+
+    it("[event_status] accepts the three legal edges: planned->done, planned->missed, missed->done", async () => {
+      const doneId = await createAppointment(admin, userId);
+      const { error: plannedToDoneError } = await admin.from("appointments").update({ event_status: "done" }).eq("id", doneId);
+      expect(plannedToDoneError).toBeNull();
+
+      const missedId = await createAppointment(admin, userId);
+      const { error: plannedToMissedError } = await admin
+        .from("appointments")
+        .update({ event_status: "missed" })
+        .eq("id", missedId);
+      expect(plannedToMissedError).toBeNull();
+
+      const madeUpId = await createAppointment(admin, userId);
+      await walkTransitions(admin, "appointments", madeUpId, "event_status", ["missed", "done"]);
+      const { data: madeUpEvent } = await admin.from("appointments").select("event_status").eq("id", madeUpId).single();
+      expect(madeUpEvent?.event_status).toBe("done");
     });
   });
 });

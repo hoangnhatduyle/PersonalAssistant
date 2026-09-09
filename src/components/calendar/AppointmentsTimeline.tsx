@@ -2,7 +2,9 @@
 
 import { useState } from "react";
 import { useAppointments, useCreateAppointment, useUpdateAppointment, useDeleteAppointment } from "@/hooks/useAppointments";
+import { useCourses } from "@/hooks/useCourses";
 import { AppointmentForm, type AppointmentFormValues } from "@/components/calendar/AppointmentForm";
+import { EventTransitionButtons } from "@/components/calendar/EventTransitionButtons";
 import { GlassPanel } from "@/components/ui/GlassPanel";
 import { Dialog } from "@/components/ui/Dialog";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
@@ -11,6 +13,8 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Badge } from "@/components/ui/Badge";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { findConflictingAppointmentIds } from "@/lib/appointments/conflicts";
+import { findCourseConflictingAppointmentIds } from "@/lib/appointments/course-conflicts";
+import { EVENT_STATUS_TONE } from "@/lib/status-colors";
 import type { AppointmentRow } from "@/lib/api/entity-types";
 
 function formatDate(date: string): string {
@@ -25,6 +29,7 @@ export function AppointmentsTimeline() {
   // structured time + duration (needed for conflict detection) never applies
   // to a Session row edited through this list.
   const appointments = (data?.rows ?? []).filter((row) => row.category !== "Session");
+  const { data: coursesData } = useCourses({ limit: 100 });
   const createMutation = useCreateAppointment();
 
   const [isFormOpen, setFormOpen] = useState(false);
@@ -34,6 +39,7 @@ export function AppointmentsTimeline() {
   const editingAppointment = appointments.find((item) => item.id === editingId);
   const deletingAppointment = appointments.find((item) => item.id === deletingId);
   const conflictingIds = findConflictingAppointmentIds(appointments);
+  const courseConflictingIds = findCourseConflictingAppointmentIds(appointments, coursesData?.rows ?? []);
 
   const openCreate = () => {
     setEditingId(null);
@@ -83,11 +89,15 @@ export function AppointmentsTimeline() {
         <ul className="flex flex-col divide-y divide-panel-border">
           {appointments.map((appointment) => (
             <li key={appointment.id} className="flex items-start justify-between gap-3 py-2.5 first:pt-0 last:pb-0">
-              <div className="flex min-w-0 flex-col gap-0.5">
+              <div className="flex min-w-0 flex-col gap-1.5">
                 <div className="flex items-center gap-2">
                   <p className="truncate text-sm text-text-primary">{appointment.title}</p>
                   <Badge tone="neutral">{appointment.category}</Badge>
+                  {appointment.event_status && (
+                    <Badge tone={EVENT_STATUS_TONE[appointment.event_status]}>{appointment.event_status}</Badge>
+                  )}
                   {conflictingIds.has(appointment.id) && <Badge tone="urgent">Conflict</Badge>}
+                  {courseConflictingIds.has(appointment.id) && <Badge tone="purple">Course Conflict</Badge>}
                 </div>
                 <span className="font-mono text-xs text-text-secondary">
                   {formatDate(appointment.date)}
@@ -95,6 +105,7 @@ export function AppointmentsTimeline() {
                   {appointment.duration_minutes ? ` (${appointment.duration_minutes}m)` : ""}
                   {appointment.location ? ` · ${appointment.location}` : ""}
                 </span>
+                <EventTransitionButtons appointment={appointment} suggestMissed={courseConflictingIds.has(appointment.id)} />
               </div>
               <div className="flex shrink-0 gap-1">
                 <Button variant="ghost" size="sm" onClick={() => openEdit(appointment)}>

@@ -82,6 +82,7 @@ export function makeAppointment(overrides: Partial<AppointmentRow> = {}): Appoin
     deadline_id: null,
     duration_minutes: 60,
     session_status: null,
+    event_status: "planned",
     created_at: "2026-01-01T00:00:00Z",
     updated_at: "2026-01-01T00:00:00Z",
     deleted_at: null,

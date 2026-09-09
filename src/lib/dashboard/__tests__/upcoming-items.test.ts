@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { buildUpcomingItems, filterUpcomingItemsByTimeWindow, isOpenDeadline, isOpenTask } from "../upcoming-items";
 import type { UpcomingItem } from "../upcoming-items";
-import { makeAppointment, makeDeadline, makePerson, makeReminder, makeTask, makeTodoItem } from "./fixtures";
+import { makeAppointment, makeCourse, makeDeadline, makePerson, makeReminder, makeTask, makeTodoItem } from "./fixtures";
 
 describe("isOpenDeadline / isOpenTask", () => {
   it("excludes terminal deadline statuses", () => {
@@ -190,7 +190,7 @@ describe("buildUpcomingItems", () => {
     const items = buildUpcomingItems({
       deadlines: [],
       tasks: [],
-      appointments: [makeAppointment({ id: "a-1", category: "Personal", session_status: null, deadline_id: null })],
+      appointments: [makeAppointment({ id: "a-1", category: "Personal", session_status: null, event_status: "planned", deadline_id: null })],
     });
     expect(items.map((item) => item.id)).toEqual(["a-1"]);
     expect(items[0]).toMatchObject({ kind: "appointment", href: "/calendar", conflict: false });
@@ -201,14 +201,61 @@ describe("buildUpcomingItems", () => {
       deadlines: [],
       tasks: [],
       appointments: [
-        makeAppointment({ id: "a-1", category: "Personal", session_status: null, deadline_id: null, time: "14:00", duration_minutes: 60 }),
-        makeAppointment({ id: "a-2", category: "Career", session_status: null, deadline_id: null, time: "14:30", duration_minutes: 30 }),
-        makeAppointment({ id: "a-3", category: "Health", session_status: null, deadline_id: null, time: "09:00", duration_minutes: 30 }),
+        makeAppointment({ id: "a-1", category: "Personal", session_status: null, event_status: "planned", deadline_id: null, time: "14:00", duration_minutes: 60 }),
+        makeAppointment({ id: "a-2", category: "Career", session_status: null, event_status: "planned", deadline_id: null, time: "14:30", duration_minutes: 30 }),
+        makeAppointment({ id: "a-3", category: "Health", session_status: null, event_status: "planned", deadline_id: null, time: "09:00", duration_minutes: 30 }),
       ],
     });
     expect(items.find((item) => item.id === "a-1")?.conflict).toBe(true);
     expect(items.find((item) => item.id === "a-2")?.conflict).toBe(true);
     expect(items.find((item) => item.id === "a-3")?.conflict).toBe(false);
+  });
+
+  it("excludes a Done or Missed Event, keeping only planned ones", () => {
+    const items = buildUpcomingItems({
+      deadlines: [],
+      tasks: [],
+      appointments: [
+        makeAppointment({ id: "e-planned", category: "Personal", session_status: null, event_status: "planned", deadline_id: null }),
+        makeAppointment({ id: "e-done", category: "Personal", session_status: null, event_status: "done", deadline_id: null }),
+        makeAppointment({ id: "e-missed", category: "Personal", session_status: null, event_status: "missed", deadline_id: null }),
+      ],
+    });
+    expect(items.map((item) => item.id)).toEqual(["e-planned"]);
+  });
+
+  it("flags an Event overlapping a passed-in course's meeting block with courseConflict: true, and leaves a non-overlapping one false", () => {
+    const items = buildUpcomingItems({
+      deadlines: [],
+      tasks: [],
+      appointments: [
+        makeAppointment({
+          id: "a-overlap",
+          category: "Personal",
+          session_status: null,
+          event_status: "planned",
+          deadline_id: null,
+          // 2026-01-05 is a Monday — matches the course block below.
+          date: "2026-01-05",
+          time: "11:00",
+          duration_minutes: 60,
+        }),
+        makeAppointment({
+          id: "a-no-overlap",
+          category: "Personal",
+          session_status: null,
+          event_status: "planned",
+          deadline_id: null,
+          // 2026-01-06 is a Tuesday — the course only meets Mondays.
+          date: "2026-01-06",
+          time: "11:00",
+          duration_minutes: 60,
+        }),
+      ],
+      courses: [makeCourse({ meeting_blocks: [{ days: [1], startMinutes: 11 * 60 + 15, endMinutes: 12 * 60 + 20 }] })],
+    });
+    expect(items.find((item) => item.id === "a-overlap")?.courseConflict).toBe(true);
+    expect(items.find((item) => item.id === "a-no-overlap")?.courseConflict).toBe(false);
   });
 
   it("marks a Deadline Session urgent once its date is in the past", () => {

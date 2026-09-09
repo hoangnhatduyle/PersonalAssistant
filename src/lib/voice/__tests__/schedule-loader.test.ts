@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import {
   adminClient,
+  createAppointment,
   createAuthenticatedUser,
   createCourse,
   createDeadline,
@@ -241,8 +242,7 @@ describe("loadSchedule", () => {
   it("includes a general Appointment/Event as kind 'appointment', with category and location as context", async () => {
     const { userId: freshUserId, client } = await createAuthenticatedUser();
     const todayDateKey = new Date().toISOString().slice(0, 10);
-    await admin.from("appointments").insert({
-      user_id: freshUserId,
+    await createAppointment(admin, freshUserId, {
       title: "Career fair",
       date: todayDateKey,
       category: "Career",
@@ -261,24 +261,20 @@ describe("loadSchedule", () => {
   it("flags a scheduling conflict between two overlapping Appointments in context, for both sides", async () => {
     const { userId: freshUserId, client } = await createAuthenticatedUser();
     const todayDateKey = new Date().toISOString().slice(0, 10);
-    await admin.from("appointments").insert([
-      {
-        user_id: freshUserId,
-        title: "Conference A",
-        date: todayDateKey,
-        category: "Career",
-        time: "14:00",
-        duration_minutes: 60,
-      },
-      {
-        user_id: freshUserId,
-        title: "Conference B",
-        date: todayDateKey,
-        category: "Academic",
-        time: "14:30",
-        duration_minutes: 30,
-      },
-    ]);
+    await createAppointment(admin, freshUserId, {
+      title: "Conference A",
+      date: todayDateKey,
+      category: "Career",
+      time: "14:00",
+      duration_minutes: 60,
+    });
+    await createAppointment(admin, freshUserId, {
+      title: "Conference B",
+      date: todayDateKey,
+      category: "Academic",
+      time: "14:30",
+      duration_minutes: 30,
+    });
 
     const result = await loadSchedule(client, freshUserId, "today");
 
@@ -292,8 +288,7 @@ describe("loadSchedule", () => {
     const { userId: freshUserId, client } = await createAuthenticatedUser();
     const personId = await createPerson(admin, freshUserId, { name: "Sister" });
     const todayDateKey = new Date().toISOString().slice(0, 10);
-    await admin.from("appointments").insert({
-      user_id: freshUserId,
+    await createAppointment(admin, freshUserId, {
       title: "My own appointment",
       date: todayDateKey,
       category: "Personal",

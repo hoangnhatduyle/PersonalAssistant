@@ -3,7 +3,7 @@ import { apiFetch, toQueryString } from "@/lib/http/client";
 import { appointmentKeys, deadlineKeys, reminderKeys } from "@/lib/query/keys";
 import type { AppointmentPatch, AppointmentPayload } from "@/lib/api/schemas";
 import type { AppointmentRow } from "@/lib/api/entity-types";
-import type { SessionTransitionEvent } from "@/lib/api/transitions";
+import type { SessionTransitionEvent, EventTransitionEvent } from "@/lib/api/transitions";
 
 export interface AppointmentListFilters {
   includeDeleted?: boolean;
@@ -72,16 +72,17 @@ export function useDeleteAppointment(id: string) {
 }
 
 /**
- * Deadline Sessions: the only way a session's session_status may change
- * (NC-API-002), mirroring useTransitionDeadline. Invalidates deadlineKeys.all
- * in addition to appointmentKeys.all because a `done` transition can flip
+ * The only way an appointment's session_status (Deadline Sessions) or
+ * event_status (general Events) may change (NC-API-002), mirroring
+ * useTransitionDeadline. Invalidates deadlineKeys.all in addition to
+ * appointmentKeys.all because a Session's `done` transition can flip
  * deadlines.status server-side via the DB trigger
  * (advance_deadline_on_session_done) with no other client-side signal.
  */
 export function useTransitionAppointment(id: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (event: SessionTransitionEvent) =>
+    mutationFn: async (event: SessionTransitionEvent | EventTransitionEvent) =>
       (await apiFetch<AppointmentRow>(`/api/appointments/${id}/transition`, { method: "POST", body: { event } })).data,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: appointmentKeys.all });

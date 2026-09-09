@@ -1,5 +1,6 @@
-import type { AppointmentRow, DeadlineRow, DeadlineStatus, TaskRow, TaskStatus, ReminderRow, TodoItemRow, PersonRow } from "@/lib/api/entity-types";
+import type { AppointmentRow, CourseRow, DeadlineRow, DeadlineStatus, TaskRow, TaskStatus, ReminderRow, TodoItemRow, PersonRow } from "@/lib/api/entity-types";
 import { findConflictingAppointmentIds, parseStructuredTime } from "@/lib/appointments/conflicts";
+import { findCourseConflictingAppointmentIds } from "@/lib/appointments/course-conflicts";
 
 export type UpcomingItemKind = "deadline" | "task" | "reminder" | "todo" | "session" | "appointment";
 
@@ -22,6 +23,8 @@ export interface UpcomingItem {
   urgent: boolean;
   /** Appointment-kind only: this appointment's time range overlaps another appointment on the same day (see src/lib/appointments/conflicts.ts). */
   conflict?: boolean;
+  /** Appointment-kind only: this appointment's time range overlaps a Course's recurring meeting block (see src/lib/appointments/course-conflicts.ts). */
+  courseConflict?: boolean;
   /** Task-kind only: set when this Task belongs to a tracked Person (People feature) rather than the account owner. null/undefined = the owner's own item. */
   personId?: string | null;
   /** Task-kind only: "Me" when personId is null/undefined, else that Person's name. */
@@ -45,6 +48,8 @@ interface BuildUpcomingItemsInput {
   appointments?: AppointmentRow[];
   /** Tracked People (People feature), for resolving a Task's person_id to a display name. Deadlines/Sessions/Todo items/Appointments are always the account owner's own by this point — only Tasks can belong to a tracked person. */
   people?: PersonRow[];
+  /** For flagging a general Event/Appointment whose time overlaps a Course's recurring meeting block (courseConflict). */
+  courses?: CourseRow[];
 }
 
 /**
@@ -59,6 +64,7 @@ export function buildUpcomingItems({
   todoItems = [],
   appointments = [],
   people = [],
+  courses = [],
 }: BuildUpcomingItemsInput): UpcomingItem[] {
   const items: UpcomingItem[] = [];
   const now = Date.now();
@@ -129,9 +135,13 @@ export function buildUpcomingItems({
   // of excluding closed-out items from the queue.
   //
   // Every other category is a general Appointment/Event (AppointmentForm on
-  // /calendar) — these carry a real structured time, so conflicts between
-  // them are computed once up front and surfaced per item below.
+  // /calendar) — these carry a real structured time, so conflicts (against
+  // other appointments, and against a Course's recurring meeting blocks) are
+  // computed once up front and surfaced per item below. Only "planned"
+  // event_status items are actionable/upcoming here, same convention as
+  // Sessions above — a done/missed Event has nothing left to act on.
   const conflictingAppointmentIds = findConflictingAppointmentIds(appointments);
+  const courseConflictingAppointmentIds = findCourseConflictingAppointmentIds(appointments, courses);
   for (const appointment of appointments) {
     if (appointment.category === "Session") {
       if (appointment.session_status !== "planned") continue;
@@ -147,6 +157,8 @@ export function buildUpcomingItems({
       continue;
     }
 
+    if (appointment.event_status !== "planned") continue;
+
     const structuredMinutes = parseStructuredTime(appointment.time);
     const at =
       structuredMinutes === null
@@ -160,6 +172,7 @@ export function buildUpcomingItems({
       href: "/calendar",
       urgent: appointment.date < today,
       conflict: conflictingAppointmentIds.has(appointment.id),
+      courseConflict: courseConflictingAppointmentIds.has(appointment.id),
     });
   }
 
