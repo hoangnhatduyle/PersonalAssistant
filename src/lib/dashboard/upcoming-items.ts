@@ -132,20 +132,26 @@ export function buildUpcomingItems({
   // Deadline Sessions: appointments rows tagged category "Session". Only
   // "planned" ones are actionable/upcoming here — a done/skipped session has
   // nothing left to act on, matching isOpenDeadline/isOpenTask's convention
-  // of excluding closed-out items from the queue.
+  // of excluding closed-out items from the queue. A Session's `time` is
+  // optional free text same as an Event's — when it parses as a structured
+  // HH:MM, use it for `at`; otherwise fall back to end-of-day, same as Events.
   //
   // Every other category is a general Appointment/Event (AppointmentForm on
-  // /calendar) — these carry a real structured time, so conflicts (against
-  // other appointments, and against a Course's recurring meeting blocks) are
-  // computed once up front and surfaced per item below. Only "planned"
-  // event_status items are actionable/upcoming here, same convention as
-  // Sessions above — a done/missed Event has nothing left to act on.
+  // /calendar) — conflicts (against other appointments, and against a
+  // Course's recurring meeting blocks) are computed once up front and
+  // surfaced per item below. Only "planned" event_status items are
+  // actionable/upcoming here, same convention as Sessions above — a
+  // done/missed Event has nothing left to act on.
   const conflictingAppointmentIds = findConflictingAppointmentIds(appointments);
   const courseConflictingAppointmentIds = findCourseConflictingAppointmentIds(appointments, courses);
   for (const appointment of appointments) {
     if (appointment.category === "Session") {
       if (appointment.session_status !== "planned") continue;
-      const at = new Date(`${appointment.date}T23:59:59.999`);
+      const sessionStructuredMinutes = parseStructuredTime(appointment.time);
+      const at =
+        sessionStructuredMinutes === null
+          ? new Date(`${appointment.date}T23:59:59.999`)
+          : new Date(`${appointment.date}T${appointment.time}:00`);
       items.push({
         id: appointment.id,
         kind: "session",

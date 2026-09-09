@@ -186,6 +186,24 @@ describe("buildUpcomingItems", () => {
     expect(items[0]).toMatchObject({ kind: "session", href: "/deadlines/d-9" });
   });
 
+  it("uses a Deadline Session's structured time for `at`, instead of always defaulting to end of day", () => {
+    const items = buildUpcomingItems({
+      deadlines: [],
+      tasks: [],
+      appointments: [makeAppointment({ id: "s-timed", date: "2026-01-04", time: "18:00" })],
+    });
+    expect(items[0].at).toEqual(new Date("2026-01-04T18:00:00"));
+  });
+
+  it("falls back to end of day for a Deadline Session with no parseable time", () => {
+    const items = buildUpcomingItems({
+      deadlines: [],
+      tasks: [],
+      appointments: [makeAppointment({ id: "s-untimed", date: "2026-01-04", time: null })],
+    });
+    expect(items[0].at).toEqual(new Date("2026-01-04T23:59:59.999"));
+  });
+
   it("includes a non-Session appointment as kind 'appointment', linking to the calendar", () => {
     const items = buildUpcomingItems({
       deadlines: [],
