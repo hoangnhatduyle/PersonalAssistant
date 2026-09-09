@@ -81,7 +81,7 @@ export function DashboardContainer() {
             courses={courses?.rows ?? []}
           />
 
-          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+          <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
             <UpNextPanel
               deadlines={deadlines?.rows ?? []}
               tasks={tasks?.rows ?? []}
@@ -95,7 +95,7 @@ export function DashboardContainer() {
             <MomentumCard deadlines={deadlines?.rows ?? []} tasks={mineOnlyTasks} todoItems={ownedTodoItems} />
           </div>
 
-          <div className="grid gap-6 md:grid-cols-2">
+          <div className="grid grid-cols-[minmax(0,1fr)] gap-6 md:grid-cols-2">
             <StaleItemsCard deadlines={deadlines?.rows ?? []} tasks={mineOnlyTasks} todoItems={ownedTodoItems} />
             <CourseProgressList courses={courses?.rows ?? []} deadlines={deadlines?.rows ?? []} todoItems={ownedTodoItems} todoLists={todoLists?.rows ?? []} />
           </div>
