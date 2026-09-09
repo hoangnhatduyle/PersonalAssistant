@@ -160,7 +160,8 @@ export function WorkloadDensityStrip({ deadlines, tasks, todoItems, todoLists, c
                       </div>
                       {(item.listName || item.courseName || (item.tags && item.tags.length > 0)) && (
                         <div className="flex flex-wrap items-center gap-1.5">
-                          {item.listName && <Badge tone="neutral">{item.listName}</Badge>}
+                          {/* A list named after its own course (e.g. "Machine Learning" list under a "Machine Learning" course) would otherwise show the same text twice. */}
+                          {item.listName && item.listName !== item.courseName && <Badge tone="neutral">{item.listName}</Badge>}
                           {item.courseName && <Badge tone="accent">{item.courseName}</Badge>}
                           {item.tags?.map((tag) => (
                             <Badge key={tag} tone="neutral">
