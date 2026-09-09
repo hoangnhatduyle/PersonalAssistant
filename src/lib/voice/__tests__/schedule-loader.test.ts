@@ -208,6 +208,20 @@ describe("loadSchedule", () => {
     expect(sessionItem?.context).toBe("Consensus Protocol Essay — Starting at 7:00 PM");
   });
 
+  it("narrates a structured HH:MM session time as a natural clock phrase", async () => {
+    const { userId: freshUserId, client } = await createAuthenticatedUser();
+    const courseId = await createCourse(admin, freshUserId, { name: "Structured time course" });
+    const deadlineId = await createDeadline(admin, freshUserId, courseId, { title: "Consensus Protocol Essay" });
+    const todayDateKey = new Date().toISOString().slice(0, 10);
+    await createSession(admin, freshUserId, deadlineId, { title: "Outline draft", date: todayDateKey, time: "18:00" });
+
+    const result = await loadSchedule(client, freshUserId, "today");
+
+    const sessionItem = result.scheduleItems.find((item) => item.kind === "session" && item.title === "Outline draft");
+    expect(sessionItem).toBeDefined();
+    expect(sessionItem?.context).toBe("Consensus Protocol Essay — 6 PM");
+  });
+
   it("excludes Deadline Sessions with a 'done' or 'skipped' status", async () => {
     const { userId: freshUserId, client } = await createAuthenticatedUser();
     const courseId = await createCourse(admin, freshUserId, { name: "Session status course" });

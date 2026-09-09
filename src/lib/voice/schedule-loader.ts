@@ -291,11 +291,16 @@ export async function loadSchedule(
     ...(sessionsResult.data ?? []).map((session): ScheduleItem => {
       const [year, month, day] = session.date.split("-").map(Number);
       const deadlineTitle = deadlineTitleById.get(session.deadline_id!) ?? null;
-      // appointments.time is a free-text label (e.g. "Starting at 7:00 PM"),
-      // not a structured clock value -- see the deleted Session-scheduling
-      // investigation this shipped alongside -- so it's folded into context
-      // as opaque display color, never parsed into dueAt.
-      const context = deadlineTitle && session.time ? `${deadlineTitle} — ${session.time}` : (deadlineTitle ?? session.time ?? null);
+      // appointments.time is a structured "HH:MM" now (SessionForm switched
+      // from free text), but older rows can still hold a free-text label
+      // (e.g. "Starting at 7:00 PM") -- narrate the structured case as a
+      // natural clock phrase, and fall back to the raw string otherwise.
+      // Never parsed into dueAt -- Sessions still always anchor to end of
+      // day here, only the dashboard's countdown uses the structured time.
+      const sessionMinutes = parseStructuredTime(session.time);
+      const sessionTimeLabel = sessionMinutes !== null ? formatMinutesOfDay(sessionMinutes) : session.time;
+      const context =
+        deadlineTitle && sessionTimeLabel ? `${deadlineTitle} — ${sessionTimeLabel}` : (deadlineTitle ?? sessionTimeLabel ?? null);
       return {
         id: session.id,
         title: session.title,

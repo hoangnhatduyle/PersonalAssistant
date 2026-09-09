@@ -65,8 +65,8 @@ export function SessionForm({ session, onSubmit, onCancel }: Props) {
         </FormField>
       </div>
 
-      <FormField label="Time" htmlFor="session-time">
-        <Input id="session-time" placeholder="e.g. Starting at 7:00 PM" value={time} onChange={(event) => setTime(event.target.value)} />
+      <FormField label="Time (optional)" htmlFor="session-time">
+        <Input id="session-time" type="time" value={time} onChange={(event) => setTime(event.target.value)} />
       </FormField>
 
       <div className="flex justify-end gap-2">
