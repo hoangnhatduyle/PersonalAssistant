@@ -33,6 +33,10 @@ vi.mock("@/lib/voice/suggestions-lookup", () => ({
   runSuggestionsLookup: vi.fn().mockResolvedValue({ message: "No new suggestions right now." }),
 }));
 
+vi.mock("@/lib/voice/deadline-progress-lookup", () => ({
+  runDeadlineProgressLookup: vi.fn().mockResolvedValue({ message: "2 of 3 sessions done." }),
+}));
+
 // loadEntityContext/loadUserTimezone are the two DB-touching calls
 // runConversationTurn makes unconditionally -- mocked so these tests never
 // hit a real Supabase instance. mutationSchema/toPendingMutation are kept
@@ -50,12 +54,14 @@ vi.mock("@/lib/voice/intent", async (importOriginal) => {
 });
 
 import { runSuggestionsLookup } from "@/lib/voice/suggestions-lookup";
+import { runDeadlineProgressLookup } from "@/lib/voice/deadline-progress-lookup";
 import { loadEntityContext } from "@/lib/voice/intent";
 import { runConversationTurn } from "../conversation-core";
 
 const VALID_TARGET_ID = "11111111-1111-4111-8111-111111111111";
 const PERSON_ID = "22222222-2222-4222-8222-222222222222";
 const UNKNOWN_PERSON_ID = "33333333-3333-4333-8333-333333333333";
+const DEADLINE_ID = "44444444-4444-4444-8444-444444444444";
 const fakeSupabase = {} as SupabaseClient<Database>;
 
 interface FakeToolCall {
@@ -100,6 +106,7 @@ const validProposeMutationArgs = {
 describe("runConversationTurn", () => {
   beforeEach(() => {
     vi.mocked(loadSchedule).mockClear();
+    vi.mocked(runDeadlineProgressLookup).mockClear();
   });
 
   it("returns a mutation_proposal when propose_mutation is called alone", async () => {
@@ -324,6 +331,93 @@ describe("runConversationTurn", () => {
       // appended on the next iteration) -- at(-2) is this call's own tool
       // result, at(-1) would be that later, unrelated assistant message.
       expect(mocks.chatCompletionsCreate.mock.calls[1][0].messages.at(-2).content).toContain("Unknown person_id");
+    });
+  });
+
+  describe("get_deadline_progress", () => {
+    it("resolves a deadline_id present in the entity context and relays the lookup's message", async () => {
+      vi.mocked(loadEntityContext).mockResolvedValueOnce({
+        courses: [],
+        deadlines: [{ id: DEADLINE_ID, title: "Homework 1", course_id: "course-1" }],
+        tasks: [],
+        todoLists: [],
+        todoItems: [],
+        sessions: [],
+        knowledgeSources: [],
+        people: [],
+      });
+      mocks.chatCompletionsCreate.mockReset();
+      mocks.chatCompletionsCreate
+        .mockResolvedValueOnce(toolCallResponse([{ id: "call_1", name: "get_deadline_progress", arguments: { deadline_id: DEADLINE_ID } }]))
+        .mockResolvedValueOnce(
+          toolCallResponse([{ id: "call_2", name: "respond_to_user", arguments: { message: "2 of 3 sessions done.", needs_follow_up: false } }]),
+        );
+
+      const result = await runConversationTurn(fakeSupabase, "user-1", "how much progress on Homework 1?", "conv-1");
+
+      expect(result).toEqual({ kind: "answer", message: "2 of 3 sessions done.", needsFollowUp: false, conversationId: "conv-1" });
+      expect(runDeadlineProgressLookup).toHaveBeenCalledWith(fakeSupabase, "user-1", DEADLINE_ID);
+    });
+
+    // Regression test: a manual QA session asked "when is my final project
+    // report due?" and the model called get_deadline_progress with a
+    // deadline_id that wasn't even UUID-shaped -- schema.parse's ZodError
+    // propagated straight out of runConversationTurn, uncaught, aborting the
+    // whole turn into session.ts's generic "Sorry, I had trouble processing
+    // that" fallback instead of letting the model retry. A malformed
+    // deadline_id must be recoverable the same way an unknown-but-well-formed
+    // one already is (the test above / the person_id equivalent above it),
+    // never a hard turn failure.
+    it("feeds a malformed (non-UUID) deadline_id back to the model as a tool error instead of crashing the turn", async () => {
+      vi.mocked(loadEntityContext).mockResolvedValueOnce({
+        courses: [],
+        deadlines: [{ id: DEADLINE_ID, title: "Homework 1", course_id: "course-1" }],
+        tasks: [],
+        todoLists: [],
+        todoItems: [],
+        sessions: [],
+        knowledgeSources: [],
+        people: [],
+      });
+      mocks.chatCompletionsCreate.mockReset();
+      mocks.chatCompletionsCreate
+        .mockResolvedValueOnce(toolCallResponse([{ id: "call_1", name: "get_deadline_progress", arguments: { deadline_id: "final-project-report" } }]))
+        .mockResolvedValueOnce(
+          toolCallResponse([{ id: "call_2", name: "respond_to_user", arguments: { message: "I don't have a matching deadline.", needs_follow_up: false } }]),
+        );
+
+      const result = await runConversationTurn(fakeSupabase, "user-1", "when is my final project report due?", "conv-1");
+
+      expect(result).toEqual({ kind: "answer", message: "I don't have a matching deadline.", needsFollowUp: false, conversationId: "conv-1" });
+      expect(runDeadlineProgressLookup).not.toHaveBeenCalled();
+      expect(mocks.chatCompletionsCreate.mock.calls[1][0].messages.at(-2).content).toContain("received invalid arguments");
+    });
+
+    it("rejects a deadline_id that is not in the entity context, without calling the lookup for it", async () => {
+      vi.mocked(loadEntityContext).mockResolvedValueOnce({
+        courses: [],
+        deadlines: [{ id: DEADLINE_ID, title: "Homework 1", course_id: "course-1" }],
+        tasks: [],
+        todoLists: [],
+        todoItems: [],
+        sessions: [],
+        knowledgeSources: [],
+        people: [],
+      });
+      mocks.chatCompletionsCreate.mockReset();
+      mocks.chatCompletionsCreate
+        .mockResolvedValueOnce(
+          toolCallResponse([{ id: "call_1", name: "get_deadline_progress", arguments: { deadline_id: "55555555-5555-4555-8555-555555555555" } }]),
+        )
+        .mockResolvedValueOnce(
+          toolCallResponse([{ id: "call_2", name: "respond_to_user", arguments: { message: "I don't have a matching deadline.", needs_follow_up: false } }]),
+        );
+
+      const result = await runConversationTurn(fakeSupabase, "user-1", "how much progress on the thesis?", "conv-1");
+
+      expect(result).toEqual({ kind: "answer", message: "I don't have a matching deadline.", needsFollowUp: false, conversationId: "conv-1" });
+      expect(runDeadlineProgressLookup).not.toHaveBeenCalled();
+      expect(mocks.chatCompletionsCreate.mock.calls[1][0].messages.at(-2).content).toContain("Unknown deadline_id");
     });
   });
 });
