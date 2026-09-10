@@ -83,6 +83,14 @@ describe("findCourseConflictingAppointmentIds", () => {
     expect(ids.size).toBe(0);
   });
 
+  it("does not flag a conflict against a tracked Person's course (People feature), only the owner's own", () => {
+    const ids = findCourseConflictingAppointmentIds(
+      [makeAppointment({ id: "a", date: "2026-01-05", time: "11:00", duration_minutes: 60 })],
+      [makeCourse({ person_id: "person-1" })],
+    );
+    expect(ids.size).toBe(0);
+  });
+
   it("skips an appointment with an unparseable time or a missing duration", () => {
     const ids = findCourseConflictingAppointmentIds(
       [

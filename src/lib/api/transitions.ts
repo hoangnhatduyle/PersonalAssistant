@@ -48,11 +48,12 @@ const sessionTransitions: Record<SessionTransitionEvent, Partial<Record<SessionS
 };
 
 // Mirrors guard_event_status() in
-// supabase/migrations/0027_appointment_event_status.sql: planned ->
-// done/missed, and missed -> done (attended after all / made it up). No
-// transition out of 'done'.
+// supabase/migrations/0028_event_status_missed_terminal.sql: planned ->
+// done/missed. No transition out of 'done' or 'missed' — once marked, an
+// Event's status is final (a user_marks_event_missed misclick isn't
+// recoverable via a same-row "Mark Done" undo).
 const eventTransitions: Record<EventTransitionEvent, Partial<Record<EventStatus, EventStatus>>> = {
-  user_marks_event_done: { planned: "done", missed: "done" },
+  user_marks_event_done: { planned: "done" },
   user_marks_event_missed: { planned: "missed" },
 };
 

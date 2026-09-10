@@ -70,13 +70,12 @@ describe("resolveSessionTransition", () => {
   });
 });
 
-// Traces: supabase/migrations/0027_appointment_event_status.sql's
-// guard_event_status — planned -> done/missed, missed -> done (made it up
-// after all), and no transition out of done.
+// Traces: supabase/migrations/0028_event_status_missed_terminal.sql's
+// guard_event_status — planned -> done/missed, and no transition out of
+// either terminal state.
 describe("resolveEventTransition", () => {
   it("applies a legal transition", () => {
     expect(resolveEventTransition("user_marks_event_done", "planned")).toBe("done");
-    expect(resolveEventTransition("user_marks_event_done", "missed")).toBe("done");
     expect(resolveEventTransition("user_marks_event_missed", "planned")).toBe("missed");
   });
 
@@ -85,9 +84,10 @@ describe("resolveEventTransition", () => {
     expect(resolveEventTransition("user_marks_event_missed", "missed")).toBeNull();
   });
 
-  it("never allows a transition out of done — the terminal state", () => {
+  it("never allows a transition out of done or missed — both are terminal", () => {
     expect(resolveEventTransition("user_marks_event_done", "done")).toBeNull();
     expect(resolveEventTransition("user_marks_event_missed", "done")).toBeNull();
+    expect(resolveEventTransition("user_marks_event_done", "missed")).toBeNull();
   });
 });
 
@@ -181,9 +181,9 @@ describe("getValidSessionEvents", () => {
 });
 
 describe("getValidEventEvents", () => {
-  it("returns exactly the legal events per status, with no transition out of done", () => {
+  it("returns exactly the legal events per status, with no transition out of done or missed", () => {
     expect(getValidEventEvents("planned").sort()).toEqual(["user_marks_event_done", "user_marks_event_missed"].sort());
-    expect(getValidEventEvents("missed")).toEqual(["user_marks_event_done"]);
+    expect(getValidEventEvents("missed")).toEqual([]);
     expect(getValidEventEvents("done")).toEqual([]);
   });
 });

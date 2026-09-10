@@ -171,7 +171,7 @@ describe("buildWeekGridData", () => {
       title: "Task",
       timeLabel: "3 PM",
       subtitle: "Task",
-      tone: "accent",
+      tone: "purple",
       href: "/tasks/t-1",
     });
   });
