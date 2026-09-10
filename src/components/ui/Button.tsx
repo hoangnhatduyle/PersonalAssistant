@@ -1,6 +1,6 @@
 import type { ButtonHTMLAttributes } from "react";
 
-type ButtonVariant = "primary" | "secondary" | "ghost" | "destructive";
+type ButtonVariant = "primary" | "secondary" | "ghost" | "destructive" | "success";
 type ButtonSize = "sm" | "md" | "icon";
 
 type Props = ButtonHTMLAttributes<HTMLButtonElement> & {
@@ -16,6 +16,8 @@ const VARIANT_CLASSES: Record<ButtonVariant, string> = {
     "border border-panel-border bg-panel text-text-primary hover:border-panel-border-hover focus-visible:outline-panel-border-hover",
   ghost: "text-text-secondary hover:text-text-primary hover:bg-panel focus-visible:outline-panel-border-hover",
   destructive: "bg-status-urgent text-white hover:bg-status-urgent/90 focus-visible:outline-status-urgent",
+  // status-ok is a bright teal — dark text keeps contrast readable (white-on-teal fails WCAG).
+  success: "bg-status-ok text-bg-void hover:bg-status-ok/90 focus-visible:outline-status-ok",
 };
 
 const SIZE_CLASSES: Record<ButtonSize, string> = {

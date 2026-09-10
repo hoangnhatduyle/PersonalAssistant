@@ -240,8 +240,16 @@ export function UpNextPanel({ deadlines, tasks, people, reminders, todoItems, to
           <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
             <p className="font-mono text-xs uppercase tracking-wide text-text-eyebrow">Up Next</p>
             {allQueueItems.some((item) => item.kind === "appointment") && (
-              <p className="font-mono text-[10px] text-text-secondary" title="Quick actions on event rows">
-                ✓ Done · ✕ Missed
+              <p className="flex items-center gap-1.5 font-mono text-[10px]" title="Quick actions on event rows">
+                <span className="text-status-ok">✓ Done</span>
+                <span className="text-text-eyebrow">·</span>
+                <span className="text-status-urgent">✕ Missed</span>
+                {allQueueItems.some((item) => item.kind === "appointment" && item.courseConflict) && (
+                  <>
+                    <span className="text-text-eyebrow">·</span>
+                    <span className="text-accent-indigo">Blue = suggested</span>
+                  </>
+                )}
               </p>
             )}
           </div>

@@ -64,10 +64,10 @@ export function EventTransitionButtons({
           <Button
             key={event}
             size={compact ? "icon" : size === "lg" ? "md" : "sm"}
-            variant={isSuggestedMissed ? "primary" : event === "user_marks_event_missed" ? "secondary" : "primary"}
+            variant={isSuggestedMissed ? "primary" : event === "user_marks_event_missed" ? "destructive" : "success"}
             isLoading={transition.isPending}
             onClick={() => handleTransition(event)}
-            className={`${size === "lg" ? "px-6 py-3 text-base" : ""} ${isSuggestedMissed ? "ring-2 ring-accent-indigo/60 ring-offset-1 ring-offset-panel" : ""}`}
+            className={size === "lg" ? "px-6 py-3 text-base" : ""}
             aria-label={label}
             title={label}
           >
