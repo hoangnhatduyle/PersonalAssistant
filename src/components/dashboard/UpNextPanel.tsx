@@ -237,7 +237,14 @@ export function UpNextPanel({ deadlines, tasks, people, reminders, todoItems, to
       {/* Queue — 60% width on lg */}
       <div className="flex min-w-0 flex-col gap-3 pt-2 lg:w-3/5 lg:pt-0 lg:pl-2">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <p className="font-mono text-xs uppercase tracking-wide text-text-eyebrow">Up Next</p>
+          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+            <p className="font-mono text-xs uppercase tracking-wide text-text-eyebrow">Up Next</p>
+            {allQueueItems.some((item) => item.kind === "appointment") && (
+              <p className="font-mono text-[10px] text-text-secondary" title="Quick actions on event rows">
+                ✓ Done · ✕ Missed
+              </p>
+            )}
+          </div>
           <div role="group" aria-label="Filter by due date" className="flex flex-wrap items-center gap-2">
             {TIME_WINDOW_FILTERS.map((filter) => {
               const isActive = timeWindow === filter.value;
@@ -302,7 +309,7 @@ export function UpNextPanel({ deadlines, tasks, people, reminders, todoItems, to
               const taskTags = item.kind === "task" ? taskById.get(item.id)?.tags ?? [] : [];
 
               return (
-                <li key={`${item.kind}-${item.id}`} className="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0">
+                <li key={`${item.kind}-${item.id}`} className="flex items-start justify-between gap-3 py-2.5 first:pt-0 last:pb-0">
                   <div className="flex min-w-0 flex-col gap-1">
                     {item.href ? (
                       <Link href={item.href} className="truncate text-sm text-text-primary hover:underline">
@@ -320,20 +327,20 @@ export function UpNextPanel({ deadlines, tasks, people, reminders, todoItems, to
                       {taskTags.map((tag) => (
                         <Badge key={tag} tone="neutral">{tag}</Badge>
                       ))}
+                      {item.kind === "appointment" && item.conflict && <Badge tone="urgent">Conflict</Badge>}
+                      {item.kind === "appointment" && item.courseConflict && <Badge tone="purple">Course Conflict</Badge>}
                     </div>
-                    {item.kind === "appointment" && (
-                      <EventTransitionButtons appointment={appointmentById.get(item.id)!} suggestMissed={item.courseConflict} />
-                    )}
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
-                    {item.kind === "appointment" && item.conflict && <Badge tone="urgent">Conflict</Badge>}
-                    {item.kind === "appointment" && item.courseConflict && <Badge tone="purple">Course Conflict</Badge>}
                     {showPastDueTag && (
                       <span className="rounded-full bg-status-urgent/15 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide text-status-urgent">
                         Past due
                       </span>
                     )}
                     {status && tone && <StatusPill status={status} tone={tone} />}
+                    {item.kind === "appointment" && (
+                      <EventTransitionButtons appointment={appointmentById.get(item.id)!} suggestMissed={item.courseConflict} compact />
+                    )}
                   </div>
                 </li>
               );
