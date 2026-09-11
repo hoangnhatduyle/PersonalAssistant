@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  CONFIRMATION_WINDOW_MINUTES,
+  CONFIRMATION_WINDOW_SECONDS,
   VOICE_CONFIDENCE_BAR,
   VOICE_FORBIDDEN_TRANSITIONS,
   computeConfirmationExpiry,
@@ -63,10 +63,10 @@ describe("meetsConfidenceBar", () => {
 
 // Traces: SPEC-VOICE-005 AC-2/AC-7, NC-VOICE-005.
 describe("confirmation window", () => {
-  it(`computes a fixed ${CONFIRMATION_WINDOW_MINUTES}-minute expiry from a given instant`, () => {
+  it(`computes a fixed ${CONFIRMATION_WINDOW_SECONDS}-second expiry from a given instant`, () => {
     const now = new Date("2026-01-01T00:00:00.000Z");
     const expiry = computeConfirmationExpiry(now);
-    expect(new Date(expiry).getTime() - now.getTime()).toBe(CONFIRMATION_WINDOW_MINUTES * 60_000);
+    expect(new Date(expiry).getTime() - now.getTime()).toBe(CONFIRMATION_WINDOW_SECONDS * 1_000);
   });
 
   it("treats an expires_at at or before now as expired", () => {

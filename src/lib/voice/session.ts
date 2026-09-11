@@ -415,3 +415,45 @@ export async function declineVoiceSession(
   });
   return { message: "Okay, I won't do that." };
 }
+
+/**
+ * Proactively records that ConfirmationBar's own client-side countdown
+ * lapsed with no reply -- distinct from confirmVoiceSession's lazy
+ * expiry check (which only ever runs if a late confirm/decline call
+ * happens to arrive). Without this, a session the user simply never
+ * answers sits in AwaitingConfirmation with a stale pending_mutation until
+ * the 24h retention sweep, and the diagnostic record
+ * (0022_voice_session_diagnostics.sql) misleadingly shows it as still
+ * pending rather than expired.
+ *
+ * Never throws for a session that already moved on by the time this
+ * arrives (confirmed, declined, or already expired by another caller) --
+ * that's an expected race against exactly the things this guards, not a
+ * caller error, so it resolves { expired: false } instead.
+ */
+export async function expireVoiceSession(
+  supabase: SupabaseClient<Database>,
+  userId: string,
+  sessionId: string,
+): Promise<{ expired: boolean }> {
+  const { data: session, error } = await supabase
+    .from("voice_sessions")
+    .select("id, state")
+    .eq("id", sessionId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!session) throw new VoiceSessionNotFoundError();
+  if (session.state !== "AwaitingConfirmation") return { expired: false };
+
+  try {
+    await transition(supabase, userId, sessionId, "AwaitingConfirmation", "confirmation_window_expired", {
+      pending_mutation: null,
+      ended_at: new Date().toISOString(),
+    });
+    return { expired: true };
+  } catch (transitionError) {
+    if (transitionError instanceof VoiceSessionInvalidStateError) return { expired: false };
+    throw transitionError;
+  }
+}

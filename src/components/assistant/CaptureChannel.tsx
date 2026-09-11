@@ -172,8 +172,15 @@ export function CaptureChannel({ compact = false, large = false }: Props) {
         // next. Only a voice-originated turn ever triggers TTS.
         if (origin === "voice") {
           if (result.state === "AwaitingConfirmation") {
+            // Appended only to the spoken form -- the model's summary reads
+            // declaratively ("Marking X complete"), which a voice-only user
+            // can easily mistake for something already done rather than a
+            // proposal awaiting yes/no. The displayed message (already
+            // committed via applyTurnResult above) keeps the bare summary,
+            // since ConfirmationBar's Confirm/Decline buttons make the
+            // pending state visually obvious there.
             try {
-              await speakResponse.mutateAsync(result.message);
+              await speakResponse.mutateAsync(`${result.message} Say yes to confirm, or no to cancel.`);
             } catch {
               // Toast already surfaced by useSpeakVoiceResponse's onError.
             }
@@ -192,7 +199,16 @@ export function CaptureChannel({ compact = false, large = false }: Props) {
                 await reviewAloud.start(fresh.rows);
               }
             }
-            if (handsFree && played) void startRecordingRef.current();
+            // Bug fix: this used to resume regardless of needsFollowUp, so a
+            // purely informational summary ("You have 2 suggestions", no
+            // suggestions to review, or speak_suggestions_aloud off) reopened
+            // the mic anyway -- the "hot mic" the confirmation-expiry feature
+            // above now has to guard against. reviewAloud.start() above (when
+            // it ran) already handled its own per-suggestion yes/no listening
+            // independently; this resume is only about the general
+            // conversation mic for a new, unrelated turn, so it follows the
+            // same needsFollowUp gate as the plain-answer branch below.
+            if (handsFree && played && result.needsFollowUp === true) void startRecordingRef.current();
           } else {
             deferThinkingSoundStop = true;
             void speakAndMaybeResume(result.message, result.needsFollowUp === true);

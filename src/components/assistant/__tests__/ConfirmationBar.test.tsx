@@ -12,10 +12,15 @@ vi.mock("@/components/assistant/VoiceCaptureProvider", async (importOriginal) =>
 
 const confirmMutateAsync = vi.fn();
 const declineMutateAsync = vi.fn();
+const expireMutateAsync = vi.fn();
 vi.mock("@/hooks/useVoiceTurn", () => ({
   useConfirmVoiceTurn: () => ({ mutateAsync: confirmMutateAsync, isPending: false }),
   useDeclineVoiceTurn: () => ({ mutateAsync: declineMutateAsync, isPending: false }),
+  useExpireVoiceTurn: () => ({ mutateAsync: expireMutateAsync, isPending: false }),
 }));
+
+const { playStaticAudio } = vi.hoisted(() => ({ playStaticAudio: vi.fn().mockResolvedValue({ played: true }) }));
+vi.mock("@/lib/voice/play-audio", () => ({ playStaticAudio }));
 
 const onSpoken = vi.fn().mockResolvedValue(undefined);
 
@@ -38,6 +43,8 @@ describe("ConfirmationBar", () => {
     reset.mockClear();
     confirmMutateAsync.mockReset();
     declineMutateAsync.mockReset();
+    expireMutateAsync.mockReset().mockResolvedValue({ session_id: "session-1", expired: true });
+    playStaticAudio.mockClear();
     onSpoken.mockClear();
   });
 
@@ -48,11 +55,11 @@ describe("ConfirmationBar", () => {
   it("counts down from the full confirmation window", () => {
     vi.useFakeTimers();
     renderBar();
-    expect(screen.getByText("Expires in 5:00")).toBeInTheDocument();
+    expect(screen.getByText("Expires in 0:10")).toBeInTheDocument();
     act(() => {
-      vi.advanceTimersByTime(61_000);
+      vi.advanceTimersByTime(4_000);
     });
-    expect(screen.getByText("Expires in 3:59")).toBeInTheDocument();
+    expect(screen.getByText("Expires in 0:06")).toBeInTheDocument();
   });
 
   it("applies the confirm result, appending cascade counts the same way the REST delete flow does", async () => {
@@ -116,6 +123,48 @@ describe("ConfirmationBar", () => {
     expect(screen.getByText("Confirmation window expired")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Confirm" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Decline" })).toBeEnabled();
+  });
+
+  describe("expiry with no reply", () => {
+    it("plays the expiry audio and speaks a message for a voice-origin session that lapses unanswered", async () => {
+      vi.useFakeTimers();
+      renderBar("voice");
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10_050);
+      });
+      expect(expireMutateAsync).toHaveBeenCalledWith("session-1");
+      expect(playStaticAudio).toHaveBeenCalledWith("/sounds/confirmation-expired.mp3");
+      expect(applyTurnResult).toHaveBeenCalledWith(
+        {
+          sessionId: "session-1",
+          state: "Responding",
+          message: "I didn't hear back, so I didn't make that change. Let me know if you'd like anything else.",
+        },
+        "voice",
+      );
+    });
+
+    it("never contacts the server or plays anything for a text-origin session that lapses unanswered", async () => {
+      vi.useFakeTimers();
+      renderBar("text");
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10_050);
+      });
+      expect(expireMutateAsync).not.toHaveBeenCalled();
+      expect(playStaticAudio).not.toHaveBeenCalled();
+    });
+
+    it("does not speak or transition when the server reports the session was already resolved by something else", async () => {
+      expireMutateAsync.mockResolvedValue({ session_id: "session-1", expired: false });
+      vi.useFakeTimers();
+      renderBar("voice");
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10_050);
+      });
+      expect(expireMutateAsync).toHaveBeenCalledWith("session-1");
+      expect(playStaticAudio).not.toHaveBeenCalled();
+      expect(applyTurnResult).not.toHaveBeenCalled();
+    });
   });
 
   // Traces: SPEC-API-010 AC-6, AC-7, NC-API-SPEAK-007.

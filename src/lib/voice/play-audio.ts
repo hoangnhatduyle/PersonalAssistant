@@ -145,6 +145,21 @@ export async function playBase64Audio(base64: string, mimetype: string): Promise
   return startPlayback(audio, objectUrl);
 }
 
+/**
+ * Plays a static, pre-generated public asset (e.g. a public/sounds/*.mp3
+ * clip) through the same shared <audio> element as playBase64Audio -- so it
+ * can never overlap with, and correctly interrupts, any in-flight TTS
+ * playback, and gets the same mobile-unlock handling. `url` is a plain
+ * public URL, not a blob: attachObjectUrl/startPlayback's
+ * URL.revokeObjectURL call on it is a documented no-op for a non-blob URL,
+ * so reusing them here is safe and avoids duplicating the release/track
+ * logic for one more playback path.
+ */
+export async function playStaticAudio(url: string): Promise<{ played: boolean }> {
+  const audio = attachObjectUrl(url);
+  return startPlayback(audio, url);
+}
+
 // Matches the audio/mpeg contract POST /api/voice/speak's streaming branch
 // promises (src/app/api/voice/speak/route.ts). Support for this exact MIME
 // type in MediaSource is realistically Chromium-only (Firefox has never

@@ -85,3 +85,16 @@ export function useDeclineVoiceTurn() {
       (await apiFetch<VoiceDeclineResult>(`/api/voice/${sessionId}/decline`, { method: "POST" })).data,
   });
 }
+
+export interface VoiceExpireResult {
+  session_id: string;
+  expired: boolean;
+}
+
+/** POST /api/voice/[sessionId]/expire — best-effort: records that ConfirmationBar's own countdown lapsed with no reply. No mutation executes. */
+export function useExpireVoiceTurn() {
+  return useMutation({
+    mutationFn: async (sessionId: string) =>
+      (await apiFetch<VoiceExpireResult>(`/api/voice/${sessionId}/expire`, { method: "POST" })).data,
+  });
+}

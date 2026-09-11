@@ -232,6 +232,32 @@ describe("playBase64Audio", () => {
   });
 });
 
+describe("playStaticAudio", () => {
+  it("resolves { played: true } when playback ends naturally", async () => {
+    const promise = playAudio.playStaticAudio("/sounds/confirmation-expired.mp3");
+    expect(instances[0].src).toBe("/sounds/confirmation-expired.mp3");
+    instances[0].onended?.();
+    await expect(promise).resolves.toEqual({ played: true });
+  });
+
+  it("resolves { played: false } when playback errors", async () => {
+    const promise = playAudio.playStaticAudio("/sounds/confirmation-expired.mp3");
+    instances[0].onerror?.();
+    await expect(promise).resolves.toEqual({ played: false });
+  });
+
+  it("interrupts, and is interrupted by, a base64 playback on the same shared element", async () => {
+    const staticPromise = playAudio.playStaticAudio("/sounds/confirmation-expired.mp3");
+    const base64Promise = playAudio.playBase64Audio("aGVsbG8=", "audio/mpeg");
+
+    await expect(staticPromise).resolves.toEqual({ played: false });
+
+    instances[0].onended?.();
+    await expect(base64Promise).resolves.toEqual({ played: true });
+    expect(instances).toHaveLength(1);
+  });
+});
+
 describe("unlockAudioPlayback", () => {
   it("primes the shared <audio> element with a play/pause cycle during the gesture", () => {
     playAudio.unlockAudioPlayback();

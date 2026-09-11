@@ -7,7 +7,15 @@ import {
   createReminder,
   type TestUser,
 } from "../../../../supabase/tests/helpers";
-import { confirmVoiceSession, declineVoiceSession, intakeVoiceTurn, VoiceSessionExpiredError, VoiceSessionInvalidStateError } from "../session";
+import {
+  confirmVoiceSession,
+  declineVoiceSession,
+  expireVoiceSession,
+  intakeVoiceTurn,
+  VoiceSessionExpiredError,
+  VoiceSessionInvalidStateError,
+  VoiceSessionNotFoundError,
+} from "../session";
 import type { PendingMutation } from "../mutations";
 import type { ConversationAnswer } from "../conversation-core";
 import { endConversation, resolveActiveConversation } from "../conversation-memory";
@@ -82,7 +90,7 @@ describe("intakeVoiceTurn / confirmVoiceSession / declineVoiceSession", () => {
   });
 
   // AC-2
-  it("AC-2: a mutating intent persists pending_mutation, sets a 5-minute expires_at, and enters AwaitingConfirmation", async () => {
+  it("AC-2: a mutating intent persists pending_mutation, sets a 10-second expires_at, and enters AwaitingConfirmation", async () => {
     const mutation: PendingMutation = { targetType: "task", operation: "create", payload: { title: "Buy textbook" } };
     const runConversationTurn = fakeMutationProposal({ confidence: 0.98, summary: "create a task to buy textbook", mutation });
     const before = Date.now();
@@ -101,8 +109,8 @@ describe("intakeVoiceTurn / confirmVoiceSession / declineVoiceSession", () => {
     expect(row.pending_mutation).toEqual(mutation);
     expect(row.expires_at).not.toBeNull();
     const deltaMs = new Date(row.expires_at as string).getTime() - before;
-    expect(deltaMs).toBeGreaterThan(4 * 60_000);
-    expect(deltaMs).toBeLessThanOrEqual(5 * 60_000 + 5_000);
+    expect(deltaMs).toBeGreaterThan(8_000);
+    expect(deltaMs).toBeLessThanOrEqual(10_000 + 5_000);
   });
 
   // AC-3
@@ -303,6 +311,43 @@ describe("intakeVoiceTurn / confirmVoiceSession / declineVoiceSession", () => {
     const row = await sessionRow(intake.sessionId);
     expect(row.state).toBe("Responding");
     expect(row.pending_mutation).toBeNull();
+  });
+
+  describe("expireVoiceSession", () => {
+    it("transitions an unanswered AwaitingConfirmation session and clears pending_mutation, executing nothing", async () => {
+      const mutation: PendingMutation = { targetType: "task", operation: "create", payload: { title: "Should expire, not execute" } };
+      const runConversationTurn = fakeMutationProposal({ confidence: 0.98, summary: "create a task", mutation });
+      const intake = await intakeVoiceTurn(user.client, userId, { transcript: "add a task" }, { transcribe: vi.fn(), runConversationTurn });
+
+      const outcome = await expireVoiceSession(user.client, userId, intake.sessionId);
+      expect(outcome.expired).toBe(true);
+
+      const row = await sessionRow(intake.sessionId);
+      expect(row.state).toBe("Responding");
+      expect(row.pending_mutation).toBeNull();
+
+      const { data: task } = await admin.from("tasks").select("id").eq("user_id", userId).eq("title", "Should expire, not execute").maybeSingle();
+      expect(task).toBeNull();
+    });
+
+    it("reports expired: false, without throwing, for a session a confirm already resolved", async () => {
+      const mutation: PendingMutation = { targetType: "task", operation: "create", payload: { title: "Already confirmed" } };
+      const runConversationTurn = fakeMutationProposal({ confidence: 0.98, summary: "create a task", mutation });
+      const intake = await intakeVoiceTurn(user.client, userId, { transcript: "add a task" }, { transcribe: vi.fn(), runConversationTurn });
+      await confirmVoiceSession(user.client, userId, intake.sessionId);
+
+      const outcome = await expireVoiceSession(user.client, userId, intake.sessionId);
+      expect(outcome.expired).toBe(false);
+
+      const row = await sessionRow(intake.sessionId);
+      expect(row.state).toBe("Responding");
+    });
+
+    it("throws VoiceSessionNotFoundError for a session that doesn't belong to the caller", async () => {
+      const { data: idleSession } = await admin.from("voice_sessions").insert({ user_id: userId }).select("id").single();
+      const other = await createAuthenticatedUser();
+      await expect(expireVoiceSession(other.client, other.userId, idleSession!.id)).rejects.toBeInstanceOf(VoiceSessionNotFoundError);
+    });
   });
 
   // AC-8, NC-VOICE-006

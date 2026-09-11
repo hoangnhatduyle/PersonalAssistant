@@ -71,10 +71,10 @@ export function meetsConfidenceBar(confidence: number): boolean {
 }
 
 /** SPEC-VOICE-005 AC-2/AC-7, NC-VOICE-005: the confirmation window's fixed width. */
-export const CONFIRMATION_WINDOW_MINUTES = 5;
+export const CONFIRMATION_WINDOW_SECONDS = 10;
 
 export function computeConfirmationExpiry(from: Date = new Date()): string {
-  return new Date(from.getTime() + CONFIRMATION_WINDOW_MINUTES * 60_000).toISOString();
+  return new Date(from.getTime() + CONFIRMATION_WINDOW_SECONDS * 1_000).toISOString();
 }
 
 export function isConfirmationExpired(expiresAt: string, now: Date = new Date()): boolean {

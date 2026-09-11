@@ -5,12 +5,13 @@ import { GlassPanel } from "@/components/ui/GlassPanel";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
 import { useVoiceCapture, type VoiceTurnOrigin } from "@/components/assistant/VoiceCaptureProvider";
-import { useConfirmVoiceTurn, useDeclineVoiceTurn } from "@/hooks/useVoiceTurn";
+import { useConfirmVoiceTurn, useDeclineVoiceTurn, useExpireVoiceTurn } from "@/hooks/useVoiceTurn";
 import { useAutoStopRecorder } from "@/hooks/useAutoStopRecorder";
 import { apiFetch } from "@/lib/http/client";
 import { classifyYesNo } from "@/lib/voice/yes-no";
-import { CONFIRMATION_WINDOW_MINUTES } from "@/lib/voice/transitions";
+import { CONFIRMATION_WINDOW_SECONDS } from "@/lib/voice/transitions";
 import { CONFIRM_MAX_DURATION_MS, CONFIRM_SILENCE_MS } from "@/lib/voice/constants";
+import { playStaticAudio } from "@/lib/voice/play-audio";
 import type { VoiceTranscribeResponse } from "@/app/api/voice/transcribe/route";
 
 type Props = {
@@ -30,7 +31,11 @@ type Props = {
   readyToListen: boolean;
 };
 
-const WINDOW_MS = CONFIRMATION_WINDOW_MINUTES * 60_000;
+const WINDOW_MS = CONFIRMATION_WINDOW_SECONDS * 1_000;
+// Generated via scripts/generate-expired-confirmation.mjs -- keep this text
+// in sync with that script's TEXT constant.
+const EXPIRED_AUDIO_URL = "/sounds/confirmation-expired.mp3";
+const EXPIRED_MESSAGE = "I didn't hear back, so I didn't make that change. Let me know if you'd like anything else.";
 
 function formatCountdown(remainingMs: number): string {
   const totalSeconds = Math.max(0, Math.ceil(remainingMs / 1000));
@@ -51,12 +56,54 @@ export function ConfirmationBar({ sessionId, message, receivedAt, origin, onSpok
   const { showToast } = useToast();
   const confirmTurn = useConfirmVoiceTurn();
   const declineTurn = useDeclineVoiceTurn();
+  const expireTurn = useExpireVoiceTurn();
   const [remainingMs, setRemainingMs] = useState(() => WINDOW_MS - (Date.now() - receivedAt));
 
   useEffect(() => {
     const interval = setInterval(() => setRemainingMs(WINDOW_MS - (Date.now() - receivedAt)), 1000);
     return () => clearInterval(interval);
   }, [receivedAt]);
+
+  const hasExpired = remainingMs <= 0;
+
+  // Voice-only: a text-mode session just keeps showing the "Confirmation
+  // window expired" label below and a still-clickable Decline button, which
+  // is enough since the user is already looking at the screen. A
+  // voice-origin session gets no such visual cue if the user has walked
+  // away, so this speaks up instead. Gated on the server's own `expired`
+  // flag (not just the local countdown) so a Confirm/Decline click that
+  // wins a close race is never overwritten by this — expireVoiceSession
+  // only reports expired: true when nothing else resolved the session
+  // first.
+  useEffect(() => {
+    if (!hasExpired || origin !== "voice") return;
+    let cancelled = false;
+    (async () => {
+      let expired = false;
+      try {
+        const result = await expireTurn.mutateAsync(sessionId);
+        expired = result.expired;
+      } catch {
+        // Best-effort -- if this fails, fall through without speaking a
+        // message that might not reflect what actually happened.
+      }
+      if (cancelled || !expired) return;
+      try {
+        await playStaticAudio(EXPIRED_AUDIO_URL);
+      } catch {
+        // Non-fatal -- the text response below still lands either way.
+      }
+      if (cancelled) return;
+      applyTurnResult({ sessionId, state: "Responding", message: EXPIRED_MESSAGE }, origin);
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // sessionId/origin are stable for this component's whole lifetime (a
+    // fresh AwaitingConfirmation always mounts a new ConfirmationBar) --
+    // same justification as the readyToListen effect below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasExpired]);
 
   const handleFailure = (error: unknown) => {
     showToast(error instanceof Error ? error.message : "That confirmation is no longer valid", "error");
@@ -101,6 +148,7 @@ export function ConfirmationBar({ sessionId, message, receivedAt, origin, onSpok
         const answer = classifyYesNo(data.transcript);
         if (answer === "yes") void handleConfirm();
         else if (answer === "no") void handleDecline();
+        else showToast("Didn't catch a yes or no — tap Confirm or Decline.", "info");
       } catch {
         // Silent — this is a background convenience listen, not a user-initiated action; buttons remain available.
       }
@@ -116,8 +164,6 @@ export function ConfirmationBar({ sessionId, message, receivedAt, origin, onSpok
     // Only re-run when readyToListen flips true for a fresh prompt; startListening's identity is stable across the options object it closes over.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [readyToListen]);
-
-  const hasExpired = remainingMs <= 0;
 
   return (
     <GlassPanel variant="glow-warn" className="flex flex-col gap-3 p-4">
