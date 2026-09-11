@@ -79,6 +79,7 @@ export function DashboardContainer() {
             todoItems={ownedTodoItems}
             todoLists={todoLists?.rows ?? []}
             courses={courses?.rows ?? []}
+            appointments={appointments?.rows ?? []}
           />
 
           <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">

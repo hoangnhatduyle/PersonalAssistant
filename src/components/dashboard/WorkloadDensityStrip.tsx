@@ -6,7 +6,8 @@ import { GlassPanel } from "@/components/ui/GlassPanel";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Badge } from "@/components/ui/Badge";
 import { buildWorkloadDensity, itemsForDensityDay, countPastDueItems, pastDueItemsFor } from "@/lib/dashboard/workload-density";
-import type { CourseRow, DeadlineRow, TaskRow, TodoItemRow, TodoListRow } from "@/lib/api/entity-types";
+import { ITEM_KIND_BG_CLASS, ITEM_KIND_LABEL } from "@/lib/dashboard/item-kind";
+import type { AppointmentRow, CourseRow, DeadlineRow, TaskRow, TodoItemRow, TodoListRow } from "@/lib/api/entity-types";
 
 type Props = {
   deadlines: DeadlineRow[];
@@ -14,6 +15,8 @@ type Props = {
   todoItems: TodoItemRow[];
   todoLists: TodoListRow[];
   courses: CourseRow[];
+  /** Deadline Sessions — appointments rows tagged category "Session". */
+  appointments: AppointmentRow[];
 };
 
 const WINDOW_DAYS = 7;
@@ -27,35 +30,28 @@ function formatShortDate(dateKey: string): string {
   return `${month}/${day}`;
 }
 
-const KIND_LABEL: Record<"deadline" | "task" | "todo", string> = {
-  deadline: "Deadline",
-  task: "Task",
-  todo: "To-Do",
-};
-
-/** Stacked-segment order, fixed so the legend and each bar's stack always agree. Avoids status-urgent — that's reserved for the past-due indicator. */
+/** Stacked-segment order, fixed so the legend and each bar's stack always agree. Session is deliberately excluded — see sessionCount on DensityDayBucket. */
 const KIND_ORDER: Array<"deadline" | "task" | "todo"> = ["deadline", "task", "todo"];
 
-const KIND_SEGMENT_CLASS: Record<"deadline" | "task" | "todo", string> = {
-  deadline: "bg-accent-teal",
-  task: "bg-accent-indigo",
-  todo: "bg-accent-violet",
-};
-
 /** Week-ahead view of how open items cluster by day — surfaces a pile-up before it's urgent. */
-export function WorkloadDensityStrip({ deadlines, tasks, todoItems, todoLists, courses }: Props) {
+export function WorkloadDensityStrip({ deadlines, tasks, todoItems, todoLists, courses, appointments }: Props) {
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [showPastDue, setShowPastDue] = useState(false);
-  const buckets = useMemo(() => buildWorkloadDensity(deadlines, tasks, todoItems, WINDOW_DAYS), [deadlines, tasks, todoItems]);
+  const buckets = useMemo(
+    () => buildWorkloadDensity(deadlines, tasks, todoItems, appointments, WINDOW_DAYS),
+    [deadlines, tasks, todoItems, appointments],
+  );
   const max = Math.max(1, ...buckets.map((bucket) => bucket.total));
-  const isEmpty = buckets.every((bucket) => bucket.total === 0);
+  const isEmpty = buckets.every((bucket) => bucket.total === 0 && bucket.sessionCount === 0);
 
   const densestBucket = buckets.reduce((densest, bucket) => (bucket.total > densest.total ? bucket : densest), buckets[0]);
   const showPileUpCallout = densestBucket && densestBucket.total >= PILE_UP_THRESHOLD;
 
   const pastDueSummary = useMemo(() => countPastDueItems(deadlines, tasks, todoItems), [deadlines, tasks, todoItems]);
 
-  const selectedItems = selectedDate ? itemsForDensityDay(deadlines, tasks, todoItems, selectedDate, todoLists, courses) : [];
+  const selectedItems = selectedDate
+    ? itemsForDensityDay(deadlines, tasks, todoItems, selectedDate, todoLists, courses, appointments)
+    : [];
   const pastDueItems = showPastDue ? pastDueItemsFor(deadlines, tasks, todoItems, todoLists, courses) : [];
   const activeItems = selectedDate ? selectedItems : showPastDue ? pastDueItems : null;
 
@@ -108,6 +104,12 @@ export function WorkloadDensityStrip({ deadlines, tasks, todoItems, todoLists, c
                   aria-pressed={isSelected}
                   className="flex flex-1 flex-col items-center gap-1.5"
                 >
+                  {/* Fixed-height slot above the bar for the Session marker — kept
+                      separate from the bar's own height so a day with heavy Session
+                      load doesn't read as a due-item pile-up (see sessionCount). */}
+                  <div className="flex h-2.5 items-end" title={bucket.sessionCount > 0 ? `${bucket.sessionCount} session(s) planned` : undefined}>
+                    {bucket.sessionCount > 0 && <span className={`h-1.5 w-1.5 rounded-full ${ITEM_KIND_BG_CLASS.session}`} />}
+                  </div>
                   <div className="flex h-14 w-full items-end justify-center">
                     <div
                       className={`flex w-full max-w-6 flex-col-reverse overflow-hidden rounded-t-sm transition-colors ${
@@ -121,7 +123,7 @@ export function WorkloadDensityStrip({ deadlines, tasks, todoItems, todoLists, c
                         KIND_ORDER.filter((kind) => bucket[`${kind}Count`] > 0).map((kind) => (
                           <div
                             key={kind}
-                            className={KIND_SEGMENT_CLASS[kind]}
+                            className={ITEM_KIND_BG_CLASS[kind]}
                             style={{ height: `${(bucket[`${kind}Count`] / bucket.total) * 100}%` }}
                           />
                         ))
@@ -137,10 +139,14 @@ export function WorkloadDensityStrip({ deadlines, tasks, todoItems, todoLists, c
           <div className="flex flex-wrap items-center gap-3">
             {KIND_ORDER.map((kind) => (
               <span key={kind} className="flex items-center gap-1 font-mono text-[10px] uppercase tracking-wide text-text-secondary">
-                <span className={`h-2 w-2 rounded-full ${KIND_SEGMENT_CLASS[kind]}`} />
-                {KIND_LABEL[kind]}
+                <span className={`h-2 w-2 rounded-full ${ITEM_KIND_BG_CLASS[kind]}`} />
+                {ITEM_KIND_LABEL[kind]}
               </span>
             ))}
+            <span className="flex items-center gap-1 font-mono text-[10px] uppercase tracking-wide text-text-secondary">
+              <span className={`h-1.5 w-1.5 rounded-full ${ITEM_KIND_BG_CLASS.session}`} />
+              {ITEM_KIND_LABEL.session} (scheduled, not counted above)
+            </span>
           </div>
 
           {activeItems && (
@@ -156,7 +162,7 @@ export function WorkloadDensityStrip({ deadlines, tasks, todoItems, todoLists, c
                         <Link href={item.href} className="truncate text-xs text-text-primary hover:underline">
                           {item.title}
                         </Link>
-                        <span className="font-mono text-[10px] text-text-secondary">{KIND_LABEL[item.kind]}</span>
+                        <span className="font-mono text-[10px] text-text-secondary">{ITEM_KIND_LABEL[item.kind]}</span>
                       </div>
                       {(item.listName || item.courseName || (item.tags && item.tags.length > 0)) && (
                         <div className="flex flex-wrap items-center gap-1.5">

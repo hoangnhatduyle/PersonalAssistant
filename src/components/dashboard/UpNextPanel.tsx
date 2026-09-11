@@ -6,14 +6,10 @@ import { GlassPanel } from "@/components/ui/GlassPanel";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { StatusPill } from "@/components/ui/StatusPill";
 import { Badge } from "@/components/ui/Badge";
-import {
-  buildUpcomingItems,
-  filterUpcomingItemsByTimeWindow,
-  type UpcomingItem,
-  type TimeWindowFilter,
-} from "@/lib/dashboard/upcoming-items";
+import { buildUpcomingItems, filterUpcomingItemsByTimeWindow, type TimeWindowFilter } from "@/lib/dashboard/upcoming-items";
 import { formatRelativeTime } from "@/lib/format-relative-time";
 import { DEADLINE_STATUS_TONE, EVENT_STATUS_TONE, SESSION_STATUS_TONE, TASK_STATUS_TONE } from "@/lib/status-colors";
+import { ITEM_KIND_FILL_CLASS, ITEM_KIND_LABEL } from "@/lib/dashboard/item-kind";
 import { EventTransitionButtons } from "@/components/calendar/EventTransitionButtons";
 import type { AppointmentRow, CourseRow, DeadlineRow, PersonRow, ReminderRow, TaskRow, TodoItemRow, TodoListRow } from "@/lib/api/entity-types";
 
@@ -56,15 +52,6 @@ const EMPTY_COPY: Record<TimeWindowFilter, { title: string; description: string 
   "3days": { title: "Nothing due soon", description: "No open deadlines or tasks due in the next 3 days." },
   "7days": { title: "Nothing due this week", description: "No open deadlines or tasks due in the next 7 days." },
   all: { title: "Queue is clear", description: "No open deadlines or tasks with a due date." },
-};
-
-const KIND_FILL_CLASS: Record<UpcomingItem["kind"], string> = {
-  deadline: "fill-status-urgent",
-  task: "fill-accent-indigo",
-  reminder: "fill-accent-teal",
-  todo: "fill-accent-violet",
-  session: "fill-status-ok",
-  appointment: "fill-status-warn",
 };
 
 function clockHandAngles(now: Date): { hour: number; minute: number } {
@@ -203,7 +190,7 @@ export function UpNextPanel({ deadlines, tasks, people, reminders, todoItems, to
 
             return (
               <g key={`${item.kind}-${item.id}`}>
-                <circle cx={dot.x} cy={dot.y} r={5} className={item.urgent ? "fill-status-urgent" : KIND_FILL_CLASS[item.kind]} />
+                <circle cx={dot.x} cy={dot.y} r={5} className={item.urgent ? "fill-status-urgent" : ITEM_KIND_FILL_CLASS[item.kind]} />
                 <text
                   x={label.x}
                   y={label.y}
@@ -300,18 +287,7 @@ export function UpNextPanel({ deadlines, tasks, people, reminders, todoItems, to
                         : undefined;
               const showPastDueTag = item.urgent && item.kind !== "deadline";
               const todoInfo = item.kind === "todo" ? todoItemLabelMap.get(item.id) : undefined;
-              const kindLabel =
-                item.kind === "deadline"
-                  ? "Deadline"
-                  : item.kind === "task"
-                    ? "Task"
-                    : item.kind === "reminder"
-                      ? "Reminder"
-                      : item.kind === "session"
-                        ? "Session"
-                        : item.kind === "appointment"
-                          ? "Event"
-                          : (todoInfo?.listName ?? "To-Do");
+              const kindLabel = item.kind === "todo" ? (todoInfo?.listName ?? ITEM_KIND_LABEL.todo) : ITEM_KIND_LABEL[item.kind];
 
               const courseName = todoInfo?.courseName;
               const taskTags = item.kind === "task" ? taskById.get(item.id)?.tags ?? [] : [];

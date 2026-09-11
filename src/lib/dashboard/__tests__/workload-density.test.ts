@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildWorkloadDensity, itemsForDensityDay, countPastDueItems, pastDueItemsFor } from "../workload-density";
-import { makeCourse, makeDeadline, makeTask, makeTodoItem, makeTodoList } from "./fixtures";
+import { makeAppointment, makeCourse, makeDeadline, makeTask, makeTodoItem, makeTodoList } from "./fixtures";
 
 function daysFromNowISO(offset: number): string {
   const date = new Date();
@@ -23,6 +23,7 @@ describe("buildWorkloadDensity", () => {
       [makeDeadline({ status: "Not Started", due_at: daysFromNowISO(2) })],
       [],
       [],
+      [],
       7,
     );
     expect(buckets).toHaveLength(7);
@@ -31,7 +32,7 @@ describe("buildWorkloadDensity", () => {
   });
 
   it("buckets an open task with a due date into the correct day offset", () => {
-    const buckets = buildWorkloadDensity([], [makeTask({ status: "Open", due_at: daysFromNowISO(1) })], [], 7);
+    const buckets = buildWorkloadDensity([], [makeTask({ status: "Open", due_at: daysFromNowISO(1) })], [], [], 7);
     expect(buckets[1].taskCount).toBe(1);
   });
 
@@ -40,6 +41,7 @@ describe("buildWorkloadDensity", () => {
       [],
       [],
       [makeTodoItem({ is_done: false, due_date: dateKeyFromNowOffset(3) })],
+      [],
       7,
     );
     expect(buckets[3].todoCount).toBe(1);
@@ -50,6 +52,7 @@ describe("buildWorkloadDensity", () => {
       [makeDeadline({ status: "Completed", due_at: daysFromNowISO(1) })],
       [makeTask({ status: "Done", due_at: daysFromNowISO(1) })],
       [makeTodoItem({ is_done: true, due_date: dateKeyFromNowOffset(1) })],
+      [],
       7,
     );
     expect(buckets.reduce((sum, bucket) => sum + bucket.total, 0)).toBe(0);
@@ -60,14 +63,41 @@ describe("buildWorkloadDensity", () => {
       [makeDeadline({ status: "Not Started", due_at: daysFromNowISO(10) })],
       [],
       [],
+      [],
       7,
     );
     expect(buckets.reduce((sum, bucket) => sum + bucket.total, 0)).toBe(0);
   });
 
   it("returns all-zero buckets for empty input", () => {
-    const buckets = buildWorkloadDensity([], [], [], 7);
-    expect(buckets.every((bucket) => bucket.total === 0)).toBe(true);
+    const buckets = buildWorkloadDensity([], [], [], [], 7);
+    expect(buckets.every((bucket) => bucket.total === 0 && bucket.sessionCount === 0)).toBe(true);
+  });
+
+  it("buckets a planned Session by date without adding to total", () => {
+    const buckets = buildWorkloadDensity(
+      [],
+      [],
+      [],
+      [makeAppointment({ date: dateKeyFromNowOffset(2), category: "Session", session_status: "planned" })],
+      7,
+    );
+    expect(buckets[2].sessionCount).toBe(1);
+    expect(buckets[2].total).toBe(0);
+  });
+
+  it("ignores a done/skipped Session and a non-Session appointment", () => {
+    const buckets = buildWorkloadDensity(
+      [],
+      [],
+      [],
+      [
+        makeAppointment({ date: dateKeyFromNowOffset(1), category: "Session", session_status: "done" }),
+        makeAppointment({ date: dateKeyFromNowOffset(1), category: "Event", event_status: "planned" }),
+      ],
+      7,
+    );
+    expect(buckets[1].sessionCount).toBe(0);
   });
 });
 
@@ -118,6 +148,20 @@ describe("itemsForDensityDay", () => {
       dateKeyFromNowOffset(2),
     );
     expect(items[0]).toMatchObject({ tags: ["urgent", "reading"] });
+  });
+
+  it("includes a planned Session for the matching date, linked to its deadline", () => {
+    const date = dateKeyFromNowOffset(1);
+    const items = itemsForDensityDay(
+      [],
+      [],
+      [],
+      date,
+      [],
+      [],
+      [makeAppointment({ id: "sess-1", date, category: "Session", session_status: "planned", deadline_id: "d-9" })],
+    );
+    expect(items).toEqual([{ id: "sess-1", kind: "session", title: "Session", href: "/deadlines/d-9" }]);
   });
 });
 

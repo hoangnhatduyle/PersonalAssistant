@@ -1,4 +1,4 @@
-import type { CourseRow, DeadlineRow, TaskRow, TodoItemRow, TodoListRow } from "@/lib/api/entity-types";
+import type { AppointmentRow, CourseRow, DeadlineRow, TaskRow, TodoItemRow, TodoListRow } from "@/lib/api/entity-types";
 import { isOpenDeadline, isOpenTask } from "@/lib/dashboard/upcoming-items";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -22,12 +22,19 @@ export interface DensityDayBucket {
   deadlineCount: number;
   taskCount: number;
   todoCount: number;
+  /**
+   * Deadline Sessions planned for this day. Tracked separately from
+   * `total`/the stacked bar height — a Session is time the user already
+   * blocked out for themselves, not an owed obligation, so it shouldn't
+   * inflate the pile-up signal the bar height exists to convey.
+   */
+  sessionCount: number;
   total: number;
 }
 
 export interface DensityItem {
   id: string;
-  kind: "deadline" | "task" | "todo";
+  kind: "deadline" | "task" | "todo" | "session";
   title: string;
   href: string;
   /** To-Do items only — the name of the list it belongs to. */
@@ -50,24 +57,25 @@ function isPastDue(dateKey: string, todayKey: string): boolean {
 }
 
 /**
- * Buckets open Deadlines/Tasks/To-Do items with a due date into a rolling
- * `days`-day-ahead window (today..today+days-1), local-calendar-day
- * granularity. Items outside the window (overdue, or further out) are
- * dropped rather than folded into "today" — DailyIntelligenceCard/NextSequenceQueue
- * already surface overdue items, this view is specifically about what's
- * coming up.
+ * Buckets open Deadlines/Tasks/To-Do items (plus planned Deadline Sessions)
+ * with a due date into a rolling `days`-day-ahead window (today..today+days-1),
+ * local-calendar-day granularity. Items outside the window (overdue, or
+ * further out) are dropped rather than folded into "today" —
+ * DailyIntelligenceCard/NextSequenceQueue already surface overdue items,
+ * this view is specifically about what's coming up.
  */
 export function buildWorkloadDensity(
   deadlines: DeadlineRow[],
   tasks: TaskRow[],
   todoItems: TodoItemRow[] = [],
+  appointments: AppointmentRow[] = [],
   days = 7,
   now: Date = new Date(),
 ): DensityDayBucket[] {
   const todayStart = startOfDay(now);
   const buckets: DensityDayBucket[] = Array.from({ length: days }, (_, dayOffset) => {
     const date = new Date(todayStart.getTime() + dayOffset * DAY_MS);
-    return { date: toDateKey(date), dayOffset, deadlineCount: 0, taskCount: 0, todoCount: 0, total: 0 };
+    return { date: toDateKey(date), dayOffset, deadlineCount: 0, taskCount: 0, todoCount: 0, sessionCount: 0, total: 0 };
   });
 
   const dayOffsetFor = (at: Date) => Math.round((startOfDay(at).getTime() - todayStart.getTime()) / DAY_MS);
@@ -98,6 +106,17 @@ export function buildWorkloadDensity(
     if (index === -1) continue;
     buckets[index].todoCount += 1;
     buckets[index].total += 1;
+  }
+
+  for (const appointment of appointments) {
+    // Deadline Sessions: appointments rows tagged category "Session", same
+    // convention as buildUpcomingItems. Only "planned" ones are actionable.
+    if (appointment.category !== "Session" || appointment.session_status !== "planned") continue;
+    if (appointment.date < todayKey) continue;
+    const index = buckets.findIndex((bucket) => bucket.date === appointment.date);
+    if (index === -1) continue;
+    // Not added to `total` — see DensityDayBucket.sessionCount.
+    buckets[index].sessionCount += 1;
   }
 
   return buckets;
@@ -203,6 +222,7 @@ export function itemsForDensityDay(
   date: string,
   todoLists: TodoListRow[] = [],
   courses: CourseRow[] = [],
+  appointments: AppointmentRow[] = [],
 ): DensityItem[] {
   const items: DensityItem[] = [];
 
@@ -233,6 +253,17 @@ export function itemsForDensityDay(
       href: "/courses/todos",
       listName: listNameById.get(item.list_id),
       courseName: courseNameByListId.get(item.list_id),
+    });
+  }
+
+  for (const appointment of appointments) {
+    if (appointment.category !== "Session" || appointment.session_status !== "planned") continue;
+    if (appointment.date !== date) continue;
+    items.push({
+      id: appointment.id,
+      kind: "session",
+      title: appointment.title,
+      href: appointment.deadline_id ? `/deadlines/${appointment.deadline_id}` : "/calendar",
     });
   }
 
