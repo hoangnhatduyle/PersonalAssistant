@@ -338,7 +338,7 @@ export function BoardContainer() {
             <div
               ref={scrollRowRef}
               onMouseDown={dragPan.onMouseDown}
-              className={`scrollbar-hide flex gap-3 overflow-x-auto pb-2 ${dragPan.isPanning ? "cursor-grabbing select-none" : "cursor-grab"}`}
+              className={`scrollbar-hide flex items-start gap-3 overflow-x-auto pb-2 ${dragPan.isPanning ? "cursor-grabbing select-none" : "cursor-grab"}`}
             >
               {lists.map((list) => (
                 <BoardColumn
