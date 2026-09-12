@@ -1511,7 +1511,7 @@ export type Database = {
         };
         Returns: {
           chunk_text: string;
-          origin_url: string;
+          origin_url: string | null;
           similarity: number;
           source_id: string;
           source_type: Database["public"]["Enums"]["knowledge_source_type"];
