@@ -28,7 +28,7 @@ export function DeleteDeadlineButton({ deadlineId }: Props) {
         "success",
       );
       setOpen(false);
-      router.push("/deadlines");
+      router.push("/courses/deadlines");
     } catch {
       showToast("Could not delete deadline", "error");
     }

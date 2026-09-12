@@ -14,7 +14,7 @@ import { useVoiceTurn, type VoiceTurnClientInput } from "@/hooks/useVoiceTurn";
 import { useSpeakVoiceResponse } from "@/hooks/useSpeakVoiceResponse";
 import { useResetVoiceConversation } from "@/hooks/useResetVoiceConversation";
 import { useAutoStopRecorder } from "@/hooks/useAutoStopRecorder";
-import { onPlaybackStart, unlockAudioPlayback } from "@/lib/voice/play-audio";
+import { onPlaybackStart, unlockAudioPlayback, stopPlayback } from "@/lib/voice/play-audio";
 import { startThinkingSound, stopThinkingSound } from "@/lib/voice/thinking-sound";
 import { useSettings } from "@/hooks/useSettings";
 import { usePersonalizationSuggestions } from "@/hooks/usePersonalizationSuggestions";
@@ -53,6 +53,14 @@ function NewConversationIcon() {
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} className="h-4 w-4" aria-hidden="true">
       <path d="M3 12a9 9 0 0 1 15-6.7M21 12a9 9 0 0 1-15 6.7" strokeLinecap="round" strokeLinejoin="round" />
       <path d="M17 3v5h-5M7 21v-5h5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function StopIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" className="h-3.5 w-3.5" aria-hidden="true">
+      <rect x="5" y="5" width="14" height="14" rx="2" />
     </svg>
   );
 }
@@ -224,7 +232,12 @@ export function CaptureChannel({ compact = false, large = false }: Props) {
     [voiceTurn, applyTurnResult, showToast, speakResponse, speakAndMaybeResume, refetchSuggestions, reviewAloud, handsFree],
   );
 
-  const { status: recorderStatus, start: startRecording, stop: stopRecording } = useAutoStopRecorder((blob) => {
+  const {
+    status: recorderStatus,
+    start: startRecording,
+    stop: stopRecording,
+    cancel: cancelRecording,
+  } = useAutoStopRecorder((blob) => {
     void submitTurn({ audio: blob, mimetype: blob.type || "audio/webm" }, "voice");
   });
   useEffect(() => {
@@ -242,6 +255,18 @@ export function CaptureChannel({ compact = false, large = false }: Props) {
     } catch {
       showToast(await describeMicrophoneAccessError(), "error");
     }
+  };
+
+  /**
+   * "Stop talking/listening" -- distinct from the mic button's own tap-to-
+   * finish (which gracefully submits whatever was said). Cancels an
+   * in-progress recording without submitting it, and unconditionally
+   * interrupts TTS playback (a harmless no-op if nothing is playing) --
+   * covers the rare case of both being true at once.
+   */
+  const handleStopClick = () => {
+    if (isRecording) cancelRecording();
+    stopPlayback();
   };
 
   const handleTextSubmit = (event: FormEvent) => {
@@ -294,6 +319,17 @@ export function CaptureChannel({ compact = false, large = false }: Props) {
           >
             <NewConversationIcon />
           </button>
+          {(isRecording || speakResponse.isPending) && (
+            <button
+              type="button"
+              aria-label="Stop"
+              title="Stop"
+              onClick={handleStopClick}
+              className={`flex items-center justify-center rounded-full border border-status-urgent/50 bg-status-urgent/10 text-status-urgent transition-colors hover:bg-status-urgent/20 ${large ? "h-11 w-11" : "h-8 w-8"}`}
+            >
+              <StopIcon />
+            </button>
+          )}
         </div>
         <p className={large ? "text-lg text-text-secondary" : "text-xs text-text-secondary"}>
           {isRecording ? "Tap to stop" : "Tap to talk"}

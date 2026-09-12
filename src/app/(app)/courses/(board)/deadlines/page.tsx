@@ -1,5 +1,5 @@
 import { DeadlineListContainer } from "@/components/deadlines/DeadlineListContainer";
 
-export default function DeadlinesPage() {
+export default function CourseDeadlinesPage() {
   return <DeadlineListContainer />;
 }

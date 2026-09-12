@@ -1,7 +1,7 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { buildUpcomingItems, filterUpcomingItemsByTimeWindow, isOpenDeadline, isOpenTask } from "../upcoming-items";
 import type { UpcomingItem } from "../upcoming-items";
-import { makeAppointment, makeCourse, makeDeadline, makePerson, makeReminder, makeTask, makeTodoItem } from "./fixtures";
+import { makeAppointment, makeCourse, makeDeadline, makePerson, makeReminder, makeTask } from "./fixtures";
 
 describe("isOpenDeadline / isOpenTask", () => {
   it("excludes terminal deadline statuses", () => {
@@ -112,64 +112,13 @@ describe("buildUpcomingItems", () => {
     expect(items[0]).toMatchObject({ personId: "missing", personLabel: "Unknown" });
   });
 
-  it("does not mark a todo item urgent on its due date — due_date is a calendar day, not midnight UTC", () => {
-    // Built from local date parts, not toISOString — using the UTC day here
-    // would make this test tautologically pass against the same bug it's
-    // meant to catch (see the regression test below for why that matters).
-    const now = new Date();
-    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-    const items = buildUpcomingItems({
-      deadlines: [],
-      tasks: [],
-      todoItems: [makeTodoItem({ id: "todo-today", due_date: today })],
-    });
-    expect(items.find((item) => item.id === "todo-today")?.urgent).toBe(false);
-  });
-
-  it("does not mark a todo item urgent in the evening in a timezone behind UTC — regression for reading the UTC calendar day instead of the local one", () => {
-    const originalTZ = process.env.TZ;
-    process.env.TZ = "America/Los_Angeles";
-    try {
-      // 9pm Sep 1 in Los Angeles is already Sep 2 in UTC — a UTC-day read of
-      // "today" would wrongly treat a todo due "2026-09-01" as past due.
-      vi.useFakeTimers();
-      vi.setSystemTime(new Date(2026, 8, 1, 21, 0, 0));
-      const items = buildUpcomingItems({
-        deadlines: [],
-        tasks: [],
-        todoItems: [makeTodoItem({ id: "todo-today", due_date: "2026-09-01" })],
-      });
-      expect(items.find((item) => item.id === "todo-today")?.urgent).toBe(false);
-    } finally {
-      process.env.TZ = originalTZ;
-      vi.useRealTimers();
-    }
-  });
-
-  it("marks a task or todo item urgent once its due date is in the past, even without a status field to carry it", () => {
+  it("marks a task urgent once its due date is in the past, even without a status field to carry it", () => {
     const items = buildUpcomingItems({
       deadlines: [],
       tasks: [makeTask({ id: "t-past", due_at: "2020-01-01T00:00:00Z" }), makeTask({ id: "t-future", due_at: "2999-01-01T00:00:00Z" })],
-      todoItems: [makeTodoItem({ id: "todo-past", due_date: "2020-01-01" }), makeTodoItem({ id: "todo-future", due_date: "2999-01-01" })],
     });
     expect(items.find((item) => item.id === "t-past")?.urgent).toBe(true);
     expect(items.find((item) => item.id === "t-future")?.urgent).toBe(false);
-    expect(items.find((item) => item.id === "todo-past")?.urgent).toBe(true);
-    expect(items.find((item) => item.id === "todo-future")?.urgent).toBe(false);
-  });
-
-  it("includes only live, not-done todo items with a due date, linking to the course to-do board", () => {
-    const items = buildUpcomingItems({
-      deadlines: [],
-      tasks: [],
-      todoItems: [
-        makeTodoItem({ id: "todo-open", is_done: false, due_date: "2026-01-04" }),
-        makeTodoItem({ id: "todo-done", is_done: true, due_date: "2026-01-04" }),
-        makeTodoItem({ id: "todo-no-date", is_done: false, due_date: null }),
-      ],
-    });
-    expect(items.map((item) => item.id)).toEqual(["todo-open"]);
-    expect(items[0]).toMatchObject({ kind: "todo", href: "/courses/todos" });
   });
 
   it("includes only planned Deadline Sessions, linking to the parent deadline", () => {
@@ -183,7 +132,7 @@ describe("buildUpcomingItems", () => {
       ],
     });
     expect(items.map((item) => item.id)).toEqual(["s-planned"]);
-    expect(items[0]).toMatchObject({ kind: "session", href: "/deadlines/d-9" });
+    expect(items[0]).toMatchObject({ kind: "session", href: "/courses/deadlines/d-9" });
   });
 
   it("uses a Deadline Session's structured time for `at`, instead of always defaulting to end of day", () => {

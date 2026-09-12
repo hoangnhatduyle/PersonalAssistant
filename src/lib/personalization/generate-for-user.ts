@@ -19,21 +19,34 @@ export interface GenerateSuggestionsResult {
   skipped: number;
 }
 
-async function fetchCurrentLeadMinutes(
+interface ReminderGovernance {
+  leadMinutes: number;
+  remindersEnabled: boolean;
+}
+
+/**
+ * Board merge (supabase/migrations/0029_board_merge.sql) forces
+ * reminders_enabled=false on every migrated Board Card, and any plain Task
+ * can independently have reminders turned off — tuning reminder_lead_minutes
+ * has no effect when reminders are off, so the caller must skip those
+ * candidates rather than propose a change that changes nothing.
+ */
+async function fetchReminderGovernance(
   supabase: SupabaseClient<Database>,
   userId: string,
   scope: "course" | "task",
   targetId: string,
-): Promise<number | null> {
+): Promise<ReminderGovernance | null> {
   const table = scope === "course" ? "courses" : "tasks";
   const { data } = await supabase
     .from(table)
-    .select("reminder_lead_minutes")
+    .select("reminder_lead_minutes, reminders_enabled")
     .eq("id", targetId)
     .eq("user_id", userId)
     .is("deleted_at", null)
     .maybeSingle();
-  return data?.reminder_lead_minutes ?? null;
+  if (!data) return null;
+  return { leadMinutes: data.reminder_lead_minutes, remindersEnabled: data.reminders_enabled };
 }
 
 /**
@@ -155,11 +168,16 @@ export async function generateSuggestionsForUser(supabase: SupabaseClient<Databa
       continue;
     }
 
-    const currentLeadMinutes = await fetchCurrentLeadMinutes(supabase, userId, candidate.scope, candidate.targetId);
-    if (currentLeadMinutes === null) {
+    const governance = await fetchReminderGovernance(supabase, userId, candidate.scope, candidate.targetId);
+    if (governance === null) {
       skipped += 1;
       continue;
     }
+    if (!governance.remindersEnabled) {
+      skipped += 1;
+      continue;
+    }
+    const currentLeadMinutes = governance.leadMinutes;
 
     // A malformed/unhelpful LLM response only skips this one candidate — it
     // must never fail the whole "check for suggestions" attempt.

@@ -34,8 +34,8 @@ export async function GET(request: NextRequest) {
 /**
  * POST /api/todo-lists — create. A non-null course_id must reference a
  * Course the caller owns with no assigned Person (checked here;
- * guard_todo_list_course_ownership backstops it in the DB) — Course To-Do
- * lists are an owner-only concept, like Deadlines and Deadline Sessions
+ * guard_todo_list_course_ownership backstops it in the DB) — Board Lists
+ * are an owner-only concept, like Deadlines and Deadline Sessions
  * (People feature never applies to them). course_id omitted/null makes a
  * freestanding custom list ("Misc", "Project: X").
  */

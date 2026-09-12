@@ -10,21 +10,18 @@ const TYPE_ICON: Record<SearchResult["type"], string> = {
   course: "C",
   deadline: "D",
   task: "T",
-  note: "N",
 };
 
 const TYPE_LABEL: Record<SearchResult["type"], string> = {
   course: "Course",
   deadline: "Deadline",
   task: "Task",
-  note: "Note",
 };
 
 const TYPE_COLOR: Record<SearchResult["type"], string> = {
   course: "bg-accent-teal/20 text-accent-teal",
   deadline: "bg-status-urgent/20 text-status-urgent",
   task: "bg-accent-indigo/20 text-accent-indigo",
-  note: "bg-accent-violet/20 text-accent-violet",
 };
 
 export function CommandPalette() {
@@ -155,7 +152,7 @@ export function CommandPalette() {
           <input
             ref={inputRef}
             type="text"
-            placeholder="Search courses, deadlines, tasks, notes…"
+            placeholder="Search courses, deadlines, tasks…"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}

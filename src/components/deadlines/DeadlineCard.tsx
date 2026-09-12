@@ -21,7 +21,7 @@ export function DeadlineCard({ deadline, courseName, sessionProgress }: Props) {
     <GlassPanel className="flex flex-col gap-3 p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <Link href={`/deadlines/${deadline.id}`} className="font-display text-base font-medium text-text-primary hover:underline">
+          <Link href={`/courses/deadlines/${deadline.id}`} className="font-display text-base font-medium text-text-primary hover:underline">
             {deadline.title}
           </Link>
           <p className="mt-0.5 font-mono text-xs text-text-secondary">Due {new Date(deadline.due_at).toLocaleString()}</p>

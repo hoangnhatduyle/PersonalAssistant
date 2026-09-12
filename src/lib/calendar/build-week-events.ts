@@ -98,11 +98,12 @@ export function buildWeekGridData(
   people: PersonRow[] = [],
   referenceDate: Date = new Date(),
   appointments: AppointmentRow[] = [],
+  // Separate from referenceDate (which week to show) so isToday stays
+  // correct when the caller navigates to a week other than the current one.
+  today: Date = new Date(),
 ): WeekGridData {
   const weekStart = startOfWeek(referenceDate);
   const weekEnd = new Date(weekStart.getTime() + 7 * 24 * 60 * 60 * 1000);
-  // referenceDate doubles as "today" — there's no week-navigation yet, so
-  // the displayed week and "now" are always the same instant in practice.
 
   const personById = new Map(people.map((person) => [person.id, person]));
   function personInfo(personId: string | null): { personId: string | null; personLabel: string; color?: string } {
@@ -221,7 +222,7 @@ export function buildWeekGridData(
         startMinutes: minutesOfDay,
         endMinutes: minutesOfDay + DEADLINE_MARKER_MINUTES,
         tone: DEADLINE_STATUS_TONE[deadline.status],
-        href: `/deadlines/${deadline.id}`,
+        href: `/courses/deadlines/${deadline.id}`,
         ...personInfo(deadline.person_id),
       });
     }
@@ -238,7 +239,7 @@ export function buildWeekGridData(
         startMinutes: minutesOfDay,
         endMinutes: minutesOfDay + TASK_MARKER_MINUTES,
         tone: TASK_STATUS_TONE[task.status],
-        href: `/tasks/${task.id}`,
+        href: `/board/${task.id}`,
         ...personInfo(task.person_id),
       });
     }
@@ -269,7 +270,7 @@ export function buildWeekGridData(
       key: String(dayOfWeek),
       dayOfWeek,
       label: `${label} ${date.getDate()}`,
-      isToday: sameDay(date, referenceDate),
+      isToday: sameDay(date, today),
       events,
     };
   });

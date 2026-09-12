@@ -4,7 +4,6 @@ import { useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useDeadlines } from "@/hooks/useDeadlines";
 import { useTasks } from "@/hooks/useTasks";
-import { useTodoItems } from "@/hooks/useTodoItems";
 import { useTodoLists } from "@/hooks/useTodoLists";
 import { useAppointments } from "@/hooks/useAppointments";
 import { useCourses } from "@/hooks/useCourses";
@@ -26,13 +25,12 @@ export function DrivingHub() {
   // Tasks stay unfiltered — a tracked person's Task is allowed to surface
   // here (labeled with their name), unlike every other kind in this queue.
   const { data: tasks, isLoading: tasksLoading } = useTasks({ limit: 100 });
-  const { data: todoItems, isLoading: todoItemsLoading } = useTodoItems({ limit: 100 });
   const { data: appointments, isLoading: appointmentsLoading } = useAppointments({ limit: 100 });
   const { data: todoLists } = useTodoLists({ limit: 100 });
   const { data: courses } = useCourses({ limit: 100 });
   const { data: people } = usePeople();
 
-  const isLoading = deadlinesLoading || tasksLoading || todoItemsLoading || appointmentsLoading;
+  const isLoading = deadlinesLoading || tasksLoading || appointmentsLoading;
 
   // Deadlines/tasks passed as [] here on purpose -- buildWeekGridData also
   // re-plots them as calendar markers, which would double them up against
@@ -43,36 +41,22 @@ export function DrivingHub() {
 
   const courseById = useMemo(() => new Map((courses?.rows ?? []).map((row) => [row.id, row])), [courses]);
   const todoListById = useMemo(() => new Map((todoLists?.rows ?? []).map((row) => [row.id, row])), [todoLists]);
-  // Defensive: a todo_list's course_id can point to a tracked person's
-  // course (the API/DB trigger only check course ownership, not
-  // person_id IS NULL — a known gap, closed at the source separately).
-  // Course To-Do items are owner-only, unlike Tasks, so exclude any item
-  // whose list resolves to a person-owned course.
-  const ownedTodoItems = useMemo(() => {
-    return (todoItems?.rows ?? []).filter((item) => {
-      const list = todoListById.get(item.list_id);
-      const course = list?.course_id ? courseById.get(list.course_id) : undefined;
-      return !course || course.person_id === null;
-    });
-  }, [todoItems, todoListById, courseById]);
 
   const queue = useMemo(
     () =>
       buildDrivingQueue({
         deadlines: deadlines?.rows ?? [],
         tasks: tasks?.rows ?? [],
-        todoItems: ownedTodoItems,
         appointments: appointments?.rows ?? [],
         people: people?.rows ?? [],
         todayCalendarEvents,
       }),
-    [deadlines, tasks, ownedTodoItems, appointments, people, todayCalendarEvents],
+    [deadlines, tasks, appointments, people, todayCalendarEvents],
   );
 
   const deadlineById = useMemo(() => new Map((deadlines?.rows ?? []).map((row) => [row.id, row])), [deadlines]);
   const taskById = useMemo(() => new Map((tasks?.rows ?? []).map((row) => [row.id, row])), [tasks]);
   const appointmentById = useMemo(() => new Map((appointments?.rows ?? []).map((row) => [row.id, row])), [appointments]);
-  const todoItemById = useMemo(() => new Map((todoItems?.rows ?? []).map((row) => [row.id, row])), [todoItems]);
 
   function getRow(item: DrivingQueueItem): DrivingCardRow {
     switch (item.kind) {
@@ -94,13 +78,14 @@ export function DrivingHub() {
         const deadline = deadlineById.get(item.id);
         return { subtitle: deadline ? courseById.get(deadline.course_id)?.name : undefined };
       }
-      case "task":
-        return { tags: taskById.get(item.id)?.tags, personLabel: item.personId ? item.personLabel : undefined };
-      case "todo": {
-        const todoItem = todoItemById.get(item.id);
-        const list = todoItem ? todoListById.get(todoItem.list_id) : undefined;
+      case "task": {
+        const task = taskById.get(item.id);
+        // Board merge: a Task filed under a Board List (task.list_id) shows
+        // that list's/course's name as its subtitle, the same way a Course
+        // To-Do item used to.
+        const list = task?.list_id ? todoListById.get(task.list_id) : undefined;
         const course = list?.course_id ? courseById.get(list.course_id) : undefined;
-        return { subtitle: course?.name ?? list?.name };
+        return { subtitle: course?.name ?? list?.name, tags: task?.tags, personLabel: item.personId ? item.personLabel : undefined };
       }
       case "session": {
         const session = appointmentById.get(item.id);

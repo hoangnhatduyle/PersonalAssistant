@@ -6,6 +6,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { taskPayloadSchema, type TaskPayload } from "@/lib/api/schemas";
 import type { TaskRow } from "@/lib/api/entity-types";
 import { usePeople } from "@/hooks/usePeople";
+import { useTodoLists } from "@/hooks/useTodoLists";
 import { FormField } from "@/components/ui/FormField";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
@@ -16,6 +17,8 @@ import { Button } from "@/components/ui/Button";
 
 type Props = {
   task?: TaskRow;
+  /** Pre-selects a Board List when creating a card from within a column (e.g. BoardColumn's "+ Add card"). Ignored when editing an existing card. */
+  defaultListId?: string | null;
   onSubmit: (values: TaskPayload) => Promise<void> | void;
   onCancel?: () => void;
   submitLabel?: string;
@@ -26,10 +29,22 @@ type Props = {
 // undefined), which fails those checks. Normalize at submit time so the
 // sentinel actually omits the key.
 const emptyToUndefined = (value: string) => (value === "" ? undefined : value);
+// list_id, unlike person_id/priority above, must support being explicitly
+// cleared back to "Unsorted" on an edit (taskPatchSchema accepts a real
+// null for it) — undefined would just omit the key and leave the existing
+// list_id untouched.
+const emptyToNull = (value: string) => (value === "" ? null : value);
 
-export function TaskForm({ task, onSubmit, onCancel, submitLabel = "Save" }: Props) {
+export function TaskForm({
+  task,
+  defaultListId,
+  onSubmit,
+  onCancel,
+  submitLabel = "Save",
+}: Props) {
   const [tagDraft, setTagDraft] = useState("");
   const { data: people } = usePeople();
+  const { data: todoLists } = useTodoLists({ limit: 100 });
   const {
     register,
     handleSubmit,
@@ -47,6 +62,7 @@ export function TaskForm({ task, onSubmit, onCancel, submitLabel = "Save" }: Pro
       reminder_lead_minutes: task?.reminder_lead_minutes ?? 30,
       person_id: task?.person_id ?? undefined,
       priority: task?.priority ?? undefined,
+      list_id: task ? task.list_id : (defaultListId ?? null),
     },
   });
 
@@ -72,13 +88,48 @@ export function TaskForm({ task, onSubmit, onCancel, submitLabel = "Save" }: Pro
   };
 
   return (
-    <form onSubmit={handleSubmit(async (values) => onSubmit(values))} className="flex flex-col gap-4" noValidate>
+    <form
+      onSubmit={handleSubmit(async (values) => onSubmit(values))}
+      className="flex flex-col gap-4"
+      noValidate
+    >
       <FormField label="Title" htmlFor="title" error={errors.title?.message}>
-        <Input id="title" invalid={Boolean(errors.title)} {...register("title")} />
+        <Input
+          id="title"
+          invalid={Boolean(errors.title)}
+          {...register("title")}
+        />
       </FormField>
 
-      <FormField label="For" htmlFor="person_id" error={errors.person_id?.message}>
-        <Select id="person_id" invalid={Boolean(errors.person_id)} {...register("person_id", { setValueAs: emptyToUndefined })}>
+      <FormField
+        label="Board List"
+        htmlFor="list_id"
+        error={errors.list_id?.message}
+      >
+        <Select
+          id="list_id"
+          invalid={Boolean(errors.list_id)}
+          {...register("list_id", { setValueAs: emptyToNull })}
+        >
+          <option value="">Unsorted</option>
+          {(todoLists?.rows ?? []).map((list) => (
+            <option key={list.id} value={list.id}>
+              {list.name}
+            </option>
+          ))}
+        </Select>
+      </FormField>
+
+      <FormField
+        label="For"
+        htmlFor="person_id"
+        error={errors.person_id?.message}
+      >
+        <Select
+          id="person_id"
+          invalid={Boolean(errors.person_id)}
+          {...register("person_id", { setValueAs: emptyToUndefined })}
+        >
           <option value="">Me</option>
           {(people?.rows ?? []).map((person) => (
             <option key={person.id} value={person.id}>
@@ -93,13 +144,26 @@ export function TaskForm({ task, onSubmit, onCancel, submitLabel = "Save" }: Pro
           control={control}
           name="due_at"
           render={({ field }) => (
-            <DateTimeField id="due_at" value={field.value} onChange={field.onChange} invalid={Boolean(errors.due_at)} />
+            <DateTimeField
+              id="due_at"
+              value={field.value}
+              onChange={field.onChange}
+              invalid={Boolean(errors.due_at)}
+            />
           )}
         />
       </FormField>
 
-      <FormField label="Priority" htmlFor="priority" error={errors.priority?.message}>
-        <Select id="priority" invalid={Boolean(errors.priority)} {...register("priority", { setValueAs: emptyToUndefined })}>
+      <FormField
+        label="Priority"
+        htmlFor="priority"
+        error={errors.priority?.message}
+      >
+        <Select
+          id="priority"
+          invalid={Boolean(errors.priority)}
+          {...register("priority", { setValueAs: emptyToUndefined })}
+        >
           <option value="">Unset</option>
           <option value="Low">Low</option>
           <option value="Medium">Medium</option>
@@ -131,7 +195,12 @@ export function TaskForm({ task, onSubmit, onCancel, submitLabel = "Save" }: Pro
             {tags.map((tag) => (
               <Badge key={tag} tone="accent">
                 {tag}
-                <button type="button" aria-label={`Remove tag ${tag}`} onClick={() => removeTag(tag)} className="ml-1">
+                <button
+                  type="button"
+                  aria-label={`Remove tag ${tag}`}
+                  onClick={() => removeTag(tag)}
+                  className="ml-1"
+                >
                   ×
                 </button>
               </Badge>
@@ -143,7 +212,11 @@ export function TaskForm({ task, onSubmit, onCancel, submitLabel = "Save" }: Pro
       <Checkbox label="Reminders enabled" {...register("reminders_enabled")} />
 
       {remindersEnabled && (
-        <FormField label="Reminder lead (minutes)" htmlFor="reminder_lead_minutes" error={errors.reminder_lead_minutes?.message}>
+        <FormField
+          label="Reminder lead (minutes)"
+          htmlFor="reminder_lead_minutes"
+          error={errors.reminder_lead_minutes?.message}
+        >
           <Input
             id="reminder_lead_minutes"
             type="number"
@@ -156,7 +229,12 @@ export function TaskForm({ task, onSubmit, onCancel, submitLabel = "Save" }: Pro
 
       <div className="flex justify-end gap-2">
         {onCancel && (
-          <Button type="button" variant="secondary" onClick={onCancel} disabled={isSubmitting}>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={onCancel}
+            disabled={isSubmitting}
+          >
             Cancel
           </Button>
         )}

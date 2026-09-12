@@ -83,8 +83,8 @@ export function toScheduleToolPayload(result: ScheduleLoadResult): ScheduleToolP
  * implementations: session.ts's runUpcomingScheduleQuery (window-bounded
  * filtering via resolveScheduleWindowBounds/resolveScheduleWindowDateKeys)
  * and general-conversation.ts's loadScheduleContext (richer course fields,
- * the todo_lists join, and rankScheduleItems' day-grouping). Deadlines,
- * Tasks, and open Course To-Do / custom-project items (todo_items) are all
+ * the todo_lists join, and rankScheduleItems' day-grouping). Deadlines and
+ * Tasks (including ones filed under a Board List, post board-merge) are all
  * equally "due" and equally represented here — none is structurally
  * privileged over the others.
  */
@@ -98,20 +98,14 @@ export async function loadSchedule(
 ): Promise<ScheduleLoadResult> {
   const timezone = await loadUserTimezone(supabase, userId);
   const bounds = resolveScheduleWindowBounds(window, timezone, now, explicitDateKey);
-  // todo_items.due_date is a plain `date` column (no time-of-day), so it
-  // can't be filtered against the timestamp bounds above -- resolved
-  // separately as calendar-date strings.
   const dateKeys = resolveScheduleWindowDateKeys(window, timezone, now, explicitDateKey);
 
-  // Deadlines and Course To-Do items (todo_items) are never part of a
-  // tracked Person's (0013_people.sql) schedule: Deadlines by product
-  // decision (a Deadline only ever gets a person_id indirectly, by
-  // inheriting it from an assigned Course -- the app has no flow to assign
-  // one directly, and a Person's schedule should never surface one anyway),
-  // and todo_items structurally (0013_people.sql never added a person_id
-  // column to it at all -- only the account owner has Course To-Do items).
-  // Both queries below are skipped entirely (never sent to the DB, not just
-  // filtered) whenever personId is set.
+  // Deadlines are never part of a tracked Person's (0013_people.sql)
+  // schedule by product decision (a Deadline only ever gets a person_id
+  // indirectly, by inheriting it from an assigned Course -- the app has no
+  // flow to assign one directly, and a Person's schedule should never
+  // surface one anyway). That query below is skipped entirely (never sent
+  // to the DB, not just filtered) whenever personId is set.
   const includeOwnerOnlyData = !personId;
 
   let deadlinesQuery = supabase
@@ -123,19 +117,12 @@ export async function loadSchedule(
     .in("status", OPEN_DEADLINE_STATUSES);
   let tasksQuery = supabase
     .from("tasks")
-    .select("id, title, due_at, priority")
+    .select("id, title, due_at, priority, list_id")
     .eq("user_id", userId)
     .is("deleted_at", null)
     .not("due_at", "is", null)
     .eq("status", "Open");
   tasksQuery = personId ? tasksQuery.eq("person_id", personId) : tasksQuery.is("person_id", null);
-  let todoItemsQuery = supabase
-    .from("todo_items")
-    .select("id, title, due_date, priority, list_id")
-    .eq("user_id", userId)
-    .is("deleted_at", null)
-    .not("due_date", "is", null)
-    .eq("is_done", false);
   // Deadline Sessions (planned work sessions toward a Deadline -- appointments
   // rows with category "Session"/session_status "planned") are, like
   // Deadlines and Course To-Do items, an owner-only concept: a tracked
@@ -185,11 +172,6 @@ export async function loadSchedule(
     // ceiling, not a "top N" cap like the unscoped branch below.
     deadlinesQuery = deadlinesQuery.gte("due_at", bounds.startUtcIso).lt("due_at", bounds.endUtcIsoExclusive).order("due_at", { ascending: true }).limit(20);
     tasksQuery = tasksQuery.gte("due_at", bounds.startUtcIso).lt("due_at", bounds.endUtcIsoExclusive).order("due_at", { ascending: true }).limit(20);
-    todoItemsQuery = todoItemsQuery
-      .gte("due_date", dateKeys.startDateKey)
-      .lt("due_date", dateKeys.endDateKeyExclusive)
-      .order("due_date", { ascending: true })
-      .limit(20);
     sessionsQuery = sessionsQuery
       .gte("date", dateKeys.startDateKey)
       .lt("date", dateKeys.endDateKeyExclusive)
@@ -202,11 +184,10 @@ export async function loadSchedule(
       .limit(20);
   } else {
     // "unscoped": next-5-of-each, anchored to "today" for the date-only
-    // todo_items/appointments.date columns.
+    // appointments.date column.
     todayKeyForUnscoped = resolveScheduleWindowDateKeys("today", timezone, now)!.startDateKey;
     deadlinesQuery = deadlinesQuery.gte("due_at", now.toISOString()).order("due_at", { ascending: true }).limit(5);
     tasksQuery = tasksQuery.gte("due_at", now.toISOString()).order("due_at", { ascending: true }).limit(5);
-    todoItemsQuery = todoItemsQuery.gte("due_date", todayKeyForUnscoped).order("due_date", { ascending: true }).limit(5);
     sessionsQuery = sessionsQuery.gte("date", todayKeyForUnscoped).order("date", { ascending: true }).limit(5);
     appointmentsQuery = appointmentsQuery.gte("date", todayKeyForUnscoped).order("date", { ascending: true }).limit(5);
   }
@@ -217,19 +198,9 @@ export async function loadSchedule(
   // for a real empty result below.
   const skippedResult = Promise.resolve({ data: null, error: null });
 
-  const [
-    deadlinesResult,
-    tasksResult,
-    todoItemsResult,
-    coursesResult,
-    todoListsResult,
-    sessionsResult,
-    appointmentsResult,
-    deadlineTitlesResult,
-  ] = await Promise.all([
+  const [deadlinesResult, tasksResult, coursesResult, todoListsResult, sessionsResult, appointmentsResult, deadlineTitlesResult] = await Promise.all([
     includeOwnerOnlyData ? deadlinesQuery : skippedResult,
     tasksQuery,
-    includeOwnerOnlyData ? todoItemsQuery : skippedResult,
     coursesQuery,
     todoListsQuery,
     includeOwnerOnlyData ? sessionsQuery : skippedResult,
@@ -238,7 +209,6 @@ export async function loadSchedule(
   ]);
   if (deadlinesResult.error) throw deadlinesResult.error;
   if (tasksResult.error) throw tasksResult.error;
-  if (todoItemsResult.error) throw todoItemsResult.error;
   if (coursesResult.error) throw coursesResult.error;
   if (todoListsResult.error) throw todoListsResult.error;
   if (sessionsResult.error) throw sessionsResult.error;
@@ -269,25 +239,19 @@ export async function loadSchedule(
         context: courseNameById.get(d.course_id) ?? null,
       }),
     ),
-    // Tasks have no course/list grouping to disambiguate with.
+    // Board merge: a Task filed under a Board List (list_id) carries that
+    // list's name as context, the same way a Course To-Do item used to; an
+    // unlisted Task has no natural grouping.
     ...(tasksResult.data ?? []).map(
-      (t): ScheduleItem => ({ id: t.id, title: t.title, dueAt: new Date(t.due_at!), kind: "task", priority: t.priority, context: null }),
+      (t): ScheduleItem => ({
+        id: t.id,
+        title: t.title,
+        dueAt: new Date(t.due_at!),
+        kind: "task",
+        priority: t.priority,
+        context: t.list_id ? listNameById.get(t.list_id) ?? null : null,
+      }),
     ),
-    ...(todoItemsResult.data ?? []).map((item): ScheduleItem => {
-      const [year, month, day] = item.due_date!.split("-").map(Number);
-      return {
-        id: item.id,
-        title: item.title,
-        // todo_items.due_date has no time-of-day/timezone of its own --
-        // anchored to the end of that calendar day in the user's real
-        // timezone (not the server process's local time) so it buckets
-        // onto the correct day below.
-        dueAt: localEndOfDayUtc(year, month, day, timezone),
-        kind: "todo",
-        priority: item.priority,
-        context: listNameById.get(item.list_id) ?? null,
-      };
-    }),
     ...(sessionsResult.data ?? []).map((session): ScheduleItem => {
       const [year, month, day] = session.date.split("-").map(Number);
       const deadlineTitle = deadlineTitleById.get(session.deadline_id!) ?? null;
@@ -304,8 +268,9 @@ export async function loadSchedule(
       return {
         id: session.id,
         title: session.title,
-        // appointments.date has no time-of-day/timezone of its own -- same
-        // anchoring convention as todo_items.due_date above.
+        // appointments.date has no time-of-day/timezone of its own --
+        // anchored to the end of that calendar day in the user's real
+        // timezone (not the server process's local time).
         dueAt: localEndOfDayUtc(year, month, day, timezone),
         kind: "session",
         priority: null,

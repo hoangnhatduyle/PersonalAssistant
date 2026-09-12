@@ -65,6 +65,18 @@ export async function PATCH(request: Request, { params }: RouteParams) {
     if (!person) return notFoundResponse();
   }
 
+  if (parsed.data.list_id) {
+    const { data: list, error: listError } = await supabase
+      .from("todo_lists")
+      .select("id")
+      .eq("id", parsed.data.list_id)
+      .eq("user_id", user.id)
+      .is("deleted_at", null)
+      .maybeSingle();
+    if (listError) return serverErrorResponse("todo list lookup failed", listError);
+    if (!list) return notFoundResponse();
+  }
+
   const { data: existing, error: fetchError } = await supabase
     .from("tasks")
     .select("id")

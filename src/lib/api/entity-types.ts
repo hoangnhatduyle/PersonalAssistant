@@ -19,7 +19,6 @@ export type ReminderRow = Database["public"]["Tables"]["reminders"]["Row"];
 export type FeedbackRow = Database["public"]["Tables"]["feedback"]["Row"];
 export type PersonRow = Database["public"]["Tables"]["people"]["Row"];
 export type TodoListRow = Database["public"]["Tables"]["todo_lists"]["Row"];
-export type TodoItemRow = Database["public"]["Tables"]["todo_items"]["Row"];
 
 export type AppointmentRow = Database["public"]["Tables"]["appointments"]["Row"];
 export type SessionStatus = Database["public"]["Enums"]["session_status"];

@@ -5,7 +5,7 @@ export interface CourseDeleteCascadePreview {
   deadlinesAffected: number;
   remindersLive: number;
   notesAffected: number;
-  todoItemsAffected: number;
+  boardCardsAffected: number;
 }
 
 /**
@@ -38,19 +38,21 @@ export async function previewCourseDeleteCascade(
 
   const deadlineIds = (deadlines ?? []).map((d) => d.id);
 
-  let todoItemsAffected = 0;
+  // Board merge (0029_board_merge.sql): a list's cards are tasks now, not
+  // todo_items rows.
+  let boardCardsAffected = 0;
   if (todoList) {
-    const { count: todoItemCount, error: todoItemsError } = await supabase
-      .from("todo_items")
+    const { count: boardCardCount, error: boardCardsError } = await supabase
+      .from("tasks")
       .select("id", { count: "exact", head: true })
       .eq("list_id", todoList.id)
       .is("deleted_at", null);
-    if (todoItemsError) throw todoItemsError;
-    todoItemsAffected = todoItemCount ?? 0;
+    if (boardCardsError) throw boardCardsError;
+    boardCardsAffected = boardCardCount ?? 0;
   }
 
   if (deadlineIds.length === 0) {
-    return { deadlinesAffected: 0, remindersLive: 0, notesAffected: notesAffected ?? 0, todoItemsAffected };
+    return { deadlinesAffected: 0, remindersLive: 0, notesAffected: notesAffected ?? 0, boardCardsAffected };
   }
 
   const { count, error: countError } = await supabase
@@ -61,7 +63,7 @@ export async function previewCourseDeleteCascade(
     .in("acknowledgment_state", ["Scheduled", "Snoozed"]);
   if (countError) throw countError;
 
-  return { deadlinesAffected: deadlineIds.length, remindersLive: count ?? 0, notesAffected: notesAffected ?? 0, todoItemsAffected };
+  return { deadlinesAffected: deadlineIds.length, remindersLive: count ?? 0, notesAffected: notesAffected ?? 0, boardCardsAffected };
 }
 
 /**
@@ -81,12 +83,12 @@ export function formatCascadeDisclosure(preview: CourseDeleteCascadePreview): st
     const noteWord = preview.notesAffected === 1 ? "note" : "notes";
     clauses.push(`unlink it from ${preview.notesAffected} ${noteWord}`);
   }
-  if (preview.todoItemsAffected > 0) {
-    const itemWord = preview.todoItemsAffected === 1 ? "item" : "items";
-    clauses.push(`delete its to-do list (${preview.todoItemsAffected} ${itemWord})`);
+  if (preview.boardCardsAffected > 0) {
+    const cardWord = preview.boardCardsAffected === 1 ? "card" : "cards";
+    clauses.push(`delete its board list (${preview.boardCardsAffected} ${cardWord})`);
   }
   if (clauses.length === 0) {
-    return "It has no deadlines, linked notes, or to-do items.";
+    return "It has no deadlines, linked notes, or board cards.";
   }
   return `This will also ${clauses.join(" and ")}.`;
 }

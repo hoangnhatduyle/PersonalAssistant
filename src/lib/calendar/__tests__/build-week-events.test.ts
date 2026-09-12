@@ -121,7 +121,7 @@ describe("buildWeekGridData", () => {
       timeLabel: "3 PM",
       subtitle: "Deadline",
       tone: "urgent",
-      href: "/deadlines/d-1",
+      href: "/courses/deadlines/d-1",
       personLabel: "Me",
     });
   });
@@ -156,11 +156,21 @@ describe("buildWeekGridData", () => {
     expect(data.windowStart).toBeLessThanOrEqual(6 * 60);
   });
 
-  it("marks the reference date's own day column as today", () => {
-    const data = buildWeekGridData([], [], [], [], REFERENCE);
+  it("marks the reference date's own day column as today when viewing the current week", () => {
+    const data = buildWeekGridData([], [], [], [], REFERENCE, [], REFERENCE);
     const wednesday = data.days.find((day) => day.dayOfWeek === REFERENCE.getDay())!;
     expect(wednesday.isToday).toBe(true);
     expect(data.days.filter((day) => day.isToday)).toHaveLength(1);
+  });
+
+  it("marks no day as today when navigating to a week other than the real current one", () => {
+    // today is a full month after the displayed (REFERENCE) week, so no day
+    // in the displayed week should ever satisfy sameDay(date, today) — even
+    // though referenceDate's own weekday would have matched under the old,
+    // single-date behavior.
+    const realToday = new Date("2026-02-07T12:00:00");
+    const data = buildWeekGridData([], [], [], [], REFERENCE, [], realToday);
+    expect(data.days.every((day) => !day.isToday)).toBe(true);
   });
 
   it("places an open task with a due_at within the displayed week as a marker on its due day", () => {
@@ -172,7 +182,7 @@ describe("buildWeekGridData", () => {
       timeLabel: "3 PM",
       subtitle: "Task",
       tone: "purple",
-      href: "/tasks/t-1",
+      href: "/board/t-1",
     });
   });
 

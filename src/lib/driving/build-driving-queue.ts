@@ -1,4 +1,4 @@
-import type { AppointmentRow, DeadlineRow, PersonRow, TaskRow, TodoItemRow } from "@/lib/api/entity-types";
+import type { AppointmentRow, DeadlineRow, PersonRow, TaskRow } from "@/lib/api/entity-types";
 import { buildUpcomingItems, filterUpcomingItemsByTimeWindow, type UpcomingItem, type UpcomingItemKind } from "@/lib/dashboard/upcoming-items";
 import type { CalendarEvent } from "@/lib/calendar/build-week-events";
 
@@ -11,7 +11,6 @@ export interface DrivingQueueItem extends Omit<UpcomingItem, "kind"> {
 interface BuildDrivingQueueInput {
   deadlines: DeadlineRow[];
   tasks: TaskRow[];
-  todoItems?: TodoItemRow[];
   appointments?: AppointmentRow[];
   /** Tracked People (People feature) — for labeling a Task that belongs to someone other than the account owner. */
   people?: PersonRow[];
@@ -42,21 +41,20 @@ function calendarEventToDrivingItem(event: CalendarEvent, referenceDate: Date): 
 
 /**
  * Driving Mode's single merged, today-scoped queue: reuses
- * buildUpcomingItems (deadlines/tasks/todos/sessions) unchanged, and folds in
+ * buildUpcomingItems (deadlines/tasks/sessions) unchanged, and folds in
  * today's calendar meeting-block occurrences, which buildUpcomingItems never
  * covers. Re-sorted chronologically across both sources.
  */
 export function buildDrivingQueue({
   deadlines,
   tasks,
-  todoItems = [],
   appointments = [],
   people = [],
   todayCalendarEvents = [],
   referenceDate = new Date(),
 }: BuildDrivingQueueInput): DrivingQueueItem[] {
   const upcoming = filterUpcomingItemsByTimeWindow(
-    buildUpcomingItems({ deadlines, tasks, todoItems, appointments, people }),
+    buildUpcomingItems({ deadlines, tasks, appointments, people }),
     "today",
     referenceDate,
   );

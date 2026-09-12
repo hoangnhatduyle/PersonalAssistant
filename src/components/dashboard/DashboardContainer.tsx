@@ -4,7 +4,6 @@ import { useMemo } from "react";
 import { useDeadlines } from "@/hooks/useDeadlines";
 import { useTasks } from "@/hooks/useTasks";
 import { useReminders } from "@/hooks/useReminders";
-import { useTodoItems } from "@/hooks/useTodoItems";
 import { useTodoLists } from "@/hooks/useTodoLists";
 import { useCourses } from "@/hooks/useCourses";
 import { useAppointments } from "@/hooks/useAppointments";
@@ -28,28 +27,13 @@ export function DashboardContainer() {
   // kind on this page.
   const { data: tasks, isLoading: tasksLoading } = useTasks({ limit: 100 });
   const { data: reminders, isLoading: remindersLoading } = useReminders({ state: ["Delivered", "Snoozed"] });
-  const { data: todoItems, isLoading: todoItemsLoading } = useTodoItems({ limit: 100 });
   const { data: todoLists } = useTodoLists({ limit: 100 });
   const { data: courses } = useCourses({ limit: 100 });
   const { data: appointments } = useAppointments({ limit: 100 });
   const { data: people, isLoading: peopleLoading } = usePeople();
 
-  const isLoading = deadlinesLoading || tasksLoading || remindersLoading || todoItemsLoading || peopleLoading;
+  const isLoading = deadlinesLoading || tasksLoading || remindersLoading || peopleLoading;
 
-  const courseById = useMemo(() => new Map((courses?.rows ?? []).map((course) => [course.id, course])), [courses]);
-  const todoListById = useMemo(() => new Map((todoLists?.rows ?? []).map((list) => [list.id, list])), [todoLists]);
-  // Defensive: a todo_list's course_id can point to a tracked person's
-  // course (the API/DB trigger only check course ownership, not
-  // person_id IS NULL — a known gap, closed at the source separately).
-  // Course To-Do items are owner-only on every surface, unlike Tasks, so
-  // exclude any item whose list resolves to a person-owned course.
-  const ownedTodoItems = useMemo(() => {
-    return (todoItems?.rows ?? []).filter((item) => {
-      const list = todoListById.get(item.list_id);
-      const course = list?.course_id ? courseById.get(list.course_id) : undefined;
-      return !course || course.person_id === null;
-    });
-  }, [todoItems, todoListById, courseById]);
   // MomentumCard/WorkloadDensityStrip/StaleItemsCard have no label-rendering
   // capability of their own — feed them mine-only Tasks so a tracked
   // person's Task never leaks into those widgets unlabeled. UpNextPanel
@@ -76,7 +60,6 @@ export function DashboardContainer() {
           <WorkloadDensityStrip
             deadlines={deadlines?.rows ?? []}
             tasks={mineOnlyTasks}
-            todoItems={ownedTodoItems}
             todoLists={todoLists?.rows ?? []}
             courses={courses?.rows ?? []}
             appointments={appointments?.rows ?? []}
@@ -88,17 +71,16 @@ export function DashboardContainer() {
               tasks={tasks?.rows ?? []}
               people={people?.rows ?? []}
               reminders={reminders?.rows ?? []}
-              todoItems={ownedTodoItems}
               todoLists={todoLists?.rows ?? []}
               courses={courses?.rows ?? []}
               appointments={appointments?.rows ?? []}
             />
-            <MomentumCard deadlines={deadlines?.rows ?? []} tasks={mineOnlyTasks} todoItems={ownedTodoItems} />
+            <MomentumCard deadlines={deadlines?.rows ?? []} tasks={mineOnlyTasks} />
           </div>
 
           <div className="grid grid-cols-[minmax(0,1fr)] gap-6 md:grid-cols-2">
-            <StaleItemsCard deadlines={deadlines?.rows ?? []} tasks={mineOnlyTasks} todoItems={ownedTodoItems} />
-            <CourseProgressList courses={courses?.rows ?? []} deadlines={deadlines?.rows ?? []} todoItems={ownedTodoItems} todoLists={todoLists?.rows ?? []} />
+            <StaleItemsCard deadlines={deadlines?.rows ?? []} tasks={mineOnlyTasks} />
+            <CourseProgressList courses={courses?.rows ?? []} deadlines={deadlines?.rows ?? []} tasks={mineOnlyTasks} todoLists={todoLists?.rows ?? []} />
           </div>
         </>
       )}

@@ -206,46 +206,34 @@ describe("mutationSchema", () => {
     expect(result.success).toBe(false);
   });
 
-  it("accepts a to-do item create with list_id and title", () => {
+  // Board merge (supabase/migrations/0029_board_merge.sql): a "Course To-Do
+  // item" is now just a Task with list_id set.
+  it("accepts a task create with a list_id (Board List placement)", () => {
     const result = mutationSchema.safeParse({
-      target_type: "todo_item",
+      target_type: "task",
       operation: "create",
       target_id: null,
+      title: "Read chapter 3",
+      due_at: null,
+      reminder_lead_minutes: null,
+      priority: null,
       list_id: VALID_TARGET_ID,
-      title: "Read chapter 3",
-      due_date: null,
-      priority: null,
-      done: null,
     });
     expect(result.success).toBe(true);
   });
 
-  it("rejects a to-do item create missing list_id", () => {
+  it("accepts a task create with no list_id (Unsorted)", () => {
     const result = mutationSchema.safeParse({
-      target_type: "todo_item",
+      target_type: "task",
       operation: "create",
       target_id: null,
-      list_id: null,
-      title: "Read chapter 3",
-      due_date: null,
+      title: "Buy milk",
+      due_at: null,
+      reminder_lead_minutes: null,
       priority: null,
-      done: null,
-    });
-    expect(result.success).toBe(false);
-  });
-
-  it("accepts a to-do item update marking it done", () => {
-    const result = mutationSchema.safeParse({
-      target_type: "todo_item",
-      operation: "update",
-      target_id: VALID_TARGET_ID,
-      list_id: null,
-      title: null,
-      due_date: null,
-      priority: null,
-      done: true,
     });
     expect(result.success).toBe(true);
+    if (result.success && result.data.target_type === "task") expect(result.data.list_id).toBeNull();
   });
 
   it("accepts a task create with reminder_lead_minutes: 0 (explicit \"remind me at <time>\")", () => {
@@ -544,22 +532,40 @@ describe("toPendingMutation", () => {
     });
   });
 
-  it("maps a to-do item update that marks it done", () => {
+  it("maps a task create with a list_id", () => {
     const raw = mutationSchema.parse({
-      target_type: "todo_item",
-      operation: "update",
-      target_id: VALID_TARGET_ID,
-      list_id: null,
-      title: null,
-      due_date: null,
+      target_type: "task",
+      operation: "create",
+      target_id: null,
+      title: "Read chapter 3",
+      due_at: null,
+      reminder_lead_minutes: null,
       priority: null,
-      done: true,
+      list_id: VALID_TARGET_ID,
     });
     expect(toPendingMutation(raw)).toEqual({
-      targetType: "todo_item",
+      targetType: "task",
+      operation: "create",
+      payload: { title: "Read chapter 3", due_at: null, priority: undefined, list_id: VALID_TARGET_ID },
+    });
+  });
+
+  it("maps a task update with a list_id, moving it into that Board List", () => {
+    const raw = mutationSchema.parse({
+      target_type: "task",
+      operation: "update",
+      target_id: VALID_TARGET_ID,
+      title: null,
+      due_at: null,
+      reminder_lead_minutes: null,
+      priority: null,
+      list_id: VALID_COURSE_ID,
+    });
+    expect(toPendingMutation(raw)).toEqual({
+      targetType: "task",
       operation: "update",
       targetId: VALID_TARGET_ID,
-      payload: { is_done: true },
+      payload: { list_id: VALID_COURSE_ID },
     });
   });
 });

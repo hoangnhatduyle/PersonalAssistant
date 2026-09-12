@@ -5,12 +5,12 @@ import Link from "next/link";
 import { useCourse, useUpdateCourse } from "@/hooks/useCourses";
 import { useDeadlines } from "@/hooks/useDeadlines";
 import { useTodoLists } from "@/hooks/useTodoLists";
-import { useTodoItems } from "@/hooks/useTodoItems";
+import { useTasks } from "@/hooks/useTasks";
 import { CourseForm } from "@/components/courses/CourseForm";
 import { DeleteCourseButton } from "@/components/courses/DeleteCourseButton";
-import { CourseTodoListCard } from "@/components/courses/CourseTodoListCard";
 import { DeadlineList } from "@/components/deadlines/DeadlineList";
 import { NotesForTarget } from "@/components/notes/NotesForTarget";
+import { ProgressBar } from "@/components/ui/ProgressBar";
 import { GlassPanel } from "@/components/ui/GlassPanel";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -19,7 +19,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { useToast } from "@/components/ui/Toast";
 import { formatBlocksSummary } from "@/lib/calendar/recurrence";
 import type { CoursePayload } from "@/lib/api/schemas";
-import type { TodoItemRow } from "@/lib/api/entity-types";
+import type { TaskRow } from "@/lib/api/entity-types";
 
 type Props = {
   courseId: string;
@@ -29,9 +29,9 @@ export function CourseDetailContainer({ courseId }: Props) {
   const { data: course, isLoading } = useCourse(courseId);
   const { data: deadlines, isLoading: deadlinesLoading } = useDeadlines({ courseId });
   const { data: todoLists, isLoading: todoListsLoading } = useTodoLists({ courseId });
-  // No listId filter on useTodoItems for multiple lists at once — fetch all
-  // and group client-side, same pattern CourseTodoBoardContainer uses.
-  const { data: todoItems, isLoading: todoItemsLoading } = useTodoItems({ limit: 100 });
+  // No listId filter on useTasks for multiple lists at once — fetch all and
+  // group client-side, same pattern BoardContainer uses.
+  const { data: tasks, isLoading: tasksLoading } = useTasks({ limit: 100 });
   const updateCourse = useUpdateCourse(courseId);
   const { showToast } = useToast();
   const [isEditing, setIsEditing] = useState(false);
@@ -41,14 +41,14 @@ export function CourseDetailContainer({ courseId }: Props) {
 
   const lists = todoLists?.rows ?? [];
   const listIds = new Set(lists.map((list) => list.id));
-  const itemsByListId = new Map<string, TodoItemRow[]>();
-  for (const item of todoItems?.rows ?? []) {
-    if (!listIds.has(item.list_id)) continue;
-    const bucket = itemsByListId.get(item.list_id) ?? [];
-    bucket.push(item);
-    itemsByListId.set(item.list_id, bucket);
+  const tasksByListId = new Map<string, TaskRow[]>();
+  for (const task of tasks?.rows ?? []) {
+    if (!task.list_id || !listIds.has(task.list_id)) continue;
+    const bucket = tasksByListId.get(task.list_id) ?? [];
+    bucket.push(task);
+    tasksByListId.set(task.list_id, bucket);
   }
-  const todoLoading = todoListsLoading || todoItemsLoading;
+  const boardLoading = todoListsLoading || tasksLoading;
 
   const handleUpdate = async (values: CoursePayload) => {
     try {
@@ -93,7 +93,7 @@ export function CourseDetailContainer({ courseId }: Props) {
       <GlassPanel className="flex flex-col gap-3 p-6">
         <div className="flex items-center justify-between">
           <p className="font-mono text-xs uppercase tracking-wide text-text-eyebrow">Deadlines</p>
-          <Link href="/deadlines" className="text-xs text-accent-indigo hover:underline">
+          <Link href="/courses/deadlines" className="text-xs text-accent-indigo hover:underline">
             View all
           </Link>
         </div>
@@ -101,16 +101,34 @@ export function CourseDetailContainer({ courseId }: Props) {
       </GlassPanel>
 
       <GlassPanel className="flex flex-col gap-3 p-6">
-        <p className="font-mono text-xs uppercase tracking-wide text-text-eyebrow">To-Do</p>
-        {todoLoading ? (
+        <div className="flex items-center justify-between">
+          <p className="font-mono text-xs uppercase tracking-wide text-text-eyebrow">Board</p>
+          <Link href="/board" className="text-xs text-accent-indigo hover:underline">
+            Open board
+          </Link>
+        </div>
+        {boardLoading ? (
           <Skeleton className="h-24 w-full" />
         ) : lists.length === 0 ? (
-          <EmptyState title="No to-do list yet" description="Create one from the To-Do Lists board." />
+          <EmptyState title="No Board List yet" description="Create one from the Board." />
         ) : (
           <div className="grid gap-3 sm:grid-cols-2">
-            {lists.map((list) => (
-              <CourseTodoListCard key={list.id} list={list} items={itemsByListId.get(list.id) ?? []} />
-            ))}
+            {lists.map((list) => {
+              const listTasks = tasksByListId.get(list.id) ?? [];
+              const doneCount = listTasks.filter((task) => task.status === "Done").length;
+              const ratio = listTasks.length === 0 ? 0 : doneCount / listTasks.length;
+              return (
+                <div key={list.id} className="flex flex-col gap-1.5 rounded-control border border-panel-border p-3">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className="truncate text-sm text-text-primary">{list.name}</span>
+                    <span className="font-mono text-xs text-text-secondary">
+                      {doneCount}/{listTasks.length}
+                    </span>
+                  </div>
+                  <ProgressBar value={ratio} label={`${list.name} progress`} />
+                </div>
+              );
+            })}
           </div>
         )}
       </GlassPanel>

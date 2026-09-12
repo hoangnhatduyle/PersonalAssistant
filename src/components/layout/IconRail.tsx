@@ -30,21 +30,9 @@ const icons = {
       <path d="M4 6v12a2 2 0 0 0 2 2h11" />
     </svg>
   ),
-  deadlines: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} className="h-5 w-5">
-      <rect x="4" y="5" width="16" height="15" rx="2" />
-      <path d="M8 3v4M16 3v4M4 10h16" strokeLinecap="round" />
-    </svg>
-  ),
   tasks: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} className="h-5 w-5">
       <path d="m5 12 4 4 10-10" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  ),
-  notes: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} className="h-5 w-5">
-      <path d="M6 3h9l5 5v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" />
-      <path d="M9 12h6M9 16h6" strokeLinecap="round" />
     </svg>
   ),
   calendar: (
@@ -77,9 +65,7 @@ const icons = {
 const NAV_ITEMS: NavItem[] = [
   { href: "/", label: "Today", icon: icons.today },
   { href: "/courses", label: "Courses", icon: icons.courses },
-  { href: "/deadlines", label: "Deadlines", icon: icons.deadlines },
-  { href: "/tasks", label: "Tasks", icon: icons.tasks },
-  { href: "/notes", label: "Notes", icon: icons.notes },
+  { href: "/board", label: "Board", icon: icons.tasks },
   { href: "/calendar", label: "Calendar", icon: icons.calendar },
   { href: "/assistant", label: "Assistant", icon: icons.assistant },
   { href: "/settings", label: "Settings", icon: icons.settings },
@@ -146,7 +132,7 @@ export function IconRail({ email }: Props) {
         </div>
         {NAV_ITEMS.map((item) => {
           // Segment boundary, not a bare prefix — a future sibling route like
-          // /tasks-archive must not falsely highlight the /tasks nav item.
+          // /board-archive must not falsely highlight the /board nav item.
           const isActive = item.href === "/" ? pathname === "/" : pathname === item.href || pathname.startsWith(`${item.href}/`);
           return (
             <Link

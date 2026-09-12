@@ -39,7 +39,7 @@ describe("cascadeDeleteCourse", () => {
       deadlinesAffected: 2,
       remindersDismissed: 2,
       notesUnlinked: 1,
-      todoItemsAffected: 0,
+      boardCardsAffected: 0,
       suggestionsDismissed: 0,
     });
 
@@ -74,7 +74,7 @@ describe("cascadeDeleteCourse", () => {
       deadlinesAffected: 0,
       remindersDismissed: 0,
       notesUnlinked: 0,
-      todoItemsAffected: 0,
+      boardCardsAffected: 0,
       suggestionsDismissed: 0,
     });
 

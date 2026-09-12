@@ -40,7 +40,9 @@ export async function GET(request: NextRequest) {
 /**
  * POST /api/tasks — create (SPEC-API-004 AC-1/AC-6). A Task governs its own
  * reminders. A non-null person_id must reference a Person the caller owns
- * (People feature) — the guard_task_person_ownership DB trigger backstops this.
+ * (People feature) — the guard_task_person_ownership DB trigger backstops
+ * this. A non-null list_id (Board merge) must likewise reference a live
+ * todo_lists row the caller owns — guard_task_list_ownership backstops this.
  */
 export async function POST(request: NextRequest) {
   const ctx = await requireAuthenticatedContext();
@@ -60,6 +62,18 @@ export async function POST(request: NextRequest) {
       .maybeSingle();
     if (personError) return serverErrorResponse("person lookup failed", personError);
     if (!person) return notFoundResponse();
+  }
+
+  if (parsed.data.list_id) {
+    const { data: list, error: listError } = await supabase
+      .from("todo_lists")
+      .select("id")
+      .eq("id", parsed.data.list_id)
+      .eq("user_id", user.id)
+      .is("deleted_at", null)
+      .maybeSingle();
+    if (listError) return serverErrorResponse("todo list lookup failed", listError);
+    if (!list) return notFoundResponse();
   }
 
   const { data: task, error: insertError } = await supabase

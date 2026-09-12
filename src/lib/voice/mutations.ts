@@ -1,18 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/types";
-import type {
-  CoursePatch,
-  CoursePayload,
-  DeadlinePatch,
-  DeadlinePayload,
-  NotePatch,
-  NotePayload,
-  TaskPatch,
-  TaskPayload,
-  TodoItemPatch,
-  TodoItemPayload,
-  TodoListPayload,
-} from "@/lib/api/schemas";
+import type { CoursePatch, CoursePayload, DeadlinePatch, DeadlinePayload, NotePatch, NotePayload, TaskPatch, TaskPayload, TodoListPayload } from "@/lib/api/schemas";
 import { syncReminderForTarget } from "@/lib/api/reminders";
 import { cascadeDeleteCourse, cascadeDeleteTask } from "@/lib/api/cascade";
 import {
@@ -61,10 +49,7 @@ export type PendingMutation =
   | { targetType: "session"; operation: "create"; payload: SessionCreatePayload }
   | { targetType: "session"; operation: "delete"; targetId: string }
   | { targetType: "session"; operation: "transition"; targetId: string; event: SessionTransitionEvent }
-  | { targetType: "todo_list"; operation: "create"; payload: TodoListPayload }
-  | { targetType: "todo_item"; operation: "create"; payload: TodoItemPayload }
-  | { targetType: "todo_item"; operation: "update"; targetId: string; payload: TodoItemPatch }
-  | { targetType: "todo_item"; operation: "delete"; targetId: string };
+  | { targetType: "todo_list"; operation: "create"; payload: TodoListPayload };
 
 export interface MutationExecutionResult {
   summary: string;
@@ -90,6 +75,13 @@ async function assertLiveAndOwned(supabase: SupabaseClient<Database>, table: "co
   const { data, error } = await supabase.from(table).select("id").eq("id", id).eq("user_id", userId).is("deleted_at", null).maybeSingle();
   if (error) throw error;
   if (!data) throw new MutationTargetNotFoundError(`${table} ${id} not found or already deleted`);
+}
+
+/** Mirrors POST /api/tasks' list_id ownership check — defense in depth alongside the guard_task_list_ownership DB trigger. */
+async function assertLiveAndOwnedTodoList(supabase: SupabaseClient<Database>, listId: string, userId: string): Promise<void> {
+  const { data, error } = await supabase.from("todo_lists").select("id").eq("id", listId).eq("user_id", userId).is("deleted_at", null).maybeSingle();
+  if (error) throw error;
+  if (!data) throw new MutationTargetNotFoundError(`todo list ${listId} not found`);
 }
 
 /**
@@ -124,9 +116,6 @@ export async function executePendingMutation(
 
     case "todo_list":
       return executeTodoListMutation(supabase, userId, mutation);
-
-    case "todo_item":
-      return executeTodoItemMutation(supabase, userId, mutation);
   }
 }
 
@@ -145,7 +134,7 @@ async function executeCourseMutation(
         deadlinesDeleted: cascade.deadlinesAffected,
         remindersDismissed: cascade.remindersDismissed,
         notesUnlinked: cascade.notesUnlinked,
-        todoItemsDeleted: cascade.todoItemsAffected,
+        todoItemsDeleted: cascade.boardCardsAffected,
       },
     };
   }
@@ -326,6 +315,10 @@ async function executeTaskMutation(
   }
 
   if (mutation.operation === "create") {
+    if (mutation.payload.list_id) {
+      await assertLiveAndOwnedTodoList(supabase, mutation.payload.list_id, userId);
+    }
+
     const { data: task, error } = await supabase
       .from("tasks")
       .insert({ user_id: userId, ...mutation.payload })
@@ -345,6 +338,10 @@ async function executeTaskMutation(
   }
 
   // update
+  if (mutation.payload.list_id) {
+    await assertLiveAndOwnedTodoList(supabase, mutation.payload.list_id, userId);
+  }
+
   const { data: updated, error } = await supabase
     .from("tasks")
     .update(mutation.payload)
@@ -546,59 +543,5 @@ async function executeTodoListMutation(
     .select("*")
     .single();
   if (error) throw error;
-  return { summary: `Created to-do list "${list.name}".`, data: list };
-}
-
-async function executeTodoItemMutation(
-  supabase: SupabaseClient<Database>,
-  userId: string,
-  mutation: Extract<PendingMutation, { targetType: "todo_item" }>,
-): Promise<MutationExecutionResult> {
-  if (mutation.operation === "delete") {
-    const { data, error } = await supabase
-      .from("todo_items")
-      .update({ deleted_at: new Date().toISOString() })
-      .eq("id", mutation.targetId)
-      .eq("user_id", userId)
-      .is("deleted_at", null)
-      .select("id")
-      .maybeSingle();
-    if (error) throw error;
-    if (!data) throw new MutationTargetNotFoundError(`todo item ${mutation.targetId} not found or already deleted`);
-    return { summary: "To-do item deleted.", data: { id: mutation.targetId } };
-  }
-
-  if (mutation.operation === "create") {
-    // Mirrors POST /api/todo-items' list-ownership check.
-    const { data: list, error: listError } = await supabase
-      .from("todo_lists")
-      .select("id")
-      .eq("id", mutation.payload.list_id)
-      .eq("user_id", userId)
-      .is("deleted_at", null)
-      .maybeSingle();
-    if (listError) throw listError;
-    if (!list) throw new MutationTargetNotFoundError(`to-do list ${mutation.payload.list_id} not found`);
-
-    const { data: item, error } = await supabase
-      .from("todo_items")
-      .insert({ user_id: userId, ...mutation.payload })
-      .select("*")
-      .single();
-    if (error) throw error;
-    return { summary: `Created to-do item "${item.title}".`, data: item };
-  }
-
-  // update
-  const { data: updated, error } = await supabase
-    .from("todo_items")
-    .update(mutation.payload)
-    .eq("id", mutation.targetId)
-    .eq("user_id", userId)
-    .is("deleted_at", null)
-    .select("*")
-    .maybeSingle();
-  if (error) throw error;
-  if (!updated) throw new MutationTargetNotFoundError(`todo item ${mutation.targetId} not found or already deleted`);
-  return { summary: `Updated to-do item "${updated.title}".`, data: updated };
+  return { summary: `Created board list "${list.name}".`, data: list };
 }

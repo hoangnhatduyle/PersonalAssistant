@@ -5,7 +5,7 @@ export interface CourseDeleteCascadeResult {
   deadlinesAffected: number;
   remindersDismissed: number;
   notesUnlinked: number;
-  todoItemsAffected: number;
+  boardCardsAffected: number;
   suggestionsDismissed: number;
 }
 
@@ -29,7 +29,7 @@ export async function cascadeDeleteCourse(
     deadlinesAffected: data.deadlines_affected ?? 0,
     remindersDismissed: data.reminders_dismissed ?? 0,
     notesUnlinked: data.notes_unlinked ?? 0,
-    todoItemsAffected: data.todo_items_affected ?? 0,
+    boardCardsAffected: data.board_cards_affected ?? 0,
     suggestionsDismissed: data.suggestions_dismissed ?? 0,
   };
 }

@@ -60,7 +60,7 @@ export interface RespondToUserArgs {
 export interface ProposeMutationArgs {
   confidence: number;
   summary: string;
-  target_type: "course" | "deadline" | "task" | "note" | "reminder" | "session" | "todo_list" | "todo_item";
+  target_type: "course" | "deadline" | "task" | "note" | "reminder" | "session" | "todo_list";
   operation: "create" | "update" | "delete" | "acknowledge" | "transition";
   target_id: string | null;
   course_id: string | null;
@@ -82,7 +82,7 @@ export interface ProposeMutationArgs {
     | "user_marks_session_skipped"
     | null;
   snooze_until: string | null;
-  // Course (name/code/term) and Course To-Do list (name only, reusing the
+  // Course (name/code/term) and Board List (name only, reusing the
   // same field) create/update fields.
   name: string | null;
   code: string | null;
@@ -92,12 +92,11 @@ export interface ProposeMutationArgs {
   date: string | null;
   time: string | null;
   duration_minutes: number | null;
-  // Course To-Do item fields -- list_id/due_date/done are distinct from a
-  // Deadline/Task's course_id/due_at/status-transition equivalents since a
-  // to-do item has its own (non-course, non-transition) shape.
+  // Board List id (todo_lists row) -- optional on a Task create/update to
+  // place/move the Task into that list. Board merge
+  // (supabase/migrations/0029_board_merge.sql): a "Course To-Do item" is now
+  // just a Task with list_id set, so there's no separate item shape anymore.
   list_id: string | null;
-  due_date: string | null;
-  done: boolean | null;
 }
 
 /** get_personalization_suggestions and start_new_conversation both take no arguments. */
@@ -133,7 +132,7 @@ export const CONVERSATION_TOOLS = [
     function: {
       name: "get_schedule",
       description:
-        'Look up the user\'s Deadlines, Tasks, open Course To-Do / custom-project items, Course meeting/class occurrences, planned Deadline work Sessions, and personal Appointments/Events due or happening within a time window. Returns structured data already grouped by day and sorted by priority -- narrate it yourself in prose, never invent your own ordering, and never re-rank it. An Appointment/Event\'s context may note a scheduling conflict with another appointment -- always relay that plainly. Today\'s schedule (window: "date", date: today) is already provided to you in the system prompt -- do not call this tool for today again. Call it with window: "date" for any other single day (resolve "yesterday", "tomorrow", "3 days ago", "next Tuesday", etc. into a YYYY-MM-DD date yourself first, the same way you resolve due_at for a mutation), or window: "week"/"unscoped" for a range.',
+        'Look up the user\'s Deadlines, Tasks (including ones filed under a Board List), Course meeting/class occurrences, planned Deadline work Sessions, and personal Appointments/Events due or happening within a time window. Returns structured data already grouped by day and sorted by priority -- narrate it yourself in prose, never invent your own ordering, and never re-rank it. An Appointment/Event\'s context may note a scheduling conflict with another appointment -- always relay that plainly. Today\'s schedule (window: "date", date: today) is already provided to you in the system prompt -- do not call this tool for today again. Call it with window: "date" for any other single day (resolve "yesterday", "tomorrow", "3 days ago", "next Tuesday", etc. into a YYYY-MM-DD date yourself first, the same way you resolve due_at for a mutation), or window: "week"/"unscoped" for a range.',
       strict: true,
       parameters: {
         type: "object",
@@ -160,7 +159,7 @@ export const CONVERSATION_TOOLS = [
     function: {
       name: "get_person_schedule",
       description:
-        "Look up a specific tracked Person's (not the user's own) schedule for a time window -- use when the user asks about someone else by name or relationship (\"my sister's schedule\", \"is Châu free right now\", \"do I need to pick her up\"). Returns ONLY that Person's Course meeting/class occurrences and Tasks -- never Deadlines (a tracked Person is never assigned a Deadline directly in this product) and never Course To-Do items (those only ever belong to the account owner). Don't be surprised if a Person's day looks sparser than the user's own -- that's expected, not a sign something is missing. person_id MUST be an id from the `people` list in the entity context provided to you -- match it by the person's relationship field or name as mentioned in the request. Never invent a person_id, and never call this for the user's own schedule (use get_schedule for that). If no person in the entity context matches what the user said, do not guess -- call respond_to_user explaining you don't have anyone tracked under that name/relationship.",
+        "Look up a specific tracked Person's (not the user's own) schedule for a time window -- use when the user asks about someone else by name or relationship (\"my sister's schedule\", \"is Châu free right now\", \"do I need to pick her up\"). Returns ONLY that Person's Course meeting/class occurrences and Tasks -- never Deadlines (a tracked Person is never assigned a Deadline directly in this product). Don't be surprised if a Person's day looks sparser than the user's own -- that's expected, not a sign something is missing. person_id MUST be an id from the `people` list in the entity context provided to you -- match it by the person's relationship field or name as mentioned in the request. Never invent a person_id, and never call this for the user's own schedule (use get_schedule for that). If no person in the entity context matches what the user said, do not guess -- call respond_to_user explaining you don't have anyone tracked under that name/relationship.",
       strict: true,
       parameters: {
         type: "object",
@@ -261,25 +260,24 @@ export const CONVERSATION_TOOLS = [
     function: {
       name: "propose_mutation",
       description:
-        "Propose a single explicit, unambiguous data change the user just instructed: create/update/delete a Deadline, Task, Note, or Course; mark a Deadline's or Task's status via transition (\"mark done\", \"mark in progress\", \"mark submitted\", \"cancel\"); acknowledge/dismiss/snooze a Reminder; create/delete a Deadline Session or mark one done/skipped; create a Course To-Do list; create/update/delete a Course To-Do item (including marking it done via `done`). Call this by itself, never alongside another tool call. Never invent an id -- target_id/course_id/deadline_id/list_id must come from the entity context provided to you. If you are not confident this is really a command (versus a question or hypothetical) or an id does not clearly match the context, set confidence below 0.95 rather than guessing -- do not silently answer via respond_to_user instead just because you are unsure, since that skips the confirmation step entirely.",
+        "Propose a single explicit, unambiguous data change the user just instructed: create/update/delete a Deadline, Task, Note, or Course; mark a Deadline's or Task's status via transition (\"mark done\", \"mark in progress\", \"mark submitted\", \"cancel\"); acknowledge/dismiss/snooze a Reminder; create/delete a Deadline Session or mark one done/skipped; create a Board List (a simple named container for Task cards, e.g. \"Misc\" or a per-course reading list) -- optionally place a Task into one via list_id on a Task create/update. Call this by itself, never alongside another tool call. Never invent an id -- target_id/course_id/deadline_id/list_id must come from the entity context provided to you. If you are not confident this is really a command (versus a question or hypothetical) or an id does not clearly match the context, set confidence below 0.95 rather than guessing -- do not silently answer via respond_to_user instead just because you are unsure, since that skips the confirmation step entirely.",
       strict: true,
       parameters: {
         type: "object",
         properties: {
           confidence: { type: "number", description: "0-1, your genuine confidence this is the right mutation to propose." },
           summary: { type: "string", description: "One sentence describing the action, to be spoken back to the user for confirmation." },
-          target_type: { type: "string", enum: ["course", "deadline", "task", "note", "reminder", "session", "todo_list", "todo_item"] },
+          target_type: { type: "string", enum: ["course", "deadline", "task", "note", "reminder", "session", "todo_list"] },
           operation: { type: "string", enum: ["create", "update", "delete", "acknowledge", "transition"] },
           target_id: {
             type: ["string", "null"],
-            description:
-              "An id from the provided entity context (deadlines/tasks/todoItems/sessions lists as appropriate). Null only for a create.",
+            description: "An id from the provided entity context (deadlines/tasks/sessions lists as appropriate). Null only for a create.",
           },
-          course_id: { type: ["string", "null"], description: "A course id from the entity context. Used by a Deadline create and, optionally, a Course To-Do list create." },
+          course_id: { type: ["string", "null"], description: "A course id from the entity context. Used by a Deadline create and, optionally, a Board List create." },
           title: { type: ["string", "null"], description: "Deadline/Task title, or a new Deadline Session's title." },
           due_at: { type: ["string", "null"], description: "Deadline/Task due date-time. ISO 8601 datetime with a UTC offset." },
           body: { type: ["string", "null"], description: "Note body." },
-          priority: { type: ["string", "null"], enum: ["Low", "Medium", "High", "Urgent", null], description: "Deadline/Task/Course To-Do item priority." },
+          priority: { type: ["string", "null"], enum: ["Low", "Medium", "High", "Urgent", null], description: "Deadline/Task priority." },
           reminder_lead_minutes: { type: ["integer", "null"] },
           event: {
             type: ["string", "null"],
@@ -300,16 +298,18 @@ export const CONVERSATION_TOOLS = [
               'Required for operation "transition"/"acknowledge". Deadline: user_marks_in_progress/user_marks_submitted/user_confirms_done/user_cancels. Task: user_marks_done/user_cancels. Session: user_marks_session_done/user_marks_session_skipped. Reminder (acknowledge): user_acknowledges/user_dismisses/user_snoozes. Null otherwise.',
           },
           snooze_until: { type: ["string", "null"], description: "Reminder acknowledge with event user_snoozes only." },
-          name: { type: ["string", "null"], description: "Course name, or a new Course To-Do list's name." },
+          name: { type: ["string", "null"], description: "Course name, or a new Board List's name." },
           code: { type: ["string", "null"], description: "Course code (e.g. \"CS 101\")." },
           term: { type: ["string", "null"], description: "Course term (e.g. \"Fall 2026\")." },
           deadline_id: { type: ["string", "null"], description: "A deadline id from the entity context. Required to create a Deadline Session." },
           date: { type: ["string", "null"], description: "A Deadline Session's date, YYYY-MM-DD, resolved from relative phrasing the same way due_at is." },
           time: { type: ["string", "null"], description: "A Deadline Session's free-text time label (e.g. \"7:00 PM\"), if the user gave one." },
           duration_minutes: { type: ["integer", "null"], description: "A Deadline Session's planned duration in minutes, if the user gave one." },
-          list_id: { type: ["string", "null"], description: "A Course To-Do list id from the entity context. Required to create a to-do item." },
-          due_date: { type: ["string", "null"], description: "A Course To-Do item's due date, YYYY-MM-DD (no time-of-day)." },
-          done: { type: ["boolean", "null"], description: "Course To-Do item update only: true marks it complete, false marks it incomplete. Null otherwise." },
+          list_id: {
+            type: ["string", "null"],
+            description:
+              "A Board List id from the `todoLists` entity context, e.g. the account owner's grocery/reading list. Optional on a Task create/update to place/move the Task into that list; null leaves/puts it Unsorted. Not used for any other target_type.",
+          },
         },
         required: [
           "confidence",
@@ -333,8 +333,6 @@ export const CONVERSATION_TOOLS = [
           "time",
           "duration_minutes",
           "list_id",
-          "due_date",
-          "done",
         ],
         additionalProperties: false,
       },

@@ -84,6 +84,25 @@ describe("taskPayloadSchema", () => {
   it("rejects a missing title", () => {
     expect(taskPayloadSchema.safeParse({}).success).toBe(false);
   });
+
+  // Board merge (supabase/migrations/0029_board_merge.sql): a Task is also a
+  // Board Card now, addressable by list_id/position.
+  it("accepts list_id and position", () => {
+    const parsed = taskPayloadSchema.safeParse({ title: "Buy milk", list_id: "550e8400-e29b-41d4-a716-446655440000", position: 2 });
+    expect(parsed.success).toBe(true);
+  });
+
+  it("accepts a null list_id (Unsorted)", () => {
+    expect(taskPayloadSchema.safeParse({ title: "Buy milk", list_id: null }).success).toBe(true);
+  });
+
+  it("still rejects status on the patch schema alongside list_id/position", () => {
+    const parsed = taskPatchSchema.safeParse({ status: "Open", list_id: "550e8400-e29b-41d4-a716-446655440000", position: 1 });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data).toEqual({ list_id: "550e8400-e29b-41d4-a716-446655440000", position: 1 });
+    }
+  });
 });
 
 describe("reminderAckSchema", () => {

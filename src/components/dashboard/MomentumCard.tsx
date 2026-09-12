@@ -6,12 +6,11 @@ import { GlassPanel } from "@/components/ui/GlassPanel";
 import { buildUpcomingItems } from "@/lib/dashboard/upcoming-items";
 import { buildCompletionTrend, buildCompletedThisWeek, type CompletedItem } from "@/lib/dashboard/completion-trend";
 import { formatRelativeTime } from "@/lib/format-relative-time";
-import type { DeadlineRow, TaskRow, TodoItemRow } from "@/lib/api/entity-types";
+import type { DeadlineRow, TaskRow } from "@/lib/api/entity-types";
 
 type Props = {
   deadlines: DeadlineRow[];
   tasks: TaskRow[];
-  todoItems: TodoItemRow[];
 };
 
 const COLLAPSED_LIMIT = 5;
@@ -19,7 +18,6 @@ const COLLAPSED_LIMIT = 5;
 const KIND_LABEL: Record<CompletedItem["kind"], string> = {
   deadline: "Deadline",
   task: "Task",
-  todo: "To-Do",
 };
 
 const SPARKLINE_WIDTH = 140;
@@ -29,20 +27,19 @@ const SPARKLINE_TOP = 4;
 const SPARKLINE_BASELINE = 36;
 
 /**
- * "Focus hours remaining" until the nearest upcoming Deadline, Task, or
- * course To-Do item with a due date. Course-meeting time isn't factored in:
- * meeting_pattern has no parser until the Calendar step. The sparkline is a
- * real trend (resolved Deadlines+Tasks+To-Do items per day, from updated_at),
- * not a decorative fabrication.
+ * "Focus hours remaining" until the nearest upcoming Deadline or Task with a
+ * due date. Course-meeting time isn't factored in: meeting_pattern has no
+ * parser until the Calendar step. The sparkline is a real trend (resolved
+ * Deadlines+Tasks per day, from updated_at), not a decorative fabrication.
  */
-export function MomentumCard({ deadlines, tasks, todoItems }: Props) {
+export function MomentumCard({ deadlines, tasks }: Props) {
   const [expanded, setExpanded] = useState(false);
   const now = new Date();
-  const nearestItem = buildUpcomingItems({ deadlines, tasks, todoItems }).find((item) => item.at.getTime() > now.getTime());
+  const nearestItem = buildUpcomingItems({ deadlines, tasks }).find((item) => item.at.getTime() > now.getTime());
   const hoursRemaining = nearestItem ? Math.round((nearestItem.at.getTime() - now.getTime()) / 3_600_000) : null;
 
-  const trend = buildCompletionTrend(deadlines, tasks, todoItems);
-  const completedItems = buildCompletedThisWeek(deadlines, tasks, todoItems);
+  const trend = buildCompletionTrend(deadlines, tasks);
+  const completedItems = buildCompletedThisWeek(deadlines, tasks);
   const max = Math.max(1, ...trend);
   const step = trend.length > 1 ? (SPARKLINE_WIDTH - SPARKLINE_PAD * 2) / (trend.length - 1) : 0;
   const points = trend
@@ -69,7 +66,7 @@ export function MomentumCard({ deadlines, tasks, todoItems }: Props) {
           </Link>
         </div>
       ) : (
-        <p className="text-sm text-text-secondary">No upcoming deadlines, tasks, or to-dos on the horizon.</p>
+        <p className="text-sm text-text-secondary">No upcoming deadlines or tasks on the horizon.</p>
       )}
 
       <div>

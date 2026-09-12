@@ -8,7 +8,6 @@ import {
   createPerson,
   createSession,
   createTask,
-  createTodoItem,
   createTodoList,
   walkTransitions,
   type TestUser,
@@ -29,16 +28,13 @@ describe("loadSchedule", () => {
     userId = user.userId;
   });
 
-  it("excludes completed/done items and items outside the requested 'today' window, includes open Course To-Do items, and carries course/list context", async () => {
+  it("excludes completed/done items and items outside the requested 'today' window, includes a listed Task, and carries course/list context", async () => {
     const courseId = await createCourse(admin, userId, { name: "Schedule scoping course" });
     const listId = await createTodoList(admin, userId, { name: "Project: Scoping canary" });
 
     const now = new Date();
     const todayNoonUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 12, 0, 0)).toISOString();
     const tomorrowNoonUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1, 12, 0, 0)).toISOString();
-    const todayDateKey = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}-${String(now.getUTCDate()).padStart(2, "0")}`;
-    const tomorrowDate = new Date(now.getTime() + 86_400_000);
-    const tomorrowDateKey = `${tomorrowDate.getUTCFullYear()}-${String(tomorrowDate.getUTCMonth() + 1).padStart(2, "0")}-${String(tomorrowDate.getUTCDate()).padStart(2, "0")}`;
 
     await createDeadline(admin, userId, courseId, { title: "Open deadline due today", due_at: todayNoonUtc });
 
@@ -55,36 +51,37 @@ describe("loadSchedule", () => {
 
     await createDeadline(admin, userId, courseId, { title: "Deadline due tomorrow", due_at: tomorrowNoonUtc });
 
-    // Course To-Do / custom-project item due today -- must show up just
-    // like a Deadline or Task would.
-    await createTodoItem(admin, userId, listId, { title: "Open todo item due today", due_date: todayDateKey });
-    const doneTodoItemId = await createTodoItem(admin, userId, listId, { title: "Done todo item due today", due_date: todayDateKey });
-    await admin.from("todo_items").update({ is_done: true }).eq("id", doneTodoItemId);
-    await createTodoItem(admin, userId, listId, { title: "Todo item due tomorrow", due_date: tomorrowDateKey });
+    // A Task filed under a Board List (Board merge, 0029_board_merge.sql) --
+    // must show up and carry its list's name as context, just like any
+    // other Task, but labeled to distinguish it from the plain task above.
+    await createTask(admin, userId, { title: "Listed task due today", due_at: todayNoonUtc, list_id: listId });
+    const doneListedTaskId = await createTask(admin, userId, { title: "Done listed task due today", due_at: todayNoonUtc, list_id: listId });
+    await walkTransitions(admin, "tasks", doneListedTaskId, "status", ["Done"]);
+    await createTask(admin, userId, { title: "Listed task due tomorrow", due_at: tomorrowNoonUtc, list_id: listId });
 
     const result = await loadSchedule(user.client, userId, "today", now);
 
     const titles = result.scheduleItems.map((item) => item.title);
     expect(titles).toContain("Open deadline due today");
     expect(titles).toContain("Open task due today");
-    expect(titles).toContain("Open todo item due today");
+    expect(titles).toContain("Listed task due today");
     expect(titles).not.toContain("Completed deadline due today");
     expect(titles).not.toContain("Done task due today");
-    expect(titles).not.toContain("Done todo item due today");
+    expect(titles).not.toContain("Done listed task due today");
     expect(titles).not.toContain("Deadline due tomorrow");
-    expect(titles).not.toContain("Todo item due tomorrow");
+    expect(titles).not.toContain("Listed task due tomorrow");
 
     // Course/list name context, for the "Title (context)" narration
     // convention the conversational core's system prompt asks for.
     const deadlineItem = result.scheduleItems.find((item) => item.title === "Open deadline due today");
     expect(deadlineItem?.context).toBe("Schedule scoping course");
-    const todoItem = result.scheduleItems.find((item) => item.title === "Open todo item due today");
-    expect(todoItem?.context).toBe("Project: Scoping canary");
+    const listedTaskItem = result.scheduleItems.find((item) => item.title === "Listed task due today");
+    expect(listedTaskItem?.context).toBe("Project: Scoping canary");
 
     // Everything due today lands in a single ranked day-group.
     expect(result.rankedSchedule).toHaveLength(1);
     const rankedTitles = result.rankedSchedule[0].items.map((item) => item.title);
-    expect(rankedTitles).toEqual(expect.arrayContaining(["Open deadline due today", "Open task due today", "Open todo item due today"]));
+    expect(rankedTitles).toEqual(expect.arrayContaining(["Open deadline due today", "Open task due today", "Listed task due today"]));
 
     const courseNames = result.courses.map((c) => c.name);
     expect(courseNames).toContain("Schedule scoping course");
@@ -173,25 +170,6 @@ describe("loadSchedule", () => {
     const courseNames = result.courses.map((c) => c.name);
     expect(courseNames).toContain("Sister's course");
     expect(courseNames).not.toContain("My own course");
-  });
-
-  // Regression: todoItemsQuery previously ran unconditionally regardless of
-  // personId, so a tracked Person's schedule silently included the account
-  // owner's own Course To-Do items -- the direct, confirmed cause of a real
-  // observed bug (asking about a tracked Person's schedule returned the
-  // owner's own to-dos, mislabeled as hers).
-  it("with a personId, never includes the account owner's own Course To-Do items", async () => {
-    const { userId: freshUserId, client } = await createAuthenticatedUser();
-    const personId = await createPerson(admin, freshUserId, { name: "Sister" });
-
-    const listId = await createTodoList(admin, freshUserId, { name: "My own project" });
-    const todayDateKey = new Date().toISOString().slice(0, 10);
-    await createTodoItem(admin, freshUserId, listId, { title: "My own todo due today", due_date: todayDateKey });
-
-    const result = await loadSchedule(client, freshUserId, "today", undefined, personId);
-
-    expect(result.scheduleItems.map((item) => item.kind)).not.toContain("todo");
-    expect(result.scheduleItems.map((item) => item.title)).not.toContain("My own todo due today");
   });
 
   it("includes the account owner's own planned Deadline Sessions, with the Deadline's title as context", async () => {

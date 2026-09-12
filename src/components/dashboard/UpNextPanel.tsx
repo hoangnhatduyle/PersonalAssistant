@@ -11,7 +11,7 @@ import { formatRelativeTime } from "@/lib/format-relative-time";
 import { DEADLINE_STATUS_TONE, EVENT_STATUS_TONE, SESSION_STATUS_TONE, TASK_STATUS_TONE } from "@/lib/status-colors";
 import { ITEM_KIND_FILL_CLASS, ITEM_KIND_LABEL } from "@/lib/dashboard/item-kind";
 import { EventTransitionButtons } from "@/components/calendar/EventTransitionButtons";
-import type { AppointmentRow, CourseRow, DeadlineRow, PersonRow, ReminderRow, TaskRow, TodoItemRow, TodoListRow } from "@/lib/api/entity-types";
+import type { AppointmentRow, CourseRow, DeadlineRow, PersonRow, ReminderRow, TaskRow, TodoListRow } from "@/lib/api/entity-types";
 
 type Props = {
   deadlines: DeadlineRow[];
@@ -19,7 +19,6 @@ type Props = {
   /** Tracked People (People feature) — for labeling a Task that belongs to someone other than the account owner. */
   people: PersonRow[];
   reminders: ReminderRow[];
-  todoItems: TodoItemRow[];
   todoLists: TodoListRow[];
   courses: CourseRow[];
   /** Deadline Sessions — appointments rows tagged category "Session". */
@@ -88,7 +87,7 @@ function useIsMounted(): boolean {
  * filterable upcoming-items queue on the right. Replaces the old
  * NowWidget + NextSequenceQueue pair to eliminate redundant item lists.
  */
-export function UpNextPanel({ deadlines, tasks, people, reminders, todoItems, todoLists, courses, appointments }: Props) {
+export function UpNextPanel({ deadlines, tasks, people, reminders, todoLists, courses, appointments }: Props) {
   const isMounted = useIsMounted();
   const [, forceTick] = useState(0);
   const [timeWindow, setTimeWindow] = useState<TimeWindowFilter>("today");
@@ -103,13 +102,16 @@ export function UpNextPanel({ deadlines, tasks, people, reminders, todoItems, to
   // Clock ring items (top 5 from all entity types including reminders and sessions)
   const ringItems = buildUpcomingItems({ deadlines, tasks, reminders, appointments, people, courses }).slice(0, RING_ITEM_LIMIT);
 
-  // Queue items (deadlines, tasks, todos, reminders, sessions — full union)
-  const allQueueItems = buildUpcomingItems({ deadlines, tasks, reminders, todoItems, appointments, people, courses });
+  // Queue items (deadlines, tasks, reminders, sessions — full union)
+  const allQueueItems = buildUpcomingItems({ deadlines, tasks, reminders, appointments, people, courses });
   const deadlineById = new Map(deadlines.map((d) => [d.id, d]));
   const taskById = new Map(tasks.map((t) => [t.id, t]));
   const appointmentById = new Map(appointments.map((a) => [a.id, a]));
 
-  const todoItemLabelMap = useMemo(() => {
+  // Board merge: a Task can belong to a Board List (task.list_id) the same
+  // way a Course To-Do item used to belong to a todo_lists row — resolve
+  // that list's (and its course's) name for display the same way.
+  const taskListLabelMap = useMemo(() => {
     const courseNameById = new Map(courses.map((c) => [c.id, c.name]));
     const listInfoMap = new Map<string, { listName: string; courseName?: string }>();
     for (const list of todoLists) {
@@ -117,12 +119,13 @@ export function UpNextPanel({ deadlines, tasks, people, reminders, todoItems, to
       listInfoMap.set(list.id, { listName: list.name, courseName: courseName ?? undefined });
     }
     const result = new Map<string, { listName: string; courseName?: string }>();
-    for (const item of todoItems) {
-      const info = listInfoMap.get(item.list_id);
-      if (info) result.set(item.id, info);
+    for (const task of tasks) {
+      if (!task.list_id) continue;
+      const info = listInfoMap.get(task.list_id);
+      if (info) result.set(task.id, info);
     }
     return result;
-  }, [todoItems, todoLists, courses]);
+  }, [tasks, todoLists, courses]);
 
   const queueItems = now ? filterUpcomingItemsByTimeWindow(allQueueItems, timeWindow, now) : allQueueItems;
   const emptyCopy = EMPTY_COPY[timeWindow];
@@ -286,10 +289,11 @@ export function UpNextPanel({ deadlines, tasks, people, reminders, todoItems, to
                         ? EVENT_STATUS_TONE[status as NonNullable<AppointmentRow["event_status"]>]
                         : undefined;
               const showPastDueTag = item.urgent && item.kind !== "deadline";
-              const todoInfo = item.kind === "todo" ? todoItemLabelMap.get(item.id) : undefined;
-              const kindLabel = item.kind === "todo" ? (todoInfo?.listName ?? ITEM_KIND_LABEL.todo) : ITEM_KIND_LABEL[item.kind];
+              const taskListInfo = item.kind === "task" ? taskListLabelMap.get(item.id) : undefined;
+              const kindLabel = ITEM_KIND_LABEL[item.kind];
 
-              const courseName = todoInfo?.courseName;
+              const listName = taskListInfo?.listName;
+              const courseName = taskListInfo?.courseName;
               const taskTags = item.kind === "task" ? taskById.get(item.id)?.tags ?? [] : [];
 
               return (
@@ -306,6 +310,8 @@ export function UpNextPanel({ deadlines, tasks, people, reminders, todoItems, to
                       <span className="font-mono text-xs text-text-secondary">
                         {kindLabel} · {now ? formatRelativeTime(item.at, now) : ""}
                       </span>
+                      {/* A Board List named after its own course (e.g. "Machine Learning" list under a "Machine Learning" course) would otherwise show the same text twice. */}
+                      {listName && listName !== courseName && <Badge tone="neutral">{listName}</Badge>}
                       {courseName && <Badge tone="accent">{courseName}</Badge>}
                       {item.kind === "task" && item.personId && <Badge tone="accent">For {item.personLabel}</Badge>}
                       {taskTags.map((tag) => (

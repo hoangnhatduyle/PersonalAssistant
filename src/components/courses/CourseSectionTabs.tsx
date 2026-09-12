@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 
 const TABS = [
   { href: "/courses", label: "Courses" },
-  { href: "/courses/todos", label: "To-Do" },
+  { href: "/courses/deadlines", label: "Deadlines" },
 ];
 
 /** Segmented tab switcher for the Courses section — styling mirrors PersonFilterToggle's pill-button treatment. */

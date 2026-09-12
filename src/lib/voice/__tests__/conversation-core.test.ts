@@ -48,7 +48,7 @@ vi.mock("@/lib/voice/intent", async (importOriginal) => {
     ...actual,
     loadEntityContext: vi
       .fn()
-      .mockResolvedValue({ courses: [], deadlines: [], tasks: [], todoLists: [], todoItems: [], sessions: [], knowledgeSources: [], people: [] }),
+      .mockResolvedValue({ courses: [], deadlines: [], tasks: [], todoLists: [], sessions: [], knowledgeSources: [], people: [] }),
     loadUserTimezone: vi.fn().mockResolvedValue("UTC"),
   };
 });
@@ -237,7 +237,6 @@ describe("runConversationTurn", () => {
         deadlines: [],
         tasks: [],
         todoLists: [],
-        todoItems: [],
         sessions: [],
         knowledgeSources: [],
         people: [{ id: PERSON_ID, name: "Châu", relationship: "sister" }],
@@ -273,7 +272,6 @@ describe("runConversationTurn", () => {
         deadlines: [],
         tasks: [],
         todoLists: [],
-        todoItems: [],
         sessions: [],
         knowledgeSources: [],
         people: [{ id: PERSON_ID, name: "Châu", relationship: null }],
@@ -301,7 +299,6 @@ describe("runConversationTurn", () => {
         deadlines: [],
         tasks: [],
         todoLists: [],
-        todoItems: [],
         sessions: [],
         knowledgeSources: [],
         people: [{ id: PERSON_ID, name: "Châu", relationship: "sister" }],
@@ -341,7 +338,6 @@ describe("runConversationTurn", () => {
         deadlines: [{ id: DEADLINE_ID, title: "Homework 1", course_id: "course-1" }],
         tasks: [],
         todoLists: [],
-        todoItems: [],
         sessions: [],
         knowledgeSources: [],
         people: [],
@@ -374,7 +370,6 @@ describe("runConversationTurn", () => {
         deadlines: [{ id: DEADLINE_ID, title: "Homework 1", course_id: "course-1" }],
         tasks: [],
         todoLists: [],
-        todoItems: [],
         sessions: [],
         knowledgeSources: [],
         people: [],
@@ -399,7 +394,6 @@ describe("runConversationTurn", () => {
         deadlines: [{ id: DEADLINE_ID, title: "Homework 1", course_id: "course-1" }],
         tasks: [],
         todoLists: [],
-        todoItems: [],
         sessions: [],
         knowledgeSources: [],
         people: [],

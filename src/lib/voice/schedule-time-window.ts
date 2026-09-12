@@ -86,7 +86,7 @@ export function localMidnightUtc(year: number, month: number, day: number, timeZ
  * correctly on its own (e.g. day 31 of a 30-day month rolls into next
  * month) -- no separate calendar-math needed here.
  *
- * For anchoring a date-only value (e.g. todo_items.due_date, which has no
+ * For anchoring a date-only value (e.g. appointments.date, which has no
  * time-of-day or timezone of its own) to a real, timezone-correct instant
  * for day-bucketing (schedule-formatting.ts's rankScheduleItems) -- unlike
  * a bare `new Date(dateKey + "T23:59:59.999")`, which parses in whatever
@@ -170,7 +170,7 @@ function dateKey(year: number, month: number, day: number): string {
 /**
  * Same window semantics as resolveScheduleWindowBounds, expressed as plain
  * calendar-date strings instead of UTC instants -- for filtering a `date`
- * column (e.g. todo_items.due_date), which has no time-of-day/timezone
+ * column (e.g. appointments.date), which has no time-of-day/timezone
  * component to convert. Pure calendar-day arithmetic (never converts back
  * through a real timezone), so unlike the instant-based resolver above this
  * has no DST edge case at all. Returns null for "unscoped". Same

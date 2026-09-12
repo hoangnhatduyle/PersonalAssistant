@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildDrivingQueue } from "../build-driving-queue";
-import { makeAppointment, makeDeadline, makePerson, makeTask, makeTodoItem } from "@/lib/dashboard/__tests__/fixtures";
+import { makeAppointment, makeDeadline, makePerson, makeTask } from "@/lib/dashboard/__tests__/fixtures";
 import type { CalendarEvent } from "@/lib/calendar/build-week-events";
 
 function makeCalendarEvent(overrides: Partial<CalendarEvent> = {}): CalendarEvent {
@@ -22,19 +22,15 @@ function makeCalendarEvent(overrides: Partial<CalendarEvent> = {}): CalendarEven
 const REFERENCE_DATE = new Date("2026-01-04T08:00:00");
 
 describe("buildDrivingQueue", () => {
-  it("interleaves today's calendar events with deadlines/tasks/todos by time", () => {
+  it("interleaves today's calendar events with deadlines/tasks by time", () => {
     const queue = buildDrivingQueue({
       deadlines: [makeDeadline({ id: "d-1", due_at: "2026-01-04T18:00:00" })],
       tasks: [makeTask({ id: "t-1", due_at: "2026-01-04T09:00:00" })],
-      todoItems: [makeTodoItem({ id: "todo-1", due_date: "2026-01-04" })],
       todayCalendarEvents: [makeCalendarEvent({ id: "evt-1", startMinutes: 10 * 60 })],
       referenceDate: REFERENCE_DATE,
     });
 
-    // Todo items anchor to end-of-day (23:59:59.999, per buildUpcomingItems)
-    // so they sort last relative to a same-day deadline/task/event with an
-    // earlier clock time.
-    expect(queue.map((item) => item.id)).toEqual(["t-1", "evt-1", "d-1", "todo-1"]);
+    expect(queue.map((item) => item.id)).toEqual(["t-1", "evt-1", "d-1"]);
     expect(queue.find((item) => item.id === "evt-1")?.kind).toBe("event");
   });
 

@@ -6,7 +6,7 @@ const MAX_RESULTS_PER_TYPE = 5;
 
 export interface SearchResult {
   id: string;
-  type: "course" | "deadline" | "task" | "note";
+  type: "course" | "deadline" | "task";
   title: string;
   subtitle: string | null;
   href: string;
@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
   const pattern = `%${q}%`;
   const results: SearchResult[] = [];
 
-  const [coursesRes, deadlinesRes, tasksRes, notesRes] = await Promise.all([
+  const [coursesRes, deadlinesRes, tasksRes] = await Promise.all([
     supabase
       .from("courses")
       .select("id, name, code, term")
@@ -45,19 +45,11 @@ export async function GET(request: NextRequest) {
       .is("deleted_at", null)
       .ilike("title", pattern)
       .limit(MAX_RESULTS_PER_TYPE),
-    supabase
-      .from("notes")
-      .select("id, body")
-      .eq("user_id", user.id)
-      .is("deleted_at", null)
-      .ilike("body", pattern)
-      .limit(MAX_RESULTS_PER_TYPE),
   ]);
 
   if (coursesRes.error) return serverErrorResponse("search courses failed", coursesRes.error);
   if (deadlinesRes.error) return serverErrorResponse("search deadlines failed", deadlinesRes.error);
   if (tasksRes.error) return serverErrorResponse("search tasks failed", tasksRes.error);
-  if (notesRes.error) return serverErrorResponse("search notes failed", notesRes.error);
 
   for (const course of coursesRes.data ?? []) {
     results.push({
@@ -75,7 +67,7 @@ export async function GET(request: NextRequest) {
       type: "deadline",
       title: deadline.title,
       subtitle: deadline.status,
-      href: `/deadlines/${deadline.id}`,
+      href: `/courses/deadlines/${deadline.id}`,
     });
   }
 
@@ -85,18 +77,7 @@ export async function GET(request: NextRequest) {
       type: "task",
       title: task.title,
       subtitle: task.status,
-      href: `/tasks/${task.id}`,
-    });
-  }
-
-  for (const note of notesRes.data ?? []) {
-    const preview = note.body.length > 80 ? `${note.body.slice(0, 80)}…` : note.body;
-    results.push({
-      id: note.id,
-      type: "note",
-      title: preview,
-      subtitle: null,
-      href: `/notes`,
+      href: `/board/${task.id}`,
     });
   }
 

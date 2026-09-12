@@ -60,6 +60,8 @@ export function makeTask(overrides: Partial<TaskRow> = {}): TaskRow {
     reminder_lead_minutes: 30,
     person_id: null,
     priority: null,
+    list_id: null,
+    position: 0,
     created_at: "2026-01-01T00:00:00Z",
     updated_at: "2026-01-01T00:00:00Z",
     deleted_at: null,

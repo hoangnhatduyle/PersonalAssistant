@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch, toQueryString } from "@/lib/http/client";
-import { todoItemKeys, todoListKeys } from "@/lib/query/keys";
+import { taskKeys, todoListKeys } from "@/lib/query/keys";
 import type { TodoListPatch, TodoListPayload } from "@/lib/api/schemas";
 import type { TodoListRow } from "@/lib/api/entity-types";
 
@@ -64,7 +64,10 @@ export function useDeleteTodoList(id: string) {
       // Removed, not just invalidated — see useDeleteTask's onSuccess for why.
       queryClient.removeQueries({ queryKey: todoListKeys.detail(id) });
       queryClient.invalidateQueries({ queryKey: todoListKeys.all });
-      queryClient.invalidateQueries({ queryKey: todoItemKeys.all });
+      // Board merge: a list's cards are tasks now, not todo_items — deleting
+      // the list soft-deletes them (soft_delete_todo_list_cascade), so task
+      // queries need invalidating too.
+      queryClient.invalidateQueries({ queryKey: taskKeys.all });
     },
   });
 }

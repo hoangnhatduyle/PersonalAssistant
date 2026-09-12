@@ -28,8 +28,9 @@ const meetingBlockSchema = z
 
 const RECURRENCE_DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 
-// Shared across Deadlines, Tasks, and Course To-Do items
-// (supabase/migrations/0021_item_priority.sql's item_priority enum).
+// Shared across Deadlines and Tasks (which also cover what used to be a
+// separate Course To-Do item before the board merge — see
+// supabase/migrations/0021_item_priority.sql's item_priority enum).
 // nullable (not just optional): a client must be able to explicitly clear a
 // previously-set priority back to unset via `null` over JSON, which a plain
 // .optional() enum can't express (undefined can't be sent over the wire).
@@ -96,10 +97,10 @@ export type DeadlinePayload = z.infer<typeof deadlinePayloadSchema>;
 export const deadlinePatchSchema = deadlinePayloadSchema.omit({ course_id: true }).partial();
 export type DeadlinePatch = z.infer<typeof deadlinePatchSchema>;
 
-// Course To-Do board: a lightweight per-course/custom-list checklist,
-// distinct from Tasks (no course link) and Deadlines (status enum, priority,
-// reminders). course_id null means a freestanding custom list ("Misc",
-// "Project: X") — see supabase/migrations/0015_course_todos.sql.
+// Board List: a per-course or freestanding grouping of Task rows ("Board
+// Cards" — board merge, supabase/migrations/0029_board_merge.sql, building
+// on the original todo_lists table from 0015_course_todos.sql). course_id
+// null means a freestanding custom list ("Misc", "Project: X").
 export const todoListPayloadSchema = z.object({
   course_id: z.uuid().nullable().optional(),
   name: z.string().trim().min(1),
@@ -107,21 +108,6 @@ export const todoListPayloadSchema = z.object({
 export type TodoListPayload = z.infer<typeof todoListPayloadSchema>;
 export const todoListPatchSchema = todoListPayloadSchema.partial();
 export type TodoListPatch = z.infer<typeof todoListPatchSchema>;
-
-export const todoItemPayloadSchema = z.object({
-  list_id: z.uuid(),
-  title: z.string().trim().min(1),
-  due_date: z.iso.date().nullable().optional(),
-  priority: itemPrioritySchema,
-});
-export type TodoItemPayload = z.infer<typeof todoItemPayloadSchema>;
-export const todoItemPatchSchema = z.object({
-  title: z.string().trim().min(1).optional(),
-  due_date: z.iso.date().nullable().optional(),
-  is_done: z.boolean().optional(),
-  priority: itemPrioritySchema,
-});
-export type TodoItemPatch = z.infer<typeof todoItemPatchSchema>;
 
 export const appointmentPayloadSchema = z.object({
   title: z.string().trim().min(1),
@@ -155,6 +141,11 @@ export const taskPayloadSchema = z.object({
   reminder_lead_minutes: z.number().int().nonnegative().optional(),
   person_id: z.uuid().nullable().optional(),
   priority: itemPrioritySchema,
+  // Board merge (supabase/migrations/0029_board_merge.sql): a Task is now
+  // also a Board Card. list_id null means "Unsorted" (not a DB row) — see
+  // guard_task_list_ownership for the DB-side enforcement this mirrors.
+  list_id: z.uuid().nullable().optional(),
+  position: z.number().int().optional(),
 });
 export type TaskPayload = z.infer<typeof taskPayloadSchema>;
 export const taskPatchSchema = taskPayloadSchema.partial();

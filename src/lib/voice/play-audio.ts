@@ -88,6 +88,17 @@ function releaseCurrent(): void {
   currentFinish?.(false);
 }
 
+/**
+ * Interrupts whatever is currently playing on the shared <audio> element,
+ * without starting anything new -- the public counterpart to the internal
+ * releaseCurrent() used by every playback path above to interrupt a PRIOR
+ * playback before starting the next one. Safe to call when nothing is
+ * playing (a no-op via the `if (sharedAudio)` guard inside releaseCurrent).
+ */
+export function stopPlayback(): void {
+  releaseCurrent();
+}
+
 function base64ToBlob(base64: string, mimetype: string): Blob {
   const bytes = Uint8Array.from(atob(base64), (char) => char.charCodeAt(0));
   return new Blob([bytes], { type: mimetype });

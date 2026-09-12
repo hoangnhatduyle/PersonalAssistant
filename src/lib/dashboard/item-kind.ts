@@ -1,4 +1,4 @@
-export type ItemKind = "deadline" | "task" | "todo" | "reminder" | "session" | "appointment";
+export type ItemKind = "deadline" | "task" | "reminder" | "session" | "appointment";
 
 /**
  * Single source of truth for how each dashboard item kind is labeled and
@@ -10,7 +10,6 @@ export type ItemKind = "deadline" | "task" | "todo" | "reminder" | "session" | "
 export const ITEM_KIND_LABEL: Record<ItemKind, string> = {
   deadline: "Deadline",
   task: "Task",
-  todo: "To-Do",
   reminder: "Reminder",
   session: "Session",
   appointment: "Event",
@@ -20,7 +19,6 @@ export const ITEM_KIND_LABEL: Record<ItemKind, string> = {
 export const ITEM_KIND_BG_CLASS: Record<ItemKind, string> = {
   deadline: "bg-accent-teal",
   task: "bg-accent-indigo",
-  todo: "bg-accent-violet",
   reminder: "bg-status-neutral",
   session: "bg-status-ok",
   appointment: "bg-status-warn",
@@ -30,7 +28,6 @@ export const ITEM_KIND_BG_CLASS: Record<ItemKind, string> = {
 export const ITEM_KIND_FILL_CLASS: Record<ItemKind, string> = {
   deadline: "fill-accent-teal",
   task: "fill-accent-indigo",
-  todo: "fill-accent-violet",
   reminder: "fill-status-neutral",
   session: "fill-status-ok",
   appointment: "fill-status-warn",

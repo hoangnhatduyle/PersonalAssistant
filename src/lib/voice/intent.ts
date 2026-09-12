@@ -61,6 +61,10 @@ const mutationSchemaBase = z.discriminatedUnion("target_type", [
     reminder_lead_minutes: z.number().int().min(0).max(1440).nullable(),
     priority: itemPriorityMutationSchema,
     event: taskTransitionEventSchema,
+    // Board merge (0029_board_merge.sql): optional Board List placement.
+    // null on create = Unsorted; null on update = leave list_id unchanged
+    // (see toPendingMutation's due_at-style "!== null means explicit" rule).
+    list_id: z.uuid().nullable().default(null),
   }),
   z.object({
     target_type: z.literal("note"),
@@ -89,26 +93,14 @@ const mutationSchemaBase = z.discriminatedUnion("target_type", [
     duration_minutes: z.number().int().positive().nullable(),
     event: sessionTransitionEventSchema,
   }),
-  // Course To-Do list. Create only — the UI has no rename/delete action for
-  // a list, only for the items inside it (CourseTodoBoardContainer.tsx).
+  // Board List (todo_lists row) — create only, as today. A Task is placed
+  // into one via the "task" branch's own list_id field above; there's no
+  // separate "item" target_type anymore (board merge, 0029_board_merge.sql).
   z.object({
     target_type: z.literal("todo_list"),
     operation: z.literal("create"),
     course_id: z.uuid().nullable(),
     name: z.string().nullable(),
-  }),
-  z.object({
-    target_type: z.literal("todo_item"),
-    operation: z.enum(["create", "update", "delete"]),
-    target_id: z.uuid().nullable(),
-    list_id: z.uuid().nullable(),
-    title: z.string().nullable(),
-    due_date: z.iso.date().nullable(),
-    priority: itemPriorityMutationSchema,
-    // Toggles is_done on update ("mark complete" / "mark incomplete") — a
-    // plain boolean rather than a transition event, since todo_items have no
-    // state machine (see todoItemPatchSchema in schemas.ts).
-    done: z.boolean().nullable().default(null),
   }),
 ]);
 
@@ -182,14 +174,7 @@ export const mutationSchema = mutationSchemaBase.superRefine((value, ctx) => {
     }
     case "todo_list": {
       if (!value.name) {
-        ctx.addIssue({ code: "custom", message: "name is required to create a to-do list", path: ["name"] });
-      }
-      return;
-    }
-    case "todo_item": {
-      requireTargetIdUnlessCreate(value, ctx);
-      if (value.operation === "create" && (!value.list_id || !value.title)) {
-        ctx.addIssue({ code: "custom", message: "list_id and title are required to create a to-do item", path: ["title"] });
+        ctx.addIssue({ code: "custom", message: "name is required to create a Board List", path: ["name"] });
       }
       return;
     }
@@ -201,13 +186,14 @@ export type RawMutation = z.infer<typeof mutationSchema>;
 export interface EntityContext {
   courses: Array<{ id: string; name: string }>;
   deadlines: Array<{ id: string; title: string; course_id: string }>;
-  tasks: Array<{ id: string; title: string }>;
-  // Course To-Do lists/items (0015_course_todos.sql) -- for resolving a
-  // todo_item create's list_id, or an existing item's/list's id by title,
-  // the same "id from the entity context, never invented" pattern as
-  // deadlines/tasks above.
+  // list_id (board merge, 0029_board_merge.sql) -- lets the model match "the
+  // task in my grocery list" against the right Task when a title alone is
+  // ambiguous, the same way a deadline's course_id disambiguates it.
+  tasks: Array<{ id: string; title: string; list_id: string | null }>;
+  // Board Lists (todo_lists, 0015_course_todos.sql) -- for resolving a
+  // Task's list_id, or an existing list's id by name, the same "id from the
+  // entity context, never invented" pattern as deadlines/tasks above.
   todoLists: Array<{ id: string; name: string; course_id: string | null }>;
-  todoItems: Array<{ id: string; title: string; list_id: string }>;
   // Deadline Sessions (0025_deadline_sessions.sql) -- appointments rows
   // tagged category "Session", for resolving an existing session's id to
   // delete/mark done/mark skipped.
@@ -237,36 +223,25 @@ export async function loadEntityContext(supabase: SupabaseClient<Database>, user
   // merge, any conversational turn) could reference or target another
   // tracked person's item by id — mirrors the same filter in
   // src/lib/voice/schedule-loader.ts's loadSchedule and
-  // src/app/api/intelligence/route.ts. todo_lists/todo_items and
-  // appointments have no person_id column at all (Course To-Do items and
-  // Deadline Sessions are owner-only concepts — see schedule-loader.ts's
-  // own includeOwnerOnlyData comment), so those three queries need no such
-  // filter.
-  const [
-    { data: courses },
-    { data: deadlines },
-    { data: tasks },
-    { data: todoLists },
-    { data: todoItems },
-    { data: sessions },
-    { data: knowledgeSources },
-    { data: people },
-  ] = await Promise.all([
-    supabase.from("courses").select("id, name").eq("user_id", userId).is("person_id", null).is("deleted_at", null),
-    supabase.from("deadlines").select("id, title, course_id").eq("user_id", userId).is("person_id", null).is("deleted_at", null),
-    supabase.from("tasks").select("id, title").eq("user_id", userId).is("person_id", null).is("deleted_at", null),
-    supabase.from("todo_lists").select("id, name, course_id").eq("user_id", userId).is("deleted_at", null),
-    supabase.from("todo_items").select("id, title, list_id").eq("user_id", userId).is("deleted_at", null),
-    supabase.from("appointments").select("id, title, deadline_id").eq("user_id", userId).eq("category", "Session").is("deleted_at", null),
-    supabase.from("knowledge_sources").select("id, title").eq("user_id", userId).eq("status", "Ready"),
-    supabase.from("people").select("id, name, relationship").eq("user_id", userId).is("deleted_at", null),
-  ]);
+  // src/app/api/intelligence/route.ts. todo_lists and appointments have no
+  // person_id column at all (Board Lists and Deadline Sessions are
+  // owner-only concepts — see schedule-loader.ts's own includeOwnerOnlyData
+  // comment), so those two queries need no such filter.
+  const [{ data: courses }, { data: deadlines }, { data: tasks }, { data: todoLists }, { data: sessions }, { data: knowledgeSources }, { data: people }] =
+    await Promise.all([
+      supabase.from("courses").select("id, name").eq("user_id", userId).is("person_id", null).is("deleted_at", null),
+      supabase.from("deadlines").select("id, title, course_id").eq("user_id", userId).is("person_id", null).is("deleted_at", null),
+      supabase.from("tasks").select("id, title, list_id").eq("user_id", userId).is("person_id", null).is("deleted_at", null),
+      supabase.from("todo_lists").select("id, name, course_id").eq("user_id", userId).is("deleted_at", null),
+      supabase.from("appointments").select("id, title, deadline_id").eq("user_id", userId).eq("category", "Session").is("deleted_at", null),
+      supabase.from("knowledge_sources").select("id, title").eq("user_id", userId).eq("status", "Ready"),
+      supabase.from("people").select("id, name, relationship").eq("user_id", userId).is("deleted_at", null),
+    ]);
   return {
     courses: courses ?? [],
     deadlines: deadlines ?? [],
     tasks: tasks ?? [],
     todoLists: todoLists ?? [],
-    todoItems: todoItems ?? [],
     sessions: sessions ?? [],
     knowledgeSources: knowledgeSources ?? [],
     people: people ?? [],
@@ -350,6 +325,7 @@ export function toPendingMutation(raw: RawMutation): PendingMutation {
             due_at: raw.due_at,
             ...(raw.reminder_lead_minutes !== null ? { reminder_lead_minutes: raw.reminder_lead_minutes } : {}),
             priority: raw.priority ?? undefined,
+            ...(raw.list_id ? { list_id: raw.list_id } : {}),
           },
         };
       }
@@ -368,6 +344,12 @@ export function toPendingMutation(raw: RawMutation): PendingMutation {
           ...(raw.due_at !== null ? { due_at: raw.due_at } : {}),
           ...(raw.reminder_lead_minutes !== null ? { reminder_lead_minutes: raw.reminder_lead_minutes } : {}),
           ...(raw.priority ? { priority: raw.priority } : {}),
+          // Same omission-tolerant convention as priority above (list_id
+          // also defaults to null when the model omits it) — a mentioned
+          // list_id moves the Task into it; unmentioned leaves it
+          // unchanged. Voice has no way to explicitly move a Task back to
+          // Unsorted via update; only the create path sets it to "none".
+          ...(raw.list_id ? { list_id: raw.list_id } : {}),
         },
       };
     }
@@ -413,33 +395,5 @@ export function toPendingMutation(raw: RawMutation): PendingMutation {
         operation: "create",
         payload: { name: raw.name!, ...(raw.course_id ? { course_id: raw.course_id } : {}) },
       };
-    case "todo_item": {
-      if (raw.operation === "create") {
-        return {
-          targetType: "todo_item",
-          operation: "create",
-          payload: {
-            list_id: raw.list_id!,
-            title: raw.title!,
-            ...(raw.due_date ? { due_date: raw.due_date } : {}),
-            priority: raw.priority ?? undefined,
-          },
-        };
-      }
-      if (raw.operation === "delete") {
-        return { targetType: "todo_item", operation: "delete", targetId: raw.target_id! };
-      }
-      return {
-        targetType: "todo_item",
-        operation: "update",
-        targetId: raw.target_id!,
-        payload: {
-          ...(raw.title ? { title: raw.title } : {}),
-          ...(raw.due_date ? { due_date: raw.due_date } : {}),
-          ...(raw.priority ? { priority: raw.priority } : {}),
-          ...(raw.done !== null ? { is_done: raw.done } : {}),
-        },
-      };
-    }
   }
 }

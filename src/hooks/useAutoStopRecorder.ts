@@ -14,6 +14,8 @@ export interface UseAutoStopRecorderResult {
   start: () => Promise<void>;
   /** Manual early stop — also the internal path auto-stop takes. */
   stop: () => void;
+  /** Hard abort — unlike stop(), never submits the in-progress recording via onComplete. */
+  cancel: () => void;
 }
 
 /**
@@ -65,6 +67,20 @@ export function useAutoStopRecorder(onComplete: (blob: Blob) => void, options: U
     teardownAnalysis();
     mediaRecorderRef.current?.stop();
     mediaRecorderRef.current = null;
+    setStatus("idle");
+  }, [teardownAnalysis]);
+
+  // Distinct from stop(): nulls onstop before stopping so recorder.onstop's
+  // hasSpokenRef check never fires onComplete, regardless of whether the
+  // user had already spoken -- a true "discard, don't submit" abort.
+  const cancel = useCallback(() => {
+    teardownAnalysis();
+    const recorder = mediaRecorderRef.current;
+    if (recorder) {
+      recorder.onstop = null;
+      recorder.stop();
+      mediaRecorderRef.current = null;
+    }
     setStatus("idle");
   }, [teardownAnalysis]);
 
@@ -148,5 +164,5 @@ export function useAutoStopRecorder(onComplete: (blob: Blob) => void, options: U
     };
   }, []);
 
-  return { status, start, stop };
+  return { status, start, stop, cancel };
 }

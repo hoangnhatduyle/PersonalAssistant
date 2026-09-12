@@ -11,7 +11,7 @@ type Props = {
   taskId: string;
 };
 
-/** Task delete does disclose `notesUnlinked` (it also cascades — clears linked_task_id on its Notes). */
+/** Card delete does disclose `notesUnlinked` (it also cascades — clears linked_task_id on its Notes). */
 export function DeleteTaskButton({ taskId }: Props) {
   const [open, setOpen] = useState(false);
   const router = useRouter();
@@ -23,27 +23,27 @@ export function DeleteTaskButton({ taskId }: Props) {
       const result = await deleteTask.mutateAsync();
       showToast(
         result.cascade.notesUnlinked > 0
-          ? `Task deleted — ${result.cascade.notesUnlinked} note(s) unlinked.`
-          : "Task deleted.",
+          ? `Card deleted — ${result.cascade.notesUnlinked} note(s) unlinked.`
+          : "Card deleted.",
         "success",
       );
       setOpen(false);
-      router.push("/tasks");
+      router.push("/board");
     } catch {
-      showToast("Could not delete task", "error");
+      showToast("Could not delete card", "error");
     }
   };
 
   return (
     <>
       <Button variant="destructive" size="sm" onClick={() => setOpen(true)}>
-        Delete task
+        Delete card
       </Button>
       <ConfirmDialog
         open={open}
         onClose={() => setOpen(false)}
         onConfirm={handleConfirm}
-        title="Delete this task?"
+        title="Delete this card?"
         description="Any notes linked to it will be unlinked."
         confirmLabel="Delete"
         isConfirming={deleteTask.isPending}

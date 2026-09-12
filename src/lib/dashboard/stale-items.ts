@@ -1,4 +1,4 @@
-import type { DeadlineRow, TaskRow, TodoItemRow } from "@/lib/api/entity-types";
+import type { DeadlineRow, TaskRow } from "@/lib/api/entity-types";
 import { isOpenDeadline, isOpenTask } from "@/lib/dashboard/upcoming-items";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -9,7 +9,7 @@ function startOfDay(date: Date): number {
 
 export interface StaleItem {
   id: string;
-  kind: "deadline" | "task" | "todo";
+  kind: "deadline" | "task";
   title: string;
   href: string;
   updatedAt: Date;
@@ -20,16 +20,10 @@ export interface StaleItem {
  * Open items whose updated_at is older than `staleAfterDays` — the same
  * updated_at-as-proxy convention buildCompletedThisWeek uses for "done",
  * inverted for "neglected." Only open/incomplete items qualify (mirrors
- * isOpenDeadline/isOpenTask/!is_done): a stale Completed/Done/Cancelled item
- * isn't "at risk," it's resolved work that's meant to be left alone.
+ * isOpenDeadline/isOpenTask): a stale Completed/Done/Cancelled item isn't
+ * "at risk," it's resolved work that's meant to be left alone.
  */
-export function buildStaleItems(
-  deadlines: DeadlineRow[],
-  tasks: TaskRow[],
-  todoItems: TodoItemRow[] = [],
-  staleAfterDays = 7,
-  now: Date = new Date(),
-): StaleItem[] {
+export function buildStaleItems(deadlines: DeadlineRow[], tasks: TaskRow[], staleAfterDays = 7, now: Date = new Date()): StaleItem[] {
   const todayStart = startOfDay(now);
   const items: StaleItem[] = [];
 
@@ -43,7 +37,7 @@ export function buildStaleItems(
       id: deadline.id,
       kind: "deadline",
       title: deadline.title,
-      href: `/deadlines/${deadline.id}`,
+      href: `/courses/deadlines/${deadline.id}`,
       updatedAt: new Date(deadline.updated_at),
       daysSinceUpdate,
     });
@@ -57,22 +51,8 @@ export function buildStaleItems(
       id: task.id,
       kind: "task",
       title: task.title,
-      href: `/tasks/${task.id}`,
+      href: `/board/${task.id}`,
       updatedAt: new Date(task.updated_at),
-      daysSinceUpdate,
-    });
-  }
-
-  for (const item of todoItems) {
-    if (item.is_done) continue;
-    const daysSinceUpdate = daysSince(item.updated_at);
-    if (daysSinceUpdate < staleAfterDays) continue;
-    items.push({
-      id: item.id,
-      kind: "todo",
-      title: item.title,
-      href: "/courses/todos",
-      updatedAt: new Date(item.updated_at),
       daysSinceUpdate,
     });
   }

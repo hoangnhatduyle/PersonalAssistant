@@ -1,4 +1,4 @@
-import type { AppointmentRow, CourseRow, DeadlineRow, TaskRow, TodoItemRow, TodoListRow } from "@/lib/api/entity-types";
+import type { AppointmentRow, CourseRow, DeadlineRow, TaskRow, TodoListRow } from "@/lib/api/entity-types";
 import { isOpenDeadline, isOpenTask } from "@/lib/dashboard/upcoming-items";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -21,7 +21,6 @@ export interface DensityDayBucket {
   dayOffset: number;
   deadlineCount: number;
   taskCount: number;
-  todoCount: number;
   /**
    * Deadline Sessions planned for this day. Tracked separately from
    * `total`/the stacked bar height — a Session is time the user already
@@ -34,12 +33,12 @@ export interface DensityDayBucket {
 
 export interface DensityItem {
   id: string;
-  kind: "deadline" | "task" | "todo" | "session";
+  kind: "deadline" | "task" | "session";
   title: string;
   href: string;
-  /** To-Do items only — the name of the list it belongs to. */
+  /** Task (Board Card) only — the name of the Board List it belongs to, when it's in one. */
   listName?: string;
-  /** To-Do items only — the course their list belongs to, when it has one. */
+  /** Task (Board Card) only — the course that list belongs to, when it has one. */
   courseName?: string;
   /** Tasks only. */
   tags?: string[];
@@ -49,7 +48,6 @@ export interface PastDueSummary {
   count: number;
   deadlineCount: number;
   taskCount: number;
-  todoCount: number;
 }
 
 function isPastDue(dateKey: string, todayKey: string): boolean {
@@ -57,8 +55,8 @@ function isPastDue(dateKey: string, todayKey: string): boolean {
 }
 
 /**
- * Buckets open Deadlines/Tasks/To-Do items (plus planned Deadline Sessions)
- * with a due date into a rolling `days`-day-ahead window (today..today+days-1),
+ * Buckets open Deadlines/Tasks (plus planned Deadline Sessions) with a due
+ * date into a rolling `days`-day-ahead window (today..today+days-1),
  * local-calendar-day granularity. Items outside the window (overdue, or
  * further out) are dropped rather than folded into "today" —
  * DailyIntelligenceCard/NextSequenceQueue already surface overdue items,
@@ -67,7 +65,6 @@ function isPastDue(dateKey: string, todayKey: string): boolean {
 export function buildWorkloadDensity(
   deadlines: DeadlineRow[],
   tasks: TaskRow[],
-  todoItems: TodoItemRow[] = [],
   appointments: AppointmentRow[] = [],
   days = 7,
   now: Date = new Date(),
@@ -75,7 +72,7 @@ export function buildWorkloadDensity(
   const todayStart = startOfDay(now);
   const buckets: DensityDayBucket[] = Array.from({ length: days }, (_, dayOffset) => {
     const date = new Date(todayStart.getTime() + dayOffset * DAY_MS);
-    return { date: toDateKey(date), dayOffset, deadlineCount: 0, taskCount: 0, todoCount: 0, sessionCount: 0, total: 0 };
+    return { date: toDateKey(date), dayOffset, deadlineCount: 0, taskCount: 0, sessionCount: 0, total: 0 };
   });
 
   const dayOffsetFor = (at: Date) => Math.round((startOfDay(at).getTime() - todayStart.getTime()) / DAY_MS);
@@ -97,17 +94,6 @@ export function buildWorkloadDensity(
   }
 
   const todayKey = toDateKey(todayStart);
-  for (const item of todoItems) {
-    if (item.is_done || !item.due_date) continue;
-    // due_date is a calendar day (YYYY-MM-DD), not an instant — compare the
-    // string directly, same convention buildUpcomingItems uses for todos.
-    if (item.due_date < todayKey) continue;
-    const index = buckets.findIndex((bucket) => bucket.date === item.due_date);
-    if (index === -1) continue;
-    buckets[index].todoCount += 1;
-    buckets[index].total += 1;
-  }
-
   for (const appointment of appointments) {
     // Deadline Sessions: appointments rows tagged category "Session", same
     // convention as buildUpcomingItems. Only "planned" ones are actionable.
@@ -123,18 +109,13 @@ export function buildWorkloadDensity(
 }
 
 /**
- * Counts open Deadlines/Tasks/To-Do items whose due date is before today —
- * the mirror image of `buildWorkloadDensity`'s window, which deliberately
- * drops these. Calendar-day granularity throughout, consistent with the
- * rest of this file (not the instant-based `urgent` flag `upcoming-items.ts`
- * uses for deadlines).
+ * Counts open Deadlines/Tasks whose due date is before today — the mirror
+ * image of `buildWorkloadDensity`'s window, which deliberately drops these.
+ * Calendar-day granularity throughout, consistent with the rest of this
+ * file (not the instant-based `urgent` flag `upcoming-items.ts` uses for
+ * deadlines).
  */
-export function countPastDueItems(
-  deadlines: DeadlineRow[],
-  tasks: TaskRow[],
-  todoItems: TodoItemRow[] = [],
-  now: Date = new Date(),
-): PastDueSummary {
+export function countPastDueItems(deadlines: DeadlineRow[], tasks: TaskRow[], now: Date = new Date()): PastDueSummary {
   const todayKey = toDateKey(startOfDay(now));
 
   let deadlineCount = 0;
@@ -149,13 +130,7 @@ export function countPastDueItems(
     if (isPastDue(toDateKey(new Date(task.due_at)), todayKey)) taskCount += 1;
   }
 
-  let todoCount = 0;
-  for (const item of todoItems) {
-    if (item.is_done || !item.due_date) continue;
-    if (isPastDue(item.due_date, todayKey)) todoCount += 1;
-  }
-
-  return { count: deadlineCount + taskCount + todoCount, deadlineCount, taskCount, todoCount };
+  return { count: deadlineCount + taskCount, deadlineCount, taskCount };
 }
 
 /**
@@ -166,7 +141,6 @@ export function countPastDueItems(
 export function pastDueItemsFor(
   deadlines: DeadlineRow[],
   tasks: TaskRow[],
-  todoItems: TodoItemRow[] = [],
   todoLists: TodoListRow[] = [],
   courses: CourseRow[] = [],
   now: Date = new Date(),
@@ -183,25 +157,22 @@ export function pastDueItemsFor(
   for (const deadline of deadlines) {
     if (!isOpenDeadline(deadline.status)) continue;
     if (!isPastDue(toDateKey(new Date(deadline.due_at)), todayKey)) continue;
-    items.push({ id: deadline.id, kind: "deadline", title: deadline.title, href: `/deadlines/${deadline.id}` });
+    items.push({ id: deadline.id, kind: "deadline", title: deadline.title, href: `/courses/deadlines/${deadline.id}` });
   }
 
   for (const task of tasks) {
     if (!isOpenTask(task.status) || !task.due_at) continue;
     if (!isPastDue(toDateKey(new Date(task.due_at)), todayKey)) continue;
-    items.push({ id: task.id, kind: "task", title: task.title, href: `/tasks/${task.id}`, tags: task.tags });
-  }
-
-  for (const item of todoItems) {
-    if (item.is_done || !item.due_date) continue;
-    if (!isPastDue(item.due_date, todayKey)) continue;
     items.push({
-      id: item.id,
-      kind: "todo",
-      title: item.title,
-      href: "/courses/todos",
-      listName: listNameById.get(item.list_id),
-      courseName: courseNameByListId.get(item.list_id),
+      id: task.id,
+      kind: "task",
+      title: task.title,
+      href: `/board/${task.id}`,
+      tags: task.tags,
+      // Board merge: a Task can now belong to a Board List (list_id) the
+      // same way a Course To-Do item used to belong to a todo_lists row.
+      listName: task.list_id ? listNameById.get(task.list_id) : undefined,
+      courseName: task.list_id ? courseNameByListId.get(task.list_id) : undefined,
     });
   }
 
@@ -210,15 +181,14 @@ export function pastDueItemsFor(
 
 /**
  * The raw items behind one bucket's counts — feeds a day's expand/detail
- * view. `todoLists`/`courses` are optional and used to resolve a To-Do
- * item's list name and, when the list belongs to one, its course name
+ * view. `todoLists`/`courses` are optional and used to resolve a Task's
+ * Board List name and, when the list belongs to one, its course name
  * (mirrors NextSequenceQueue's courseName enrichment, which likewise only
- * applies to todos, not deadlines).
+ * applies to listed Tasks, not deadlines).
  */
 export function itemsForDensityDay(
   deadlines: DeadlineRow[],
   tasks: TaskRow[],
-  todoItems: TodoItemRow[] = [],
   date: string,
   todoLists: TodoListRow[] = [],
   courses: CourseRow[] = [],
@@ -235,24 +205,20 @@ export function itemsForDensityDay(
   for (const deadline of deadlines) {
     if (!isOpenDeadline(deadline.status)) continue;
     if (toDateKey(new Date(deadline.due_at)) !== date) continue;
-    items.push({ id: deadline.id, kind: "deadline", title: deadline.title, href: `/deadlines/${deadline.id}` });
+    items.push({ id: deadline.id, kind: "deadline", title: deadline.title, href: `/courses/deadlines/${deadline.id}` });
   }
 
   for (const task of tasks) {
     if (!isOpenTask(task.status) || !task.due_at) continue;
     if (toDateKey(new Date(task.due_at)) !== date) continue;
-    items.push({ id: task.id, kind: "task", title: task.title, href: `/tasks/${task.id}`, tags: task.tags });
-  }
-
-  for (const item of todoItems) {
-    if (item.is_done || item.due_date !== date) continue;
     items.push({
-      id: item.id,
-      kind: "todo",
-      title: item.title,
-      href: "/courses/todos",
-      listName: listNameById.get(item.list_id),
-      courseName: courseNameByListId.get(item.list_id),
+      id: task.id,
+      kind: "task",
+      title: task.title,
+      href: `/board/${task.id}`,
+      tags: task.tags,
+      listName: task.list_id ? listNameById.get(task.list_id) : undefined,
+      courseName: task.list_id ? courseNameByListId.get(task.list_id) : undefined,
     });
   }
 
@@ -263,7 +229,7 @@ export function itemsForDensityDay(
       id: appointment.id,
       kind: "session",
       title: appointment.title,
-      href: appointment.deadline_id ? `/deadlines/${appointment.deadline_id}` : "/calendar",
+      href: appointment.deadline_id ? `/courses/deadlines/${appointment.deadline_id}` : "/calendar",
     });
   }
 

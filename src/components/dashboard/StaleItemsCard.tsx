@@ -4,12 +4,11 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Badge } from "@/components/ui/Badge";
 import { buildStaleItems, type StaleItem } from "@/lib/dashboard/stale-items";
 import { formatRelativeTime } from "@/lib/format-relative-time";
-import type { DeadlineRow, TaskRow, TodoItemRow } from "@/lib/api/entity-types";
+import type { DeadlineRow, TaskRow } from "@/lib/api/entity-types";
 
 type Props = {
   deadlines: DeadlineRow[];
   tasks: TaskRow[];
-  todoItems: TodoItemRow[];
 };
 
 const STALE_AFTER_DAYS = 7;
@@ -18,7 +17,6 @@ const ITEM_LIMIT = 5;
 const KIND_LABEL: Record<StaleItem["kind"], string> = {
   deadline: "Deadline",
   task: "Task",
-  todo: "To-Do",
 };
 
 /**
@@ -27,9 +25,9 @@ const KIND_LABEL: Record<StaleItem["kind"], string> = {
  * Done/Cancelled items never appear here regardless of age: they're
  * resolved work, meant to be left alone, not neglected work.
  */
-export function StaleItemsCard({ deadlines, tasks, todoItems }: Props) {
+export function StaleItemsCard({ deadlines, tasks }: Props) {
   const now = new Date();
-  const items = buildStaleItems(deadlines, tasks, todoItems, STALE_AFTER_DAYS, now);
+  const items = buildStaleItems(deadlines, tasks, STALE_AFTER_DAYS, now);
   const visible = items.slice(0, ITEM_LIMIT);
   const remaining = items.length - visible.length;
 

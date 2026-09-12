@@ -153,7 +153,7 @@ export async function DELETE(_request: Request, { params }: RouteParams) {
         deadlinesDeleted: cascade.deadlinesAffected,
         remindersDismissed: cascade.remindersDismissed,
         notesUnlinked: cascade.notesUnlinked,
-        todoItemsDeleted: cascade.todoItemsAffected,
+        todoItemsDeleted: cascade.boardCardsAffected,
         suggestionsDismissed: cascade.suggestionsDismissed,
       },
     });

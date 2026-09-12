@@ -21,7 +21,7 @@ type Props = {
 // register time, same pattern as DeadlineForm's emptyToUndefined.
 const emptyToUndefined = (value: string) => (value === "" ? undefined : value);
 
-/** Submits with course_id normalized to null so a freestanding custom list ("Misc", "Project: X") is created when no course is chosen. */
+/** Submits with course_id normalized to null so a freestanding list ("Misc", "Project: X") is created when no course is chosen. */
 export function CreateTodoListDialog({ open, onClose, onSubmit }: Props) {
   const { data: courses } = useCourses({ personId: "me" });
   const {
@@ -40,7 +40,7 @@ export function CreateTodoListDialog({ open, onClose, onSubmit }: Props) {
   };
 
   return (
-    <Dialog open={open} onClose={handleClose} title="New to-do list">
+    <Dialog open={open} onClose={handleClose} title="New Board List">
       <form
         onSubmit={handleSubmit(async (values) => {
           await onSubmit({ ...values, course_id: values.course_id || null });
@@ -49,8 +49,16 @@ export function CreateTodoListDialog({ open, onClose, onSubmit }: Props) {
         className="flex flex-col gap-4"
         noValidate
       >
-        <FormField label="Course" htmlFor="course_id" error={errors.course_id?.message}>
-          <Select id="course_id" invalid={Boolean(errors.course_id)} {...register("course_id", { setValueAs: emptyToUndefined })}>
+        <FormField
+          label="Course"
+          htmlFor="course_id"
+          error={errors.course_id?.message}
+        >
+          <Select
+            id="course_id"
+            invalid={Boolean(errors.course_id)}
+            {...register("course_id", { setValueAs: emptyToUndefined })}
+          >
             <option value="">No course (custom list)</option>
             {(courses?.rows ?? []).map((course) => (
               <option key={course.id} value={course.id}>
@@ -60,12 +68,26 @@ export function CreateTodoListDialog({ open, onClose, onSubmit }: Props) {
           </Select>
         </FormField>
 
-        <FormField label="List name" htmlFor="name" error={errors.name?.message}>
-          <Input id="name" placeholder="e.g. Misc, Project: Agrivoltaics" invalid={Boolean(errors.name)} {...register("name")} />
+        <FormField
+          label="List name"
+          htmlFor="name"
+          error={errors.name?.message}
+        >
+          <Input
+            id="name"
+            placeholder="e.g. Misc, Project: Agrivoltaics"
+            invalid={Boolean(errors.name)}
+            {...register("name")}
+          />
         </FormField>
 
         <div className="flex justify-end gap-2">
-          <Button type="button" variant="secondary" onClick={handleClose} disabled={isSubmitting}>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={handleClose}
+            disabled={isSubmitting}
+          >
             Cancel
           </Button>
           <Button type="submit" isLoading={isSubmitting}>

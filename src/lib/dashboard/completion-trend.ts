@@ -1,4 +1,4 @@
-import type { DeadlineRow, TaskRow, TodoItemRow } from "@/lib/api/entity-types";
+import type { DeadlineRow, TaskRow } from "@/lib/api/entity-types";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -7,12 +7,12 @@ function startOfDay(date: Date): number {
 }
 
 /**
- * Daily counts of resolved Deadlines/Tasks/To-Do items over the trailing `days` window
+ * Daily counts of resolved Deadlines/Tasks over the trailing `days` window
  * (oldest first, today last), derived from `updated_at` as a completion-time
  * proxy — there's no dedicated `completed_at` column. Feeds MomentumCard's
  * sparkline; grounded in real fetched data, not fabricated.
  */
-export function buildCompletionTrend(deadlines: DeadlineRow[], tasks: TaskRow[], todoItems: TodoItemRow[] = [], days = 7): number[] {
+export function buildCompletionTrend(deadlines: DeadlineRow[], tasks: TaskRow[], days = 7): number[] {
   const todayStart = startOfDay(new Date());
   const buckets = new Array(days).fill(0) as number[];
 
@@ -28,16 +28,13 @@ export function buildCompletionTrend(deadlines: DeadlineRow[], tasks: TaskRow[],
   for (const task of tasks) {
     if (task.status === "Done") record(task.updated_at);
   }
-  for (const item of todoItems) {
-    if (item.is_done) record(item.updated_at);
-  }
 
   return buckets;
 }
 
 export interface CompletedItem {
   id: string;
-  kind: "deadline" | "task" | "todo";
+  kind: "deadline" | "task";
   title: string;
   at: Date;
   href: string;
@@ -48,7 +45,7 @@ export interface CompletedItem {
  * feeds MomentumCard's "what got done" breakdown list. Same trailing-window
  * and updated_at-as-completion-proxy logic as buildCompletionTrend.
  */
-export function buildCompletedThisWeek(deadlines: DeadlineRow[], tasks: TaskRow[], todoItems: TodoItemRow[] = [], days = 7): CompletedItem[] {
+export function buildCompletedThisWeek(deadlines: DeadlineRow[], tasks: TaskRow[], days = 7): CompletedItem[] {
   const todayStart = startOfDay(new Date());
   const isWithinWindow = (updatedAt: string) => {
     const diffDays = Math.round((todayStart - startOfDay(new Date(updatedAt))) / DAY_MS);
@@ -59,17 +56,12 @@ export function buildCompletedThisWeek(deadlines: DeadlineRow[], tasks: TaskRow[
 
   for (const deadline of deadlines) {
     if (deadline.status === "Completed" && isWithinWindow(deadline.updated_at)) {
-      items.push({ id: deadline.id, kind: "deadline", title: deadline.title, at: new Date(deadline.updated_at), href: `/deadlines/${deadline.id}` });
+      items.push({ id: deadline.id, kind: "deadline", title: deadline.title, at: new Date(deadline.updated_at), href: `/courses/deadlines/${deadline.id}` });
     }
   }
   for (const task of tasks) {
     if (task.status === "Done" && isWithinWindow(task.updated_at)) {
-      items.push({ id: task.id, kind: "task", title: task.title, at: new Date(task.updated_at), href: `/tasks/${task.id}` });
-    }
-  }
-  for (const item of todoItems) {
-    if (item.is_done && isWithinWindow(item.updated_at)) {
-      items.push({ id: item.id, kind: "todo", title: item.title, at: new Date(item.updated_at), href: "/courses/todos" });
+      items.push({ id: task.id, kind: "task", title: task.title, at: new Date(task.updated_at), href: `/board/${task.id}` });
     }
   }
 

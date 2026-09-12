@@ -1,6 +1,9 @@
 "use client";
 
-import { getValidTaskEvents, type TaskTransitionEvent } from "@/lib/api/transitions";
+import {
+  getValidTaskEvents,
+  type TaskTransitionEvent,
+} from "@/lib/api/transitions";
 import type { TaskStatus } from "@/lib/api/entity-types";
 import { useTransitionTask } from "@/hooks/useTasks";
 import { useToast } from "@/components/ui/Toast";
@@ -29,9 +32,12 @@ export function TaskTransitionMenu({ taskId, status, size = "sm" }: Props) {
   const handleTransition = async (event: TaskTransitionEvent) => {
     try {
       await transition.mutateAsync(event);
-      showToast(event === "user_marks_done" ? "Task marked done" : "Task cancelled", "success");
+      showToast(
+        event === "user_marks_done" ? "Card marked done" : "Card cancelled",
+        "success",
+      );
     } catch {
-      showToast("Could not update task status", "error");
+      showToast("Could not update card status", "error");
     }
   };
 

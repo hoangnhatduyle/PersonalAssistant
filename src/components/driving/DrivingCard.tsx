@@ -5,11 +5,9 @@ import { useRouter } from "next/navigation";
 import { GlassPanel } from "@/components/ui/GlassPanel";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
-import { useToast } from "@/components/ui/Toast";
 import { DeadlineTransitionMenu } from "@/components/deadlines/DeadlineTransitionMenu";
-import { TaskTransitionMenu } from "@/components/tasks/TaskTransitionMenu";
+import { TaskTransitionMenu } from "@/components/board/TaskTransitionMenu";
 import { SessionTransitionButtons } from "@/components/deadlines/SessionsSection";
-import { useUpdateTodoItem } from "@/hooks/useTodoItems";
 import { DEADLINE_STATUS_TONE, TASK_STATUS_TONE, SESSION_STATUS_TONE } from "@/lib/status-colors";
 import type { AppointmentRow, DeadlineRow, TaskRow } from "@/lib/api/entity-types";
 import type { DrivingQueueItem } from "@/lib/driving/build-driving-queue";
@@ -36,27 +34,6 @@ function formatDateTime(at: Date): string {
   const date = at.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
   const time = at.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
   return `${date} · ${time}`;
-}
-
-/** Its own component (not inline in the switch below) so useUpdateTodoItem is only ever called for a "todo" card, not conditionally inside DrivingCard's body. */
-function MarkTodoDoneButton({ todoItemId }: { todoItemId: string }) {
-  const { showToast } = useToast();
-  const updateTodoItem = useUpdateTodoItem(todoItemId);
-
-  const handleClick = async () => {
-    try {
-      await updateTodoItem.mutateAsync({ is_done: true });
-      showToast("Marked done", "success");
-    } catch {
-      showToast("Could not update — try again", "error");
-    }
-  };
-
-  return (
-    <Button size="md" className={ACTION_BUTTON_CLASS} isLoading={updateTodoItem.isPending} onClick={handleClick}>
-      Mark Done
-    </Button>
-  );
 }
 
 function cardBadgeAndActions(item: DrivingQueueItem, row: DrivingCardRow): { badge: ReactNode; actions: ReactNode } {
@@ -95,8 +72,6 @@ function cardBadgeAndActions(item: DrivingQueueItem, row: DrivingCardRow): { bad
         actions: <SessionTransitionButtons session={session} size="lg" />,
       };
     }
-    case "todo":
-      return { badge: null, actions: <MarkTodoDoneButton todoItemId={item.id} /> };
     // Same "Conflict" badge treatment as UpNextPanel/AppointmentsTimeline —
     // this is the one place the user is actively about to drive somewhere,
     // so a double-booked event needs to be at least as visible here as it

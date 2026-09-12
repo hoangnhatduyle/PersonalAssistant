@@ -10,10 +10,10 @@ export interface ScheduleItem {
   id: string;
   title: string;
   dueAt: Date;
-  kind: "deadline" | "task" | "todo" | "course" | "session" | "appointment";
+  kind: "deadline" | "task" | "course" | "session" | "appointment";
   /** Raw stored value -- null means genuinely unset, never reported/treated as "Medium" outside ranking comparisons. */
   priority: Priority | null;
-  /** The deadline's course name, or the todo item's list/project name -- null for a Task (no natural grouping) or an unnamed/uncategorized item. Spoken as "Title (context)" for clarity when several items share a similar name across courses/lists. */
+  /** The deadline's course name, or a listed Task's Board List/project name -- null for an unlisted Task (no natural grouping) or an unnamed/uncategorized item. Spoken as "Title (context)" for clarity when several items share a similar name across courses/lists. */
   context: string | null;
 }
 

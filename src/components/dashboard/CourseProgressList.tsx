@@ -3,20 +3,20 @@ import { GlassPanel } from "@/components/ui/GlassPanel";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { buildCourseProgress } from "@/lib/dashboard/course-progress";
-import type { CourseRow, DeadlineRow, TodoItemRow, TodoListRow } from "@/lib/api/entity-types";
+import type { CourseRow, DeadlineRow, TaskRow, TodoListRow } from "@/lib/api/entity-types";
 
 type Props = {
   courses: CourseRow[];
   deadlines: DeadlineRow[];
-  todoItems: TodoItemRow[];
+  tasks: TaskRow[];
   todoLists: TodoListRow[];
 };
 
 const COURSE_LIMIT = 5;
 
-/** Completion broken out by course — Deadlines + course To-Do items; Tasks aren't linked to a course. */
-export function CourseProgressList({ courses, deadlines, todoItems, todoLists }: Props) {
-  const progress = buildCourseProgress(courses, deadlines, todoItems, todoLists);
+/** Completion broken out by course — Deadlines + Tasks filed under one of that course's Board Lists; a plain Task with no list isn't linked to a course. */
+export function CourseProgressList({ courses, deadlines, tasks, todoLists }: Props) {
+  const progress = buildCourseProgress(courses, deadlines, tasks, todoLists);
   const visible = progress.slice(0, COURSE_LIMIT);
   const remaining = progress.length - visible.length;
 
@@ -25,7 +25,7 @@ export function CourseProgressList({ courses, deadlines, todoItems, todoLists }:
       <p className="font-mono text-xs uppercase tracking-wide text-text-eyebrow">By Course</p>
 
       {progress.length === 0 ? (
-        <EmptyState title="No course activity yet" description="Deadlines and course to-dos will show progress here." />
+        <EmptyState title="No course activity yet" description="Deadlines and board cards will show progress here." />
       ) : (
         <>
           <ul className="flex flex-col gap-3">
@@ -44,7 +44,7 @@ export function CourseProgressList({ courses, deadlines, todoItems, todoLists }:
             ))}
           </ul>
           {remaining > 0 && <p className="text-xs text-text-secondary">+{remaining} more</p>}
-          <p className="text-[10px] text-text-secondary">Excludes tasks — not linked to a course.</p>
+          <p className="text-[10px] text-text-secondary">Excludes tasks not filed under a course's board list.</p>
         </>
       )}
     </GlassPanel>

@@ -1,8 +1,8 @@
-import type { AppointmentRow, CourseRow, DeadlineRow, DeadlineStatus, TaskRow, TaskStatus, ReminderRow, TodoItemRow, PersonRow } from "@/lib/api/entity-types";
+import type { AppointmentRow, CourseRow, DeadlineRow, DeadlineStatus, TaskRow, TaskStatus, ReminderRow, PersonRow } from "@/lib/api/entity-types";
 import { findConflictingAppointmentIds, parseStructuredTime } from "@/lib/appointments/conflicts";
 import { findCourseConflictingAppointmentIds } from "@/lib/appointments/course-conflicts";
 
-export type UpcomingItemKind = "deadline" | "task" | "reminder" | "todo" | "session" | "appointment";
+export type UpcomingItemKind = "deadline" | "task" | "reminder" | "session" | "appointment";
 
 export type TimeWindowFilter = "today" | "tomorrow" | "3days" | "7days" | "all";
 
@@ -43,17 +43,16 @@ interface BuildUpcomingItemsInput {
   deadlines: DeadlineRow[];
   tasks: TaskRow[];
   reminders?: ReminderRow[];
-  todoItems?: TodoItemRow[];
   /** Deadline Sessions: appointments rows tagged category "Session". Only "planned" ones are actionable/upcoming. */
   appointments?: AppointmentRow[];
-  /** Tracked People (People feature), for resolving a Task's person_id to a display name. Deadlines/Sessions/Todo items/Appointments are always the account owner's own by this point — only Tasks can belong to a tracked person. */
+  /** Tracked People (People feature), for resolving a Task's person_id to a display name. Deadlines/Sessions/Appointments are always the account owner's own by this point — only Tasks can belong to a tracked person. */
   people?: PersonRow[];
   /** For flagging a general Event/Appointment whose time overlaps a Course's recurring meeting block (courseConflict). */
   courses?: CourseRow[];
 }
 
 /**
- * Merges the three entity types dashboard widgets draw from into one
+ * Merges the entity types dashboard widgets draw from into one
  * ascending-sorted timeline. No `/api/dashboard` route exists — this
  * composes already-fetched, already-cached list data client-side.
  */
@@ -61,7 +60,6 @@ export function buildUpcomingItems({
   deadlines,
   tasks,
   reminders = [],
-  todoItems = [],
   appointments = [],
   people = [],
   courses = [],
@@ -83,7 +81,7 @@ export function buildUpcomingItems({
       kind: "deadline",
       title: deadline.title,
       at,
-      href: `/deadlines/${deadline.id}`,
+      href: `/courses/deadlines/${deadline.id}`,
       // Overdue status is the authoritative signal, but a due_at that's
       // slipped past "now" without the status catching up yet (a lag this
       // codebase already accounts for elsewhere — see MomentumCard's
@@ -100,7 +98,7 @@ export function buildUpcomingItems({
       kind: "task",
       title: task.title,
       at,
-      href: `/tasks/${task.id}`,
+      href: `/board/${task.id}`,
       urgent: at.getTime() < now,
       ...personInfo(task.person_id),
     });
@@ -110,24 +108,9 @@ export function buildUpcomingItems({
   // local one — in the evening in any timezone behind UTC, that's already
   // "tomorrow" in UTC, which wrongly marked today's items as past due
   // (urgent). Build the date key from local getFullYear/getMonth/getDate
-  // instead, matching due_date's own local-calendar-day semantics.
+  // instead, matching appointments' own local-calendar-day semantics.
   const todayLocal = new Date();
   const today = `${todayLocal.getFullYear()}-${String(todayLocal.getMonth() + 1).padStart(2, "0")}-${String(todayLocal.getDate()).padStart(2, "0")}`;
-
-  for (const item of todoItems) {
-    if (item.is_done || !item.due_date) continue;
-    // due_date is a calendar day (YYYY-MM-DD), not an instant — compare dates
-    // like CourseTodoListCard, and use end-of-local-day for sorting/relative time.
-    const at = new Date(`${item.due_date}T23:59:59.999`);
-    items.push({
-      id: item.id,
-      kind: "todo",
-      title: item.title,
-      at,
-      href: "/courses/todos",
-      urgent: item.due_date < today,
-    });
-  }
 
   // Deadline Sessions: appointments rows tagged category "Session". Only
   // "planned" ones are actionable/upcoming here — a done/skipped session has
@@ -157,7 +140,7 @@ export function buildUpcomingItems({
         kind: "session",
         title: appointment.title,
         at,
-        href: appointment.deadline_id ? `/deadlines/${appointment.deadline_id}` : null,
+        href: appointment.deadline_id ? `/courses/deadlines/${appointment.deadline_id}` : null,
         urgent: appointment.date < today,
       });
       continue;

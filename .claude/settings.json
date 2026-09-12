@@ -48,7 +48,15 @@
       "Bash(curl -s -X DELETE http://127.0.0.1:54321/auth/v1/admin/users/9cda00fc-a096-4dd6-8db1-fc4b0786d2b2 -H 'apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU' -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU')",
       "Bash(echo \"---tsc exit $?---\")",
       "Bash(git log *)",
-      "Bash(node scripts/generate-thinking-fillers.mjs)"
+      "Bash(node scripts/generate-thinking-fillers.mjs)",
+      "Bash(psql \"postgresql://postgres:postgres@127.0.0.1:54332/postgres\" -c \"select id, left\\(body,60\\) as body, linked_course_id, linked_task_id, deleted_at from notes where deleted_at is null order by created_at desc limit 10;\")",
+      "Bash(lsof -i :3001 -sTCP:LISTEN -t)",
+      "Bash(xargs -r kill)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:3000/)",
+      "Bash(curl -s -X POST http://127.0.0.1:54321/auth/v1/admin/users -H 'apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU' -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU' -H 'Content-Type: application/json' -d '{\"email\":\"playwright-tester@example.com\",\"password\":\"TestPass123!\",\"email_confirm\":true}')",
+      "Bash(grep -rn '\"/deadlines\"\\\\|`/deadlines`\\\\|/deadlines/\\\\${' src --include=\"*.ts\" --include=\"*.tsx\")",
+      "Bash(grep -rn '\"/deadlines\"\\\\|`/deadlines`\\\\|/deadlines/\\\\${\\\\|href.*\"/deadlines' src --include=\"*.ts\" --include=\"*.tsx\")",
+      "Bash(xargs cat)"
     ]
   }
 }

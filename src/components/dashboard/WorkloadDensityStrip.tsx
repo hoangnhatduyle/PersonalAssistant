@@ -7,12 +7,11 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Badge } from "@/components/ui/Badge";
 import { buildWorkloadDensity, itemsForDensityDay, countPastDueItems, pastDueItemsFor } from "@/lib/dashboard/workload-density";
 import { ITEM_KIND_BG_CLASS, ITEM_KIND_LABEL } from "@/lib/dashboard/item-kind";
-import type { AppointmentRow, CourseRow, DeadlineRow, TaskRow, TodoItemRow, TodoListRow } from "@/lib/api/entity-types";
+import type { AppointmentRow, CourseRow, DeadlineRow, TaskRow, TodoListRow } from "@/lib/api/entity-types";
 
 type Props = {
   deadlines: DeadlineRow[];
   tasks: TaskRow[];
-  todoItems: TodoItemRow[];
   todoLists: TodoListRow[];
   courses: CourseRow[];
   /** Deadline Sessions — appointments rows tagged category "Session". */
@@ -31,15 +30,15 @@ function formatShortDate(dateKey: string): string {
 }
 
 /** Stacked-segment order, fixed so the legend and each bar's stack always agree. Session is deliberately excluded — see sessionCount on DensityDayBucket. */
-const KIND_ORDER: Array<"deadline" | "task" | "todo"> = ["deadline", "task", "todo"];
+const KIND_ORDER: Array<"deadline" | "task"> = ["deadline", "task"];
 
 /** Week-ahead view of how open items cluster by day — surfaces a pile-up before it's urgent. */
-export function WorkloadDensityStrip({ deadlines, tasks, todoItems, todoLists, courses, appointments }: Props) {
+export function WorkloadDensityStrip({ deadlines, tasks, todoLists, courses, appointments }: Props) {
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [showPastDue, setShowPastDue] = useState(false);
   const buckets = useMemo(
-    () => buildWorkloadDensity(deadlines, tasks, todoItems, appointments, WINDOW_DAYS),
-    [deadlines, tasks, todoItems, appointments],
+    () => buildWorkloadDensity(deadlines, tasks, appointments, WINDOW_DAYS),
+    [deadlines, tasks, appointments],
   );
   const max = Math.max(1, ...buckets.map((bucket) => bucket.total));
   const isEmpty = buckets.every((bucket) => bucket.total === 0 && bucket.sessionCount === 0);
@@ -47,12 +46,10 @@ export function WorkloadDensityStrip({ deadlines, tasks, todoItems, todoLists, c
   const densestBucket = buckets.reduce((densest, bucket) => (bucket.total > densest.total ? bucket : densest), buckets[0]);
   const showPileUpCallout = densestBucket && densestBucket.total >= PILE_UP_THRESHOLD;
 
-  const pastDueSummary = useMemo(() => countPastDueItems(deadlines, tasks, todoItems), [deadlines, tasks, todoItems]);
+  const pastDueSummary = useMemo(() => countPastDueItems(deadlines, tasks), [deadlines, tasks]);
 
-  const selectedItems = selectedDate
-    ? itemsForDensityDay(deadlines, tasks, todoItems, selectedDate, todoLists, courses, appointments)
-    : [];
-  const pastDueItems = showPastDue ? pastDueItemsFor(deadlines, tasks, todoItems, todoLists, courses) : [];
+  const selectedItems = selectedDate ? itemsForDensityDay(deadlines, tasks, selectedDate, todoLists, courses, appointments) : [];
+  const pastDueItems = showPastDue ? pastDueItemsFor(deadlines, tasks, todoLists, courses) : [];
   const activeItems = selectedDate ? selectedItems : showPastDue ? pastDueItems : null;
 
   function selectDate(date: string) {
@@ -89,7 +86,7 @@ export function WorkloadDensityStrip({ deadlines, tasks, todoItems, todoLists, c
       </div>
 
       {isEmpty ? (
-        <EmptyState title="Nothing on the horizon" description="No deadlines, tasks, or to-dos due in the next 7 days." />
+        <EmptyState title="Nothing on the horizon" description="No deadlines or tasks due in the next 7 days." />
       ) : (
         <>
           <div className="flex items-end justify-between gap-2">
