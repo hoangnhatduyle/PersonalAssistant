@@ -9,18 +9,19 @@ import { GlassPanel } from "@/components/ui/GlassPanel";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { BoardCard } from "@/components/board/BoardCard";
-import type { TaskRow } from "@/lib/api/entity-types";
+import type { TaskWithLabels } from "@/lib/api/entity-types";
 
 type Props = {
   id: string;
   name: string;
   courseName?: string;
-  tasks: TaskRow[];
+  tasks: TaskWithLabels[];
   peopleById: Map<string, string>;
   isUnsorted: boolean;
   onAddCard: () => void;
   onDeleteList?: () => void;
   isDeletingList?: boolean;
+  onOpenCard: (taskId: string) => void;
 };
 
 /** One Board List's column — a sortable+droppable region of BoardCards. "Unsorted" is a synthetic column (id "unsorted"), never a todo_lists row. */
@@ -34,6 +35,7 @@ export function BoardColumn({
   onAddCard,
   onDeleteList,
   isDeletingList,
+  onOpenCard,
 }: Props) {
   const { setNodeRef, isOver } = useDroppable({
     id,
@@ -91,6 +93,7 @@ export function BoardColumn({
               personName={
                 task.person_id ? peopleById.get(task.person_id) : undefined
               }
+              onOpenCard={onOpenCard}
             />
           ))}
         </div>

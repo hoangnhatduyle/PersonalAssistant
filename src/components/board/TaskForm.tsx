@@ -1,22 +1,23 @@
 "use client";
 
-import { useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { taskPayloadSchema, type TaskPayload } from "@/lib/api/schemas";
-import type { TaskRow } from "@/lib/api/entity-types";
+import type { TaskWithLabels } from "@/lib/api/entity-types";
 import { usePeople } from "@/hooks/usePeople";
 import { useTodoLists } from "@/hooks/useTodoLists";
+import { useLabels } from "@/hooks/useLabels";
 import { FormField } from "@/components/ui/FormField";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { DateTimeField } from "@/components/ui/DateTimeField";
 import { Checkbox } from "@/components/ui/Checkbox";
-import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
+import { LabelChip } from "@/components/ui/LabelChip";
+import { LabelsPopover } from "@/components/board/LabelsPopover";
 
 type Props = {
-  task?: TaskRow;
+  task?: TaskWithLabels;
   /** Pre-selects a Board List when creating a card from within a column (e.g. BoardColumn's "+ Add card"). Ignored when editing an existing card. */
   defaultListId?: string | null;
   onSubmit: (values: TaskPayload) => Promise<void> | void;
@@ -42,9 +43,9 @@ export function TaskForm({
   onCancel,
   submitLabel = "Save",
 }: Props) {
-  const [tagDraft, setTagDraft] = useState("");
   const { data: people } = usePeople();
   const { data: todoLists } = useTodoLists({ limit: 100 });
+  const { data: labels } = useLabels();
   const {
     register,
     handleSubmit,
@@ -57,32 +58,23 @@ export function TaskForm({
     defaultValues: {
       title: task?.title ?? "",
       due_at: task?.due_at ?? null,
-      tags: task?.tags ?? [],
       reminders_enabled: task?.reminders_enabled ?? true,
       reminder_lead_minutes: task?.reminder_lead_minutes ?? 30,
       person_id: task?.person_id ?? undefined,
       priority: task?.priority ?? undefined,
       list_id: task ? task.list_id : (defaultListId ?? null),
+      label_ids: task?.task_labels.map(({ label }) => label.id) ?? [],
     },
   });
 
-  const tags = watch("tags") ?? [];
   const remindersEnabled = watch("reminders_enabled");
+  const labelIds = watch("label_ids") ?? [];
+  const labelById = new Map((labels?.rows ?? []).map((label) => [label.id, label]));
 
-  const addTag = () => {
-    const value = tagDraft.trim();
-    if (!value || tags.includes(value)) {
-      setTagDraft("");
-      return;
-    }
-    setValue("tags", [...tags, value], { shouldDirty: true });
-    setTagDraft("");
-  };
-
-  const removeTag = (tag: string) => {
+  const toggleLabel = (labelId: string) => {
     setValue(
-      "tags",
-      tags.filter((current) => current !== tag),
+      "label_ids",
+      labelIds.includes(labelId) ? labelIds.filter((id) => id !== labelId) : [...labelIds, labelId],
       { shouldDirty: true },
     );
   };
@@ -172,41 +164,27 @@ export function TaskForm({
         </Select>
       </FormField>
 
-      <FormField label="Tags" htmlFor="tag-draft">
-        <div className="flex gap-2">
-          <Input
-            id="tag-draft"
-            value={tagDraft}
-            onChange={(event) => setTagDraft(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                event.preventDefault();
-                addTag();
-              }
-            }}
-            placeholder="Add a tag and press Enter"
-          />
-          <Button type="button" variant="secondary" onClick={addTag}>
-            Add
-          </Button>
-        </div>
-        {tags.length > 0 && (
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            {tags.map((tag) => (
-              <Badge key={tag} tone="accent">
-                {tag}
+      <FormField label="Labels">
+        <div className="flex flex-wrap items-center gap-1.5">
+          {labelIds.map((labelId) => {
+            const label = labelById.get(labelId);
+            if (!label) return null;
+            return (
+              <LabelChip key={labelId} color={label.color}>
+                {label.name}
                 <button
                   type="button"
-                  aria-label={`Remove tag ${tag}`}
-                  onClick={() => removeTag(tag)}
+                  aria-label={`Remove label ${label.name}`}
+                  onClick={() => toggleLabel(labelId)}
                   className="ml-1"
                 >
                   ×
                 </button>
-              </Badge>
-            ))}
-          </div>
-        )}
+              </LabelChip>
+            );
+          })}
+          <LabelsPopover selectedLabelIds={labelIds} onToggleLabel={toggleLabel} />
+        </div>
       </FormField>
 
       <Checkbox label="Reminders enabled" {...register("reminders_enabled")} />

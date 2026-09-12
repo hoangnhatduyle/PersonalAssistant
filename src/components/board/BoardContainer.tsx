@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
+import { useDragToPan } from "@/hooks/useDragToPan";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   DndContext,
@@ -26,6 +27,7 @@ import { apiFetch } from "@/lib/http/client";
 import { taskKeys } from "@/lib/query/keys";
 import { BoardColumn } from "@/components/board/BoardColumn";
 import { BoardCard } from "@/components/board/BoardCard";
+import { BoardCardDetailDialog } from "@/components/board/BoardCardDetailDialog";
 import { CreateTodoListDialog } from "@/components/board/CreateTodoListDialog";
 import { TaskForm } from "@/components/board/TaskForm";
 import { Dialog } from "@/components/ui/Dialog";
@@ -34,19 +36,19 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { useToast } from "@/components/ui/Toast";
-import type { TaskRow } from "@/lib/api/entity-types";
+import type { TaskWithLabels } from "@/lib/api/entity-types";
 import type { TaskPayload, TodoListPayload } from "@/lib/api/schemas";
 
 const UNSORTED_ID = "unsorted";
 
-type ColumnsState = Record<string, TaskRow[]>;
+type ColumnsState = Record<string, TaskWithLabels[]>;
 
-function groupTasksByColumn(tasks: TaskRow[], listIds: string[]): ColumnsState {
+function groupTasksByColumn(tasks: TaskWithLabels[], listIds: string[]): ColumnsState {
   const columns: ColumnsState = {};
   for (const listId of listIds) columns[listId] = [];
   columns[UNSORTED_ID] = [];
 
-  const byPosition = (a: TaskRow, b: TaskRow) => a.position - b.position;
+  const byPosition = (a: TaskWithLabels, b: TaskWithLabels) => a.position - b.position;
   for (const task of [...tasks].sort(byPosition)) {
     const key =
       task.list_id && task.list_id in columns ? task.list_id : UNSORTED_ID;
@@ -119,6 +121,7 @@ export function BoardContainer() {
   const [createCardListId, setCreateCardListId] = useState<
     string | null | undefined
   >(undefined);
+  const [openCardId, setOpenCardId] = useState<string | null>(null);
   const [deleteListTarget, setDeleteListTarget] = useState<{
     id: string;
     name: string;
@@ -127,6 +130,9 @@ export function BoardContainer() {
   // none is — harmless, since mutate is only ever called while a target is
   // set and the confirm dialog is open).
   const deleteTodoList = useDeleteTodoList(deleteListTarget?.id ?? "");
+
+  const scrollRowRef = useRef<HTMLDivElement>(null);
+  const dragPan = useDragToPan(scrollRowRef, [lists.length]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -328,35 +334,55 @@ export function BoardContainer() {
           onDragOver={handleDragOver}
           onDragEnd={handleDragEnd}
         >
-          <div className="flex gap-3 overflow-x-auto pb-2">
-            {lists.map((list) => (
+          <div className="relative">
+            <div
+              ref={scrollRowRef}
+              onMouseDown={dragPan.onMouseDown}
+              className={`scrollbar-hide flex gap-3 overflow-x-auto pb-2 ${dragPan.isPanning ? "cursor-grabbing select-none" : "cursor-grab"}`}
+            >
+              {lists.map((list) => (
+                <BoardColumn
+                  key={list.id}
+                  id={list.id}
+                  name={list.name}
+                  courseName={
+                    list.course_id
+                      ? courseNameById.get(list.course_id)
+                      : undefined
+                  }
+                  tasks={columns[list.id] ?? []}
+                  peopleById={peopleById}
+                  isUnsorted={false}
+                  onAddCard={() => setCreateCardListId(list.id)}
+                  onDeleteList={() =>
+                    setDeleteListTarget({ id: list.id, name: list.name })
+                  }
+                  isDeletingList={deleteTodoList.isPending}
+                  onOpenCard={setOpenCardId}
+                />
+              ))}
               <BoardColumn
-                key={list.id}
-                id={list.id}
-                name={list.name}
-                courseName={
-                  list.course_id
-                    ? courseNameById.get(list.course_id)
-                    : undefined
-                }
-                tasks={columns[list.id] ?? []}
+                id={UNSORTED_ID}
+                name="Unsorted"
+                tasks={columns[UNSORTED_ID] ?? []}
                 peopleById={peopleById}
-                isUnsorted={false}
-                onAddCard={() => setCreateCardListId(list.id)}
-                onDeleteList={() =>
-                  setDeleteListTarget({ id: list.id, name: list.name })
-                }
-                isDeletingList={deleteTodoList.isPending}
+                isUnsorted
+                onAddCard={() => setCreateCardListId(null)}
+                onOpenCard={setOpenCardId}
               />
-            ))}
-            <BoardColumn
-              id={UNSORTED_ID}
-              name="Unsorted"
-              tasks={columns[UNSORTED_ID] ?? []}
-              peopleById={peopleById}
-              isUnsorted
-              onAddCard={() => setCreateCardListId(null)}
-            />
+            </div>
+            {dragPan.canScrollLeft && (
+              <div
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-y-0 left-0 w-10 bg-gradient-to-r from-bg-void to-transparent"
+              />
+            )}
+            {dragPan.canScrollRight && (
+              <div
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l from-bg-void to-transparent"
+              />
+            )}
           </div>
 
           <DragOverlay>
@@ -368,6 +394,7 @@ export function BoardContainer() {
                     ? peopleById.get(activeTask.person_id)
                     : undefined
                 }
+                onOpenCard={() => {}}
               />
             ) : null}
           </DragOverlay>
@@ -392,6 +419,11 @@ export function BoardContainer() {
           submitLabel="Create card"
         />
       </Dialog>
+
+      <BoardCardDetailDialog
+        taskId={openCardId}
+        onClose={() => setOpenCardId(null)}
+      />
 
       <ConfirmDialog
         open={deleteListTarget !== null}

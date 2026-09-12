@@ -36,6 +36,22 @@ export const todoListKeys = {
   detail: (id: string) => [...todoListKeys.all, "detail", id] as const,
 };
 
+export const checklistItemKeys = {
+  all: ["checklist-items"] as const,
+  list: (filters?: object) => [...checklistItemKeys.all, "list", filters ?? {}] as const,
+};
+
+export const labelKeys = {
+  all: ["labels"] as const,
+  list: (filters?: object) => [...labelKeys.all, "list", filters ?? {}] as const,
+  detail: (id: string) => [...labelKeys.all, "detail", id] as const,
+};
+
+export const attachmentKeys = {
+  all: ["task-attachments"] as const,
+  list: (filters?: object) => [...attachmentKeys.all, "list", filters ?? {}] as const,
+};
+
 export const appointmentKeys = {
   all: ["appointments"] as const,
   list: (filters?: object) => [...appointmentKeys.all, "list", filters ?? {}] as const,

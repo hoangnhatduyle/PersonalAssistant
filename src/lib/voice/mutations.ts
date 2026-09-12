@@ -319,9 +319,13 @@ async function executeTaskMutation(
       await assertLiveAndOwnedTodoList(supabase, mutation.payload.list_id, userId);
     }
 
+    // label_ids (Phase 3: Labels) isn't a `tasks` column — voice-driven
+    // label assignment isn't a supported mutation yet, same as it never was.
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { label_ids: _labelIds, ...taskPayload } = mutation.payload;
     const { data: task, error } = await supabase
       .from("tasks")
-      .insert({ user_id: userId, ...mutation.payload })
+      .insert({ user_id: userId, ...taskPayload })
       .select("*")
       .single();
     if (error) throw error;
@@ -342,9 +346,13 @@ async function executeTaskMutation(
     await assertLiveAndOwnedTodoList(supabase, mutation.payload.list_id, userId);
   }
 
+  // label_ids (Phase 3: Labels) isn't a `tasks` column — voice-driven label
+  // assignment isn't a supported mutation yet, same as it never was.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { label_ids: _labelIds, ...taskPatch } = mutation.payload;
   const { data: updated, error } = await supabase
     .from("tasks")
-    .update(mutation.payload)
+    .update(taskPatch)
     .eq("id", mutation.targetId)
     .eq("user_id", userId)
     .select("*")

@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch, toQueryString } from "@/lib/http/client";
 import { noteKeys, reminderKeys, taskKeys } from "@/lib/query/keys";
 import type { TaskPatch, TaskPayload } from "@/lib/api/schemas";
-import type { TaskRow } from "@/lib/api/entity-types";
+import type { TaskRow, TaskWithLabels } from "@/lib/api/entity-types";
 import type { TaskTransitionEvent } from "@/lib/api/transitions";
 
 export interface TaskListFilters {
@@ -22,7 +22,7 @@ export function useTasks(filters?: TaskListFilters) {
   return useQuery({
     queryKey: taskKeys.list(filters),
     queryFn: async () => {
-      const { data, meta } = await apiFetch<TaskRow[]>(`/api/tasks${toQueryString(filters ?? {})}`);
+      const { data, meta } = await apiFetch<TaskWithLabels[]>(`/api/tasks${toQueryString(filters ?? {})}`);
       return { rows: data, meta };
     },
   });
@@ -31,7 +31,7 @@ export function useTasks(filters?: TaskListFilters) {
 export function useTask(id: string) {
   return useQuery({
     queryKey: taskKeys.detail(id),
-    queryFn: async () => (await apiFetch<TaskRow>(`/api/tasks/${id}`)).data,
+    queryFn: async () => (await apiFetch<TaskWithLabels>(`/api/tasks/${id}`)).data,
     enabled: Boolean(id),
   });
 }
@@ -39,7 +39,8 @@ export function useTask(id: string) {
 export function useCreateTask() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (payload: TaskPayload) => (await apiFetch<TaskRow>("/api/tasks", { method: "POST", body: payload })).data,
+    mutationFn: async (payload: TaskPayload) =>
+      (await apiFetch<TaskWithLabels>("/api/tasks", { method: "POST", body: payload })).data,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: taskKeys.all });
       queryClient.invalidateQueries({ queryKey: reminderKeys.all });
@@ -50,7 +51,8 @@ export function useCreateTask() {
 export function useUpdateTask(id: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (payload: TaskPatch) => (await apiFetch<TaskRow>(`/api/tasks/${id}`, { method: "PATCH", body: payload })).data,
+    mutationFn: async (payload: TaskPatch) =>
+      (await apiFetch<TaskWithLabels>(`/api/tasks/${id}`, { method: "PATCH", body: payload })).data,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: taskKeys.all });
       queryClient.invalidateQueries({ queryKey: reminderKeys.all });

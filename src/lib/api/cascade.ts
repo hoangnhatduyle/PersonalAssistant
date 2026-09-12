@@ -127,3 +127,22 @@ export async function cascadeDeletePerson(
     notesUnlinked: data.notes_unlinked ?? 0,
   };
 }
+
+export interface LabelDeleteCascadeResult {
+  tasksUnlinked: number;
+}
+
+/**
+ * Soft-deletes a Label and, atomically, unlinks (hard-deletes — task_labels
+ * has no soft-delete of its own, see 0031_labels.sql) it from every Task
+ * referencing it.
+ */
+export async function cascadeDeleteLabel(
+  supabase: SupabaseClient<Database>,
+  labelId: string,
+): Promise<LabelDeleteCascadeResult> {
+  const { data, error } = await supabase.rpc("soft_delete_label_cascade", { p_label_id: labelId }).single();
+  if (error) throw error;
+
+  return { tasksUnlinked: data.tasks_unlinked ?? 0 };
+}

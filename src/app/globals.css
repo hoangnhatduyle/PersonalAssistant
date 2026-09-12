@@ -60,3 +60,8 @@ body {
 .animate-mic-listening { animation: mic-listening-ring 1.6s ease-out infinite; }
 .animate-mic-transcribing-ring { animation: mic-transcribing-spin 1.2s linear infinite; }
 .animate-mic-speaking { animation: mic-speaking-pulse 1.4s ease-in-out infinite; }
+
+/* BoardContainer's drag-to-pan row (useDragToPan) — no visible scrollbar,
+   the grab cursor + edge fades are the affordance instead. */
+.scrollbar-hide { scrollbar-width: none; -ms-overflow-style: none; }
+.scrollbar-hide::-webkit-scrollbar { display: none; }

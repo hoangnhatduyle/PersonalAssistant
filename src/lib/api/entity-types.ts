@@ -1,5 +1,6 @@
 import type { Database } from "@/lib/supabase/types";
 import type { MeetingBlock } from "@/lib/calendar/recurrence";
+import type { LabelColorToken } from "@/lib/label-colors";
 
 // Row types for every entity a hook fetches/mutates. Kept separate from
 // src/lib/knowledge/extraction.ts's own KnowledgeSourceRow (which pulls in
@@ -19,6 +20,33 @@ export type ReminderRow = Database["public"]["Tables"]["reminders"]["Row"];
 export type FeedbackRow = Database["public"]["Tables"]["feedback"]["Row"];
 export type PersonRow = Database["public"]["Tables"]["people"]["Row"];
 export type TodoListRow = Database["public"]["Tables"]["todo_lists"]["Row"];
+export type ChecklistItemRow = Database["public"]["Tables"]["checklist_items"]["Row"];
+
+// Labels (Phase 3 of the Trello-style card-detail modal): color is typed as
+// generic string by the Supabase generator (a CHECK constraint, not a
+// Postgres enum, backs the fixed palette) — overridden here with the
+// precise LabelColorToken union every consumer actually uses, same pattern
+// as CourseRow's meeting_blocks override above.
+export type LabelRow = Omit<Database["public"]["Tables"]["labels"]["Row"], "color"> & {
+  color: LabelColorToken | null;
+};
+
+// Attachments (Phase 4 of the Trello-style card-detail modal): kind is
+// typed as generic string by the Supabase generator (a CHECK constraint,
+// not a Postgres enum) — overridden here with the precise "link" | "file"
+// union every consumer actually uses, same pattern as LabelRow's color
+// override above.
+export type TaskAttachmentRow = Omit<Database["public"]["Tables"]["task_attachments"]["Row"], "kind"> & {
+  kind: "link" | "file";
+};
+
+// GET /api/tasks and GET /api/tasks/[id] select a joined
+// `task_labels(label:labels(id,name,color))` alongside the plain task row so
+// the board can render each card's labels without a second round trip —
+// only the columns BoardCard/LabelChip actually need, not the full LabelRow.
+export type TaskWithLabels = TaskRow & {
+  task_labels: { label: Pick<LabelRow, "id" | "name" | "color"> }[];
+};
 
 export type AppointmentRow = Database["public"]["Tables"]["appointments"]["Row"];
 export type SessionStatus = Database["public"]["Enums"]["session_status"];

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { KNOWLEDGE_MAX_PASTED_TEXT_CHARS, KNOWLEDGE_MAX_TITLE_CHARS } from "@/lib/knowledge/constants";
 import { MAX_SPEAK_TEXT_CHARS } from "@/lib/voice/constants";
+import { LABEL_COLOR_TOKENS } from "@/lib/label-colors";
 
 // Shared payload shapes from SPEC-API-004's shared_schemas. `xPatchSchema` is
 // the same shape with every field optional — used by the id-addressed PATCH
@@ -146,10 +147,76 @@ export const taskPayloadSchema = z.object({
   // guard_task_list_ownership for the DB-side enforcement this mirrors.
   list_id: z.uuid().nullable().optional(),
   position: z.number().int().optional(),
+  // Labels (Phase 3 of the Trello-style card-detail modal): omitted means
+  // "don't touch this card's labels"; present (including []) replaces the
+  // full set via sync_task_labels — see POST/PATCH /api/tasks. Mirrors how
+  // `tags` already worked (the full set is resubmitted every time), not a
+  // separate attach/detach endpoint.
+  label_ids: z.array(z.uuid()).optional(),
 });
 export type TaskPayload = z.infer<typeof taskPayloadSchema>;
 export const taskPatchSchema = taskPayloadSchema.partial();
 export type TaskPatch = z.infer<typeof taskPatchSchema>;
+
+// Checklists (Phase 2 of the Trello-style card-detail modal,
+// supabase/migrations/0030_checklist_items.sql): an ordered sub-item list on
+// a Task/Board Card. task_id is omitted from the patch schema (immutable
+// after insert, same pattern as deadlinePayloadSchema omitting course_id) —
+// moving a checklist item to a different card isn't a v1 feature.
+export const checklistItemPayloadSchema = z.object({
+  task_id: z.uuid(),
+  label: z.string().trim().min(1),
+  is_done: z.boolean().optional(),
+  position: z.number().int().optional(),
+});
+export type ChecklistItemPayload = z.infer<typeof checklistItemPayloadSchema>;
+export const checklistItemPatchSchema = checklistItemPayloadSchema.omit({ task_id: true }).partial();
+export type ChecklistItemPatch = z.infer<typeof checklistItemPatchSchema>;
+
+// Labels (Phase 3 of the Trello-style card-detail modal,
+// supabase/migrations/0031_labels.sql): fully replace tasks' old free-text
+// tags. color is a fixed 30-token palette (LABEL_COLOR_TOKENS), not
+// arbitrary hex like people.color — nullable/optional so "Remove color"
+// (LabelEditor.tsx) can explicitly clear a previously-set color back to
+// null, the same nullable-over-optional reasoning as itemPrioritySchema.
+const labelColorTokenSchema = z.enum(LABEL_COLOR_TOKENS);
+
+export const labelPayloadSchema = z.object({
+  name: z.string().trim().min(1),
+  color: labelColorTokenSchema.nullable().optional(),
+});
+export type LabelPayload = z.infer<typeof labelPayloadSchema>;
+export const labelPatchSchema = labelPayloadSchema.partial();
+export type LabelPatch = z.infer<typeof labelPatchSchema>;
+
+// Attachments (Phase 4 of the Trello-style card-detail modal,
+// supabase/migrations/0032_task_attachments.sql). Validates the non-file
+// fields; a kind="file" request's actual file is parsed out of multipart
+// FormData and validated separately by
+// src/lib/attachments/upload-guard.ts (same split as
+// knowledgeSourceCreateFieldsSchema/validateUpload). storage_object_path/
+// file_size_bytes/mime_type are never accepted from the client — the route
+// derives them after upload, same as knowledge_sources.
+export const attachmentPayloadSchema = z
+  .object({
+    task_id: z.uuid(),
+    kind: z.enum(["link", "file"]),
+    title: z.string().trim().min(1),
+    url: z.url().optional(),
+  })
+  .refine((value) => value.kind !== "link" || Boolean(value.url), {
+    message: "url is required when kind is \"link\"",
+    path: ["url"],
+  });
+export type AttachmentPayload = z.infer<typeof attachmentPayloadSchema>;
+
+// PATCH only ever edits the title (AttachmentsSection.tsx's ghost edit
+// button) — kind/url/storage fields are immutable after create, same
+// pattern as deadlinePatchSchema omitting course_id.
+export const attachmentPatchSchema = z.object({
+  title: z.string().trim().min(1),
+});
+export type AttachmentPatch = z.infer<typeof attachmentPatchSchema>;
 
 // SPEC-CALENDAR-001-ish People: a Person tracked under the account owner's
 // own account (e.g. a family member whose schedule they maintain for

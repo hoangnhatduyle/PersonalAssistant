@@ -1,17 +1,18 @@
 "use client";
 
-import Link from "next/link";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { GlassPanel } from "@/components/ui/GlassPanel";
 import { Badge } from "@/components/ui/Badge";
+import { LabelChip } from "@/components/ui/LabelChip";
 import { ITEM_PRIORITY_TONE } from "@/lib/status-colors";
-import type { TaskRow } from "@/lib/api/entity-types";
+import type { TaskWithLabels } from "@/lib/api/entity-types";
 
 type Props = {
-  task: TaskRow;
+  task: TaskWithLabels;
   /** Resolved from the board's own people list — avoids each card fetching People itself. */
   personName?: string;
+  onOpenCard: (taskId: string) => void;
 };
 
 function formatDueDate(dueAt: string): string {
@@ -21,8 +22,8 @@ function formatDueDate(dueAt: string): string {
   });
 }
 
-/** One draggable card in a Board column — compact by design (title, due date, priority, person, tags); open it for the full detail/transition/notes view. */
-export function BoardCard({ task, personName }: Props) {
+/** One draggable card in a Board column — compact by design (title, due date, priority, person, labels); open it for the full detail/transition/notes view. */
+export function BoardCard({ task, personName, onOpenCard }: Props) {
   const {
     attributes,
     listeners,
@@ -52,17 +53,20 @@ export function BoardCard({ task, personName }: Props) {
       <GlassPanel
         className={`flex cursor-grab flex-col gap-2 p-3 active:cursor-grabbing ${isResolved ? "opacity-60" : ""}`}
       >
-        <Link
-          href={`/board/${task.id}`}
-          onClick={(event) => event.stopPropagation()}
-          className={`font-display text-sm font-medium text-text-primary hover:underline ${task.status === "Done" ? "line-through" : ""}`}
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            onOpenCard(task.id);
+          }}
+          className={`text-left font-display text-sm font-medium text-text-primary hover:underline ${task.status === "Done" ? "line-through" : ""}`}
         >
           {task.title}
-        </Link>
+        </button>
 
         {(task.due_at ||
           task.priority ||
-          task.tags.length > 0 ||
+          task.task_labels.length > 0 ||
           personName) && (
           <div className="flex flex-wrap items-center gap-1.5">
             {task.due_at && (
@@ -78,10 +82,10 @@ export function BoardCard({ task, personName }: Props) {
               </Badge>
             )}
             {personName && <Badge tone="accent">For {personName}</Badge>}
-            {task.tags.map((tag) => (
-              <Badge key={tag} tone="neutral">
-                {tag}
-              </Badge>
+            {task.task_labels.map(({ label }) => (
+              <LabelChip key={label.id} color={label.color}>
+                {label.name}
+              </LabelChip>
             ))}
           </div>
         )}

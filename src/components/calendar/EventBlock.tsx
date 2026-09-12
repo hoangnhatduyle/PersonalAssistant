@@ -19,7 +19,7 @@ type Props = {
   href: string;
   color?: string;
   onElevate: () => void;
-  onCycleCluster: () => void;
+  onOpenPicker: (anchorRect: DOMRect) => void;
 };
 
 function glowShadow(color?: string): string {
@@ -50,7 +50,7 @@ export function EventBlock({
   href,
   color,
   onElevate,
-  onCycleCluster,
+  onOpenPicker,
 }: Props) {
   const fullWidthPx = widthPx + stackIndex * STACK_PEEK_PX;
 
@@ -60,6 +60,11 @@ export function EventBlock({
       onMouseEnter={onElevate}
       onFocus={onElevate}
       onClick={(event) => {
+        if (stackSize > 1) {
+          event.preventDefault();
+          onOpenPicker(event.currentTarget.getBoundingClientRect());
+          return;
+        }
         if (!isElevated) {
           event.preventDefault();
           onElevate();
@@ -82,18 +87,12 @@ export function EventBlock({
         <div className="flex items-start justify-between gap-1">
           <p className="line-clamp-1 text-xs font-medium leading-tight">{title}</p>
           {stackSize > 1 && !isElevated && stackIndex === stackSize - 1 && (
-            <button
-              type="button"
-              aria-label={`Show ${stackSize - 1} more overlapping events`}
-              onClick={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                onCycleCluster();
-              }}
-              className="shrink-0 rounded-full bg-bg-void/70 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wide text-text-secondary hover:text-text-primary"
+            <span
+              aria-hidden="true"
+              className="shrink-0 rounded-full bg-bg-void/70 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wide text-text-secondary"
             >
               +{stackSize - 1}
-            </button>
+            </span>
           )}
         </div>
         <p className="line-clamp-1 text-[10px] leading-tight opacity-80">{timeLabel}</p>

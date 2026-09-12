@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { EventBlock } from "@/components/calendar/EventBlock";
+import { OverlapEventPicker } from "@/components/calendar/OverlapEventPicker";
 import { layoutDayEvents, PIXELS_PER_MINUTE, type LayoutedCalendarEvent } from "@/lib/calendar/layout-day-events";
 
 type Props = {
@@ -12,17 +13,18 @@ type Props = {
   gridHeightPx: number;
 };
 
+type OpenPicker = {
+  clusterId: string;
+  anchorRect: DOMRect;
+};
+
 export function DayColumnEvents({ isToday, events, hourMarks, windowStart, gridHeightPx }: Props) {
   const [elevatedEventId, setElevatedEventId] = useState<string | null>(null);
+  const [picker, setPicker] = useState<OpenPicker | null>(null);
 
-  const cycleCluster = (clusterId: string) => {
-    const cluster = events.filter((event) => event.clusterId === clusterId).sort((a, b) => a.stackIndex - b.stackIndex);
-    if (cluster.length <= 1) return;
-
-    const currentIndex = cluster.findIndex((event) => event.id === elevatedEventId);
-    const nextIndex = currentIndex === -1 ? 0 : (currentIndex + 1) % cluster.length;
-    setElevatedEventId(cluster[nextIndex].id);
-  };
+  const pickerEvents = picker
+    ? events.filter((event) => event.clusterId === picker.clusterId).sort((a, b) => a.stackIndex - b.stackIndex)
+    : [];
 
   return (
     <div
@@ -55,9 +57,16 @@ export function DayColumnEvents({ isToday, events, hourMarks, windowStart, gridH
           href={event.href}
           color={event.color}
           onElevate={() => setElevatedEventId(event.id)}
-          onCycleCluster={() => cycleCluster(event.clusterId)}
+          onOpenPicker={(anchorRect) => setPicker({ clusterId: event.clusterId, anchorRect })}
         />
       ))}
+      {picker && pickerEvents.length > 0 && (
+        <OverlapEventPicker
+          events={pickerEvents}
+          anchorRect={picker.anchorRect}
+          onClose={() => setPicker(null)}
+        />
+      )}
     </div>
   );
 }

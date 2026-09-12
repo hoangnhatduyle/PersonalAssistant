@@ -121,6 +121,64 @@ export type Database = {
           },
         ];
       };
+      checklist_items: {
+        Row: {
+          created_at: string;
+          deleted_at: string | null;
+          id: string;
+          is_done: boolean;
+          label: string;
+          position: number;
+          task_id: string;
+          updated_at: string;
+          user_id: string;
+        };
+        Insert: {
+          created_at?: string;
+          deleted_at?: string | null;
+          id?: string;
+          is_done?: boolean;
+          label: string;
+          position?: number;
+          task_id: string;
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          created_at?: string;
+          deleted_at?: string | null;
+          id?: string;
+          is_done?: boolean;
+          label?: string;
+          position?: number;
+          task_id?: string;
+          updated_at?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "checklist_items_task_id_fkey";
+            columns: ["task_id"];
+            isOneToOne: false;
+            referencedRelation: "active_tasks";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "checklist_items_task_id_fkey";
+            columns: ["task_id"];
+            isOneToOne: false;
+            referencedRelation: "tasks";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "checklist_items_user_id_fkey";
+            columns: ["user_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       courses: {
         Row: {
           code: string | null;
@@ -448,6 +506,44 @@ export type Database = {
           },
         ];
       };
+      labels: {
+        Row: {
+          color: string | null;
+          created_at: string;
+          deleted_at: string | null;
+          id: string;
+          name: string;
+          updated_at: string;
+          user_id: string;
+        };
+        Insert: {
+          color?: string | null;
+          created_at?: string;
+          deleted_at?: string | null;
+          id?: string;
+          name: string;
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          color?: string | null;
+          created_at?: string;
+          deleted_at?: string | null;
+          id?: string;
+          name?: string;
+          updated_at?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "labels_user_id_fkey";
+            columns: ["user_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       notes: {
         Row: {
           body: string;
@@ -681,6 +777,130 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "reminders_user_id_fkey";
+            columns: ["user_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      task_attachments: {
+        Row: {
+          created_at: string;
+          deleted_at: string | null;
+          file_size_bytes: number | null;
+          id: string;
+          kind: string;
+          mime_type: string | null;
+          storage_object_path: string | null;
+          task_id: string;
+          title: string;
+          updated_at: string;
+          url: string | null;
+          user_id: string;
+        };
+        Insert: {
+          created_at?: string;
+          deleted_at?: string | null;
+          file_size_bytes?: number | null;
+          id?: string;
+          kind: string;
+          mime_type?: string | null;
+          storage_object_path?: string | null;
+          task_id: string;
+          title: string;
+          updated_at?: string;
+          url?: string | null;
+          user_id: string;
+        };
+        Update: {
+          created_at?: string;
+          deleted_at?: string | null;
+          file_size_bytes?: number | null;
+          id?: string;
+          kind?: string;
+          mime_type?: string | null;
+          storage_object_path?: string | null;
+          task_id?: string;
+          title?: string;
+          updated_at?: string;
+          url?: string | null;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "task_attachments_task_id_fkey";
+            columns: ["task_id"];
+            isOneToOne: false;
+            referencedRelation: "active_tasks";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "task_attachments_task_id_fkey";
+            columns: ["task_id"];
+            isOneToOne: false;
+            referencedRelation: "tasks";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "task_attachments_user_id_fkey";
+            columns: ["user_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      task_labels: {
+        Row: {
+          created_at: string;
+          label_id: string;
+          task_id: string;
+          user_id: string;
+        };
+        Insert: {
+          created_at?: string;
+          label_id: string;
+          task_id: string;
+          user_id: string;
+        };
+        Update: {
+          created_at?: string;
+          label_id?: string;
+          task_id?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "task_labels_label_id_fkey";
+            columns: ["label_id"];
+            isOneToOne: false;
+            referencedRelation: "active_labels";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "task_labels_label_id_fkey";
+            columns: ["label_id"];
+            isOneToOne: false;
+            referencedRelation: "labels";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "task_labels_task_id_fkey";
+            columns: ["task_id"];
+            isOneToOne: false;
+            referencedRelation: "active_tasks";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "task_labels_task_id_fkey";
+            columns: ["task_id"];
+            isOneToOne: false;
+            referencedRelation: "tasks";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "task_labels_user_id_fkey";
             columns: ["user_id"];
             isOneToOne: false;
             referencedRelation: "profiles";
@@ -1021,6 +1241,64 @@ export type Database = {
       };
     };
     Views: {
+      active_checklist_items: {
+        Row: {
+          created_at: string | null;
+          deleted_at: string | null;
+          id: string | null;
+          is_done: boolean | null;
+          label: string | null;
+          position: number | null;
+          task_id: string | null;
+          updated_at: string | null;
+          user_id: string | null;
+        };
+        Insert: {
+          created_at?: string | null;
+          deleted_at?: string | null;
+          id?: string | null;
+          is_done?: boolean | null;
+          label?: string | null;
+          position?: number | null;
+          task_id?: string | null;
+          updated_at?: string | null;
+          user_id?: string | null;
+        };
+        Update: {
+          created_at?: string | null;
+          deleted_at?: string | null;
+          id?: string | null;
+          is_done?: boolean | null;
+          label?: string | null;
+          position?: number | null;
+          task_id?: string | null;
+          updated_at?: string | null;
+          user_id?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "checklist_items_task_id_fkey";
+            columns: ["task_id"];
+            isOneToOne: false;
+            referencedRelation: "active_tasks";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "checklist_items_task_id_fkey";
+            columns: ["task_id"];
+            isOneToOne: false;
+            referencedRelation: "tasks";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "checklist_items_user_id_fkey";
+            columns: ["user_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       active_courses: {
         Row: {
           code: string | null;
@@ -1178,6 +1456,44 @@ export type Database = {
           },
         ];
       };
+      active_labels: {
+        Row: {
+          color: string | null;
+          created_at: string | null;
+          deleted_at: string | null;
+          id: string | null;
+          name: string | null;
+          updated_at: string | null;
+          user_id: string | null;
+        };
+        Insert: {
+          color?: string | null;
+          created_at?: string | null;
+          deleted_at?: string | null;
+          id?: string | null;
+          name?: string | null;
+          updated_at?: string | null;
+          user_id?: string | null;
+        };
+        Update: {
+          color?: string | null;
+          created_at?: string | null;
+          deleted_at?: string | null;
+          id?: string | null;
+          name?: string | null;
+          updated_at?: string | null;
+          user_id?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "labels_user_id_fkey";
+            columns: ["user_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       active_notes: {
         Row: {
           body: string | null;
@@ -1281,6 +1597,73 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "people_user_id_fkey";
+            columns: ["user_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      active_task_attachments: {
+        Row: {
+          created_at: string | null;
+          deleted_at: string | null;
+          file_size_bytes: number | null;
+          id: string | null;
+          kind: string | null;
+          mime_type: string | null;
+          storage_object_path: string | null;
+          task_id: string | null;
+          title: string | null;
+          updated_at: string | null;
+          url: string | null;
+          user_id: string | null;
+        };
+        Insert: {
+          created_at?: string | null;
+          deleted_at?: string | null;
+          file_size_bytes?: number | null;
+          id?: string | null;
+          kind?: string | null;
+          mime_type?: string | null;
+          storage_object_path?: string | null;
+          task_id?: string | null;
+          title?: string | null;
+          updated_at?: string | null;
+          url?: string | null;
+          user_id?: string | null;
+        };
+        Update: {
+          created_at?: string | null;
+          deleted_at?: string | null;
+          file_size_bytes?: number | null;
+          id?: string | null;
+          kind?: string | null;
+          mime_type?: string | null;
+          storage_object_path?: string | null;
+          task_id?: string | null;
+          title?: string | null;
+          updated_at?: string | null;
+          url?: string | null;
+          user_id?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "task_attachments_task_id_fkey";
+            columns: ["task_id"];
+            isOneToOne: false;
+            referencedRelation: "active_tasks";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "task_attachments_task_id_fkey";
+            columns: ["task_id"];
+            isOneToOne: false;
+            referencedRelation: "tasks";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "task_attachments_user_id_fkey";
             columns: ["user_id"];
             isOneToOne: false;
             referencedRelation: "profiles";
@@ -1541,6 +1924,12 @@ export type Database = {
           sessions_affected: number;
         }[];
       };
+      soft_delete_label_cascade: {
+        Args: { p_label_id: string };
+        Returns: {
+          tasks_unlinked: number;
+        }[];
+      };
       soft_delete_person_cascade: {
         Args: { p_person_id: string };
         Returns: {
@@ -1554,6 +1943,9 @@ export type Database = {
       soft_delete_task_cascade: {
         Args: { p_task_id: string };
         Returns: {
+          attachments_deleted: number;
+          checklist_items_deleted: number;
+          labels_unlinked: number;
           notes_unlinked: number;
           suggestions_dismissed: number;
         }[];
@@ -1569,6 +1961,10 @@ export type Database = {
         Returns: boolean;
       };
       sweep_expired_feedback: { Args: never; Returns: number };
+      sync_task_labels: {
+        Args: { p_label_ids: string[]; p_task_id: string };
+        Returns: undefined;
+      };
     };
     Enums: {
       deadline_status:

@@ -9,6 +9,15 @@ vi.mock("@/hooks/useTodoLists", () => ({
   }),
 }));
 
+vi.mock("@/hooks/useLabels", () => ({
+  useLabels: () => ({
+    data: { rows: [{ id: "label-1", name: "urgent", color: "red" }] },
+  }),
+  useCreateLabel: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useUpdateLabel: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useDeleteLabel: () => ({ mutateAsync: vi.fn(), isPending: false }),
+}));
+
 describe("TaskForm", () => {
   it("rejects an empty title and never calls onSubmit", async () => {
     const onSubmit = vi.fn();
@@ -32,21 +41,23 @@ describe("TaskForm", () => {
     await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
     expect(onSubmit.mock.calls[0][0]).toMatchObject({
       title: "Write report",
-      tags: [],
+      label_ids: [],
       list_id: null,
     });
   });
 
-  it("adds and removes a tag chip", () => {
+  it("adds and removes a label chip", () => {
     renderWithProviders(<TaskForm onSubmit={vi.fn()} />);
 
-    const tagInput = screen.getByPlaceholderText("Add a tag and press Enter");
-    fireEvent.change(tagInput, { target: { value: "urgent" } });
-    fireEvent.keyDown(tagInput, { key: "Enter" });
+    fireEvent.click(screen.getByRole("button", { name: "+ Labels" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Toggle label urgent" }));
+    // Close the popover so the selected-chip assertion below matches a
+    // single "urgent" node, not also the (always-rendered) popover row.
+    fireEvent.mouseDown(document.body);
 
     expect(screen.getByText("urgent")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Remove tag urgent" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove label urgent" }));
     expect(screen.queryByText("urgent")).not.toBeInTheDocument();
   });
 
