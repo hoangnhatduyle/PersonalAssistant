@@ -38,8 +38,8 @@ export function DayView({ day, hourMarks, windowStart, windowEnd, onPrevDay, onN
 
   return (
     <div className="max-h-[75vh] overflow-auto">
-      <div className="mb-2 flex items-center justify-between gap-2 px-1">
-        <Button variant="secondary" size="icon" aria-label="Previous day" onClick={onPrevDay}>
+      <div className="sticky top-0 z-10 flex items-center justify-between gap-2 border-b border-panel-border bg-panel px-1 pb-2">
+        <Button variant="secondary" size="icon" aria-label="Previous day" title="Previous day" onClick={onPrevDay}>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} className="h-4 w-4">
             <path d="M15 5l-7 7 7 7" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
@@ -47,7 +47,7 @@ export function DayView({ day, hourMarks, windowStart, windowEnd, onPrevDay, onN
         <p className={`font-mono text-sm uppercase tracking-wide ${day.isToday ? "text-accent-teal" : "text-text-primary"}`}>
           {day.label}
         </p>
-        <Button variant="secondary" size="icon" aria-label="Next day" onClick={onNextDay}>
+        <Button variant="secondary" size="icon" aria-label="Next day" title="Next day" onClick={onNextDay}>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} className="h-4 w-4">
             <path d="M9 5l7 7-7 7" strokeLinecap="round" strokeLinejoin="round" />
           </svg>

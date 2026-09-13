@@ -122,11 +122,13 @@ export function WeekGridContainer() {
             <h1 className="font-display text-2xl font-semibold text-text-primary">
               {weekOffset === 0 ? "This week" : formatWeekRange(weekRangeFor(referenceDate).start, weekRangeFor(referenceDate).end)}
             </h1>
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1.5">
+              <span className="font-mono text-[10px] uppercase tracking-wide text-text-eyebrow">Week</span>
               <Button
                 variant="secondary"
                 size="icon"
                 aria-label="Previous week"
+                title="Previous week"
                 onClick={() => setWeekOffset((offset) => offset - 1)}
               >
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} className="h-4 w-4">
@@ -145,6 +147,7 @@ export function WeekGridContainer() {
                 variant="secondary"
                 size="icon"
                 aria-label="Next week"
+                title="Next week"
                 onClick={() => setWeekOffset((offset) => offset + 1)}
               >
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} className="h-4 w-4">
