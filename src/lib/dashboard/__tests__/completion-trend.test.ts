@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { buildCompletionTrend, buildCompletedThisWeek } from "../completion-trend";
+import {
+  buildCompletionTrend,
+  buildCompletedThisWeek,
+  buildCycleTimeStats,
+  buildOnTimeCompletionRate,
+  buildNetBacklogDelta,
+  buildCycleTimeSparkline,
+} from "../completion-trend";
 import { makeDeadline, makeTask } from "./fixtures";
 
 function daysAgoISO(daysAgo: number): string {
@@ -62,5 +69,138 @@ describe("buildCompletedThisWeek", () => {
       7,
     );
     expect(items).toHaveLength(0);
+  });
+});
+
+describe("buildCycleTimeStats", () => {
+  it("computes this week's avg cycle time from created_at to updated_at", () => {
+    const stats = buildCycleTimeStats(
+      [makeDeadline({ status: "Completed", created_at: daysAgoISO(5), updated_at: daysAgoISO(2) })],
+      [],
+    );
+    expect(stats.thisWeekAvgDays).toBeCloseTo(3, 0);
+  });
+
+  it("buckets this-week and last-week completions independently and computes the delta", () => {
+    const stats = buildCycleTimeStats(
+      [makeDeadline({ id: "d-this-week", status: "Completed", created_at: daysAgoISO(4), updated_at: daysAgoISO(1) })],
+      [makeTask({ id: "t-last-week", status: "Done", created_at: daysAgoISO(13), updated_at: daysAgoISO(9) })],
+    );
+    expect(stats.thisWeekAvgDays).toBeCloseTo(3, 0);
+    expect(stats.lastWeekAvgDays).toBeCloseTo(4, 0);
+    expect(stats.deltaDays).toBeCloseTo(-1, 0);
+  });
+
+  it("returns null for an empty bucket and a null delta when only one side has data", () => {
+    const stats = buildCycleTimeStats([makeDeadline({ status: "Completed", created_at: daysAgoISO(3), updated_at: daysAgoISO(0) })], []);
+    expect(stats.lastWeekAvgDays).toBeNull();
+    expect(stats.deltaDays).toBeNull();
+  });
+
+  it("ignores non-terminal statuses", () => {
+    const stats = buildCycleTimeStats([makeDeadline({ status: "In Progress", updated_at: daysAgoISO(0) })], []);
+    expect(stats.thisWeekAvgDays).toBeNull();
+  });
+});
+
+describe("buildOnTimeCompletionRate", () => {
+  it("counts a completion finished before its due_at as on-time", () => {
+    const stats = buildOnTimeCompletionRate(
+      [makeDeadline({ status: "Completed", updated_at: daysAgoISO(2), due_at: daysAgoISO(1) })],
+      [],
+    );
+    expect(stats.rate).toBe(100);
+    expect(stats.onTimeCount).toBe(1);
+    expect(stats.eligibleCount).toBe(1);
+  });
+
+  it("counts a completion finished after its due_at as late", () => {
+    const stats = buildOnTimeCompletionRate(
+      [makeDeadline({ status: "Completed", updated_at: daysAgoISO(1), due_at: daysAgoISO(3) })],
+      [],
+    );
+    expect(stats.rate).toBe(0);
+    expect(stats.onTimeCount).toBe(0);
+    expect(stats.eligibleCount).toBe(1);
+  });
+
+  it("excludes tasks with no due_at from eligibleCount but still counts them as completed", () => {
+    const stats = buildOnTimeCompletionRate([], [makeTask({ status: "Done", updated_at: daysAgoISO(0), due_at: null })]);
+    expect(stats.eligibleCount).toBe(0);
+    expect(stats.completedCount).toBe(1);
+    expect(stats.rate).toBeNull();
+  });
+
+  it("returns a null rate when there are zero eligible completions", () => {
+    const stats = buildOnTimeCompletionRate([], []);
+    expect(stats.rate).toBeNull();
+  });
+});
+
+describe("buildNetBacklogDelta", () => {
+  it("computes completions minus new items created this week", () => {
+    const delta = buildNetBacklogDelta(
+      [makeDeadline({ id: "d-completed", status: "Completed", created_at: daysAgoISO(30), updated_at: daysAgoISO(0) })],
+      [
+        makeTask({ id: "t-completed", status: "Done", created_at: daysAgoISO(30), updated_at: daysAgoISO(0) }),
+        makeTask({ id: "t-created", status: "Open", created_at: daysAgoISO(0), updated_at: daysAgoISO(0) }),
+      ],
+    );
+    expect(delta.completedCount).toBe(2);
+    expect(delta.createdCount).toBe(1);
+    expect(delta.delta).toBe(1);
+  });
+
+  it("goes negative when more items are created than completed", () => {
+    const delta = buildNetBacklogDelta(
+      [],
+      [
+        makeTask({ id: "t-1", status: "Open", created_at: daysAgoISO(0) }),
+        makeTask({ id: "t-2", status: "Open", created_at: daysAgoISO(1) }),
+        makeTask({ id: "t-3", status: "Done", created_at: daysAgoISO(0), updated_at: daysAgoISO(0) }),
+      ],
+    );
+    expect(delta.createdCount).toBe(3);
+    expect(delta.completedCount).toBe(1);
+    expect(delta.delta).toBe(-2);
+  });
+
+  it("excludes items outside the trailing window from both sides", () => {
+    const delta = buildNetBacklogDelta(
+      [],
+      [makeTask({ status: "Open", created_at: daysAgoISO(30), updated_at: daysAgoISO(30) })],
+    );
+    expect(delta.completedCount).toBe(0);
+    expect(delta.createdCount).toBe(0);
+  });
+});
+
+describe("buildCycleTimeSparkline", () => {
+  it("places a single completion's cycle time in its day's bucket", () => {
+    const sparkline = buildCycleTimeSparkline(
+      [makeDeadline({ status: "Completed", created_at: daysAgoISO(3), updated_at: daysAgoISO(0) })],
+      [],
+      7,
+    );
+    expect(sparkline).toHaveLength(7);
+    expect(sparkline[6]).toBeCloseTo(3, 0);
+    expect(sparkline.slice(0, 6).every((value) => value === 0)).toBe(true);
+  });
+
+  it("averages same-day completions instead of summing them", () => {
+    const sparkline = buildCycleTimeSparkline(
+      [
+        makeDeadline({ id: "d-1", status: "Completed", created_at: daysAgoISO(2), updated_at: daysAgoISO(0) }),
+        makeDeadline({ id: "d-2", status: "Completed", created_at: daysAgoISO(4), updated_at: daysAgoISO(0) }),
+      ],
+      [],
+      7,
+    );
+    expect(sparkline[6]).toBeCloseTo(3, 0);
+  });
+
+  it("always returns exactly `days` buckets", () => {
+    expect(buildCycleTimeSparkline([], [], 7)).toHaveLength(7);
+    expect(buildCycleTimeSparkline([], [], 14)).toHaveLength(14);
   });
 });

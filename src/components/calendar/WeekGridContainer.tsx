@@ -7,7 +7,9 @@ import { useTasks } from "@/hooks/useTasks";
 import { usePeople } from "@/hooks/usePeople";
 import { useAppointments } from "@/hooks/useAppointments";
 import { buildWeekGridData } from "@/lib/calendar/build-week-events";
+import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { WeekGrid } from "@/components/calendar/WeekGrid";
+import { DayView } from "@/components/calendar/DayView";
 import { CalendarLegend } from "@/components/calendar/CalendarLegend";
 import { AppointmentsTimeline } from "@/components/calendar/AppointmentsTimeline";
 import {
@@ -40,6 +42,11 @@ function formatWeekRange(start: Date, end: Date): string {
 export function WeekGridContainer() {
   // Whole-week offset from the current week (0 = this week, -1 = last week, 1 = next week).
   const [weekOffset, setWeekOffset] = useState(0);
+  // Below `md`, the grid shows one day at a time instead of all 7 columns —
+  // scrolling a squeezed 7-column week on a phone is unusable.
+  const isMobile = useMediaQuery("(max-width: 767px)");
+  // Index into weekGrid.days (0 = Sunday .. 6 = Saturday) for the mobile day view.
+  const [selectedDayIndex, setSelectedDayIndex] = useState(() => new Date().getDay());
   const { data: courses, isLoading: coursesLoading } = useCourses();
   const { data: deadlines, isLoading: deadlinesLoading } = useDeadlines();
   const { data: tasks, isLoading: tasksLoading } = useTasks();
@@ -81,6 +88,31 @@ export function WeekGridContainer() {
         today,
       );
 
+  // Day nav rolls into the adjacent week at the Sun/Sat edge so it reads as
+  // continuous day-by-day movement rather than two independent controls.
+  const goToPrevDay = () => {
+    if (selectedDayIndex === 0) {
+      setWeekOffset((offset) => offset - 1);
+      setSelectedDayIndex(6);
+    } else {
+      setSelectedDayIndex((index) => index - 1);
+    }
+  };
+
+  const goToNextDay = () => {
+    if (selectedDayIndex === 6) {
+      setWeekOffset((offset) => offset + 1);
+      setSelectedDayIndex(0);
+    } else {
+      setSelectedDayIndex((index) => index + 1);
+    }
+  };
+
+  const goToToday = () => {
+    setWeekOffset(0);
+    setSelectedDayIndex(new Date().getDay());
+  };
+
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -104,7 +136,7 @@ export function WeekGridContainer() {
               <Button
                 variant="secondary"
                 size="sm"
-                onClick={() => setWeekOffset(0)}
+                onClick={goToToday}
                 disabled={weekOffset === 0}
               >
                 Today
@@ -134,7 +166,18 @@ export function WeekGridContainer() {
         <Skeleton className="h-[75vh] min-h-96 w-full" />
       ) : (
         <GlassPanel className="p-4">
-          <WeekGrid days={weekGrid.days} hourMarks={weekGrid.hourMarks} windowStart={weekGrid.windowStart} windowEnd={weekGrid.windowEnd} />
+          {isMobile ? (
+            <DayView
+              day={weekGrid.days[selectedDayIndex]}
+              hourMarks={weekGrid.hourMarks}
+              windowStart={weekGrid.windowStart}
+              windowEnd={weekGrid.windowEnd}
+              onPrevDay={goToPrevDay}
+              onNextDay={goToNextDay}
+            />
+          ) : (
+            <WeekGrid days={weekGrid.days} hourMarks={weekGrid.hourMarks} windowStart={weekGrid.windowStart} windowEnd={weekGrid.windowEnd} />
+          )}
         </GlassPanel>
       )}
 

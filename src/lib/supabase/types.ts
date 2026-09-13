@@ -260,6 +260,7 @@ export type Database = {
       };
       deadlines: {
         Row: {
+          acknowledged_at: string | null;
           course_id: string;
           created_at: string;
           deleted_at: string | null;
@@ -273,6 +274,7 @@ export type Database = {
           user_id: string;
         };
         Insert: {
+          acknowledged_at?: string | null;
           course_id: string;
           created_at?: string;
           deleted_at?: string | null;
@@ -286,6 +288,7 @@ export type Database = {
           user_id: string;
         };
         Update: {
+          acknowledged_at?: string | null;
           course_id?: string;
           created_at?: string;
           deleted_at?: string | null;
@@ -910,6 +913,7 @@ export type Database = {
       };
       tasks: {
         Row: {
+          acknowledged_at: string | null;
           created_at: string;
           deleted_at: string | null;
           due_at: string | null;
@@ -927,6 +931,7 @@ export type Database = {
           user_id: string;
         };
         Insert: {
+          acknowledged_at?: string | null;
           created_at?: string;
           deleted_at?: string | null;
           due_at?: string | null;
@@ -944,6 +949,7 @@ export type Database = {
           user_id: string;
         };
         Update: {
+          acknowledged_at?: string | null;
           created_at?: string;
           deleted_at?: string | null;
           due_at?: string | null;
@@ -1380,6 +1386,7 @@ export type Database = {
       };
       active_deadlines: {
         Row: {
+          acknowledged_at: string | null;
           course_id: string | null;
           created_at: string | null;
           deleted_at: string | null;
@@ -1393,6 +1400,7 @@ export type Database = {
           user_id: string | null;
         };
         Insert: {
+          acknowledged_at?: string | null;
           course_id?: string | null;
           created_at?: string | null;
           deleted_at?: string | null;
@@ -1406,6 +1414,7 @@ export type Database = {
           user_id?: string | null;
         };
         Update: {
+          acknowledged_at?: string | null;
           course_id?: string | null;
           created_at?: string | null;
           deleted_at?: string | null;
@@ -1673,6 +1682,7 @@ export type Database = {
       };
       active_tasks: {
         Row: {
+          acknowledged_at: string | null;
           created_at: string | null;
           deleted_at: string | null;
           due_at: string | null;
@@ -1688,6 +1698,7 @@ export type Database = {
           user_id: string | null;
         };
         Insert: {
+          acknowledged_at?: string | null;
           created_at?: string | null;
           deleted_at?: string | null;
           due_at?: string | null;
@@ -1703,6 +1714,7 @@ export type Database = {
           user_id?: string | null;
         };
         Update: {
+          acknowledged_at?: string | null;
           created_at?: string | null;
           deleted_at?: string | null;
           due_at?: string | null;

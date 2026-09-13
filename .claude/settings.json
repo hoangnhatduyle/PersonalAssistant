@@ -56,7 +56,26 @@
       "Bash(curl -s -X POST http://127.0.0.1:54321/auth/v1/admin/users -H 'apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU' -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU' -H 'Content-Type: application/json' -d '{\"email\":\"playwright-tester@example.com\",\"password\":\"TestPass123!\",\"email_confirm\":true}')",
       "Bash(grep -rn '\"/deadlines\"\\\\|`/deadlines`\\\\|/deadlines/\\\\${' src --include=\"*.ts\" --include=\"*.tsx\")",
       "Bash(grep -rn '\"/deadlines\"\\\\|`/deadlines`\\\\|/deadlines/\\\\${\\\\|href.*\"/deadlines' src --include=\"*.ts\" --include=\"*.tsx\")",
-      "Bash(xargs cat)"
+      "Bash(xargs cat)",
+      "Bash(curl -s -D - -o /dev/null http://localhost:3000/)",
+      "Bash(docker info *)",
+      "Bash(npx supabase *)",
+      "Bash(echo \"exit: $?\")",
+      "Bash(PGPASSWORD=postgres psql -h 127.0.0.1 -p 54332 -U postgres -d postgres -c \"\\\\d deadlines\")",
+      "Bash(PGPASSWORD=postgres psql -h 127.0.0.1 -p 54332 -U postgres -d postgres -c \"\\\\d tasks\")",
+      "Bash(PGPASSWORD=postgres psql -h 127.0.0.1 -p 54332 -U postgres -d postgres -c \"\\\\d active_deadlines\")",
+      "Bash(PGPASSWORD=postgres psql -h 127.0.0.1 -p 54332 -U postgres -d postgres -c \"\\\\d active_tasks\")",
+      "Bash(mkdir -p /home/hoang/projects/PersonalAssistant/src/app/api/tasks/\\\\[id\\\\]/acknowledge /home/hoang/projects/PersonalAssistant/src/app/api/deadlines/\\\\[id\\\\]/acknowledge)",
+      "Bash(grep -iA5 \"StaleItemsCard\\\\|useTasks\\\\|useDeadlines\\\\|acknowledge\")",
+      "Bash(node /tmp/setup-verify-user.mjs)",
+      "Bash(cp /tmp/setup-verify-user.mjs /home/hoang/projects/PersonalAssistant/setup-verify-user.mjs)",
+      "Bash(node setup-verify-user.mjs)",
+      "mcp__playwright__browser_close",
+      "Bash(node cleanup-verify-user.mjs)"
+    ],
+    "additionalDirectories": [
+      "/home/hoang/projects/PersonalAssistant/src/app/api/tasks/[id]",
+      "/tmp"
     ]
   }
 }

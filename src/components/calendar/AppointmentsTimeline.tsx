@@ -88,9 +88,12 @@ export function AppointmentsTimeline() {
       ) : (
         <ul className="flex flex-col divide-y divide-panel-border">
           {appointments.map((appointment) => (
-            <li key={appointment.id} className="flex items-start justify-between gap-3 py-2.5 first:pt-0 last:pb-0">
+            <li
+              key={appointment.id}
+              className="flex flex-col gap-2 py-3 first:pt-0 last:pb-0 sm:flex-row sm:items-start sm:justify-between sm:gap-3"
+            >
               <div className="flex min-w-0 flex-col gap-1.5">
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <p className="truncate text-sm text-text-primary">{appointment.title}</p>
                   <Badge tone="neutral">{appointment.category}</Badge>
                   {appointment.event_status && (
@@ -107,7 +110,7 @@ export function AppointmentsTimeline() {
                 </span>
                 <EventTransitionButtons appointment={appointment} suggestMissed={courseConflictingIds.has(appointment.id)} />
               </div>
-              <div className="flex shrink-0 gap-1">
+              <div className="flex shrink-0 gap-1 self-end sm:self-start">
                 <Button variant="ghost" size="sm" onClick={() => openEdit(appointment)}>
                   Edit
                 </Button>

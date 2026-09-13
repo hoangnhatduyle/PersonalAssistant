@@ -56,7 +56,7 @@ export function EventTransitionButtons({
   };
 
   return (
-    <div className={`flex gap-2 ${size === "lg" ? "flex-wrap" : ""}`}>
+    <div className="flex flex-wrap gap-2">
       {events.map((event) => {
         const isSuggestedMissed = suggestMissed && event === "user_marks_event_missed";
         const label = `${EVENT_LABELS[event]}${isSuggestedMissed ? " (Suggested)" : ""}`;

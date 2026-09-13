@@ -79,7 +79,7 @@ export function DashboardContainer() {
           </div>
 
           <div className="grid grid-cols-[minmax(0,1fr)] gap-6 md:grid-cols-2">
-            <StaleItemsCard deadlines={deadlines?.rows ?? []} tasks={mineOnlyTasks} />
+            <StaleItemsCard deadlines={deadlines?.rows ?? []} tasks={mineOnlyTasks} appointments={appointments?.rows ?? []} />
             <CourseProgressList courses={courses?.rows ?? []} deadlines={deadlines?.rows ?? []} tasks={mineOnlyTasks} todoLists={todoLists?.rows ?? []} />
           </div>
         </>

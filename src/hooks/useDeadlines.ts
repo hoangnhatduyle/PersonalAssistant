@@ -73,6 +73,17 @@ export function useTransitionDeadline(id: string) {
   });
 }
 
+/** Resets StaleItemsCard's staleness clock for this deadline ("still on it") — see /api/deadlines/[id]/acknowledge. */
+export function useAcknowledgeDeadline(id: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async () => (await apiFetch<DeadlineRow>(`/api/deadlines/${id}/acknowledge`, { method: "POST" })).data,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: deadlineKeys.all });
+    },
+  });
+}
+
 export function useDeleteDeadline(id: string) {
   const queryClient = useQueryClient();
   return useMutation({

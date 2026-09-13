@@ -72,6 +72,17 @@ export function useTransitionTask(id: string) {
   });
 }
 
+/** Resets StaleItemsCard's staleness clock for this task ("still on it") — see /api/tasks/[id]/acknowledge. */
+export function useAcknowledgeTask(id: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async () => (await apiFetch<TaskRow>(`/api/tasks/${id}/acknowledge`, { method: "POST" })).data,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: taskKeys.all });
+    },
+  });
+}
+
 export function useDeleteTask(id: string) {
   const queryClient = useQueryClient();
   return useMutation({
