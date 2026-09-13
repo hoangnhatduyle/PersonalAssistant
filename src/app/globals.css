@@ -65,3 +65,58 @@ body {
    the grab cursor + edge fades are the affordance instead. */
 .scrollbar-hide { scrollbar-width: none; -ms-overflow-style: none; }
 .scrollbar-hide::-webkit-scrollbar { display: none; }
+
+/* Board — editorial stripe. See tokens.css for the --board-* values this
+   pulls from. BoardColumn/BoardCard render plain divs with these classes
+   instead of GlassPanel: the solid card fill and priority stripe are a
+   different material from the shared glass panel, not a GlassPanel variant. */
+.board-atmosphere {
+  background:
+    var(--board-glow-indigo),
+    var(--board-glow-violet),
+    var(--board-glow-teal),
+    var(--board-grain),
+    var(--board-bg-base);
+  background-blend-mode: normal, normal, normal, overlay;
+}
+
+.board-column {
+  background: var(--board-column-bg);
+  border-color: var(--board-column-border);
+}
+.board-column:nth-child(3n+1) { --board-col-wash: var(--board-wash-indigo); }
+.board-column:nth-child(3n+2) { --board-col-wash: var(--board-wash-violet); }
+.board-column:nth-child(3n) { --board-col-wash: var(--board-wash-teal); }
+
+.board-column-head {
+  margin: -0.75rem -0.75rem 0;
+  padding: 0.625rem 0.75rem 0.5rem;
+  border-radius: var(--radius-panel) var(--radius-panel) 0 0;
+  background: linear-gradient(180deg, var(--board-col-wash, transparent) 0%, transparent 85%);
+}
+
+.board-card {
+  position: relative;
+  background: var(--board-card-bg);
+  border-color: var(--board-card-border);
+  box-shadow: var(--board-card-shadow);
+  transition: border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
+}
+.board-card:hover {
+  border-color: var(--board-card-stripe, var(--board-card-border-hover));
+  box-shadow: 0 0 0 1px var(--board-card-stripe, var(--board-card-border-hover)), var(--board-card-shadow-hover);
+  transform: translateY(-2px);
+}
+.board-card[data-priority]::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 3px;
+  border-radius: calc(var(--radius-panel) - 1px) calc(var(--radius-panel) - 1px) 0 0;
+  background: var(--board-card-stripe);
+}
+.board-card[data-priority] { padding-top: 0.9375rem; }
+.board-card[data-priority="Urgent"] { --board-card-stripe: var(--status-urgent); }
+.board-card[data-priority="High"] { --board-card-stripe: var(--status-warn); }
+.board-card[data-priority="Medium"] { --board-card-stripe: var(--accent-indigo); }
+.board-card[data-priority="Low"] { --board-card-stripe: var(--status-neutral); }

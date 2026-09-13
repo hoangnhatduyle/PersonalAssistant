@@ -2,7 +2,6 @@
 
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { GlassPanel } from "@/components/ui/GlassPanel";
 import { Badge } from "@/components/ui/Badge";
 import { LabelChip } from "@/components/ui/LabelChip";
 import { ITEM_PRIORITY_TONE } from "@/lib/status-colors";
@@ -50,8 +49,9 @@ export function BoardCard({ task, personName, onOpenCard }: Props) {
       {...attributes}
       {...listeners}
     >
-      <GlassPanel
-        className={`flex cursor-grab flex-col gap-2 p-3 active:cursor-grabbing ${isResolved ? "opacity-60" : ""}`}
+      <div
+        data-priority={task.priority ?? undefined}
+        className={`board-card flex cursor-grab flex-col gap-2 rounded-panel border p-3 active:cursor-grabbing ${isResolved ? "opacity-60" : ""}`}
       >
         <button
           type="button"
@@ -89,7 +89,7 @@ export function BoardCard({ task, personName, onOpenCard }: Props) {
             ))}
           </div>
         )}
-      </GlassPanel>
+      </div>
     </div>
   );
 }

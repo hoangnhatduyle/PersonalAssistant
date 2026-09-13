@@ -5,7 +5,6 @@ import {
   SortableContext,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
-import { GlassPanel } from "@/components/ui/GlassPanel";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { BoardCard } from "@/components/board/BoardCard";
@@ -43,10 +42,10 @@ export function BoardColumn({
   });
 
   return (
-    <GlassPanel
-      className={`flex w-72 shrink-0 flex-col gap-3 p-3 transition-colors ${isOver ? "ring-2 ring-accent-indigo" : ""}`}
+    <div
+      className={`board-column flex w-72 shrink-0 flex-col gap-3 rounded-panel border p-3 transition-colors ${isOver ? "ring-2 ring-accent-indigo" : ""}`}
     >
-      <div className="flex items-start justify-between gap-2">
+      <div className="board-column-head flex items-start justify-between gap-2">
         <div className="min-w-0">
           {courseName && (
             <p className="truncate font-mono text-[10px] uppercase tracking-wide text-text-eyebrow">
@@ -102,6 +101,6 @@ export function BoardColumn({
       <Button type="button" variant="secondary" size="sm" onClick={onAddCard}>
         + Add card
       </Button>
-    </GlassPanel>
+    </div>
   );
 }

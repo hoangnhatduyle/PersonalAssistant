@@ -40,4 +40,27 @@
   --glow-ok: 0 0 20px -6px rgb(45 212 191 / 0.5);
   --glow-warn: 0 0 20px -6px rgb(245 158 11 / 0.5);
   --glow-urgent: 0 0 20px -6px rgb(251 113 133 / 0.5);
+
+  /* Board — "editorial stripe" surface. The board trades the shared
+     translucent glass panel for a solid card + per-column accent wash +
+     priority-colored top stripe, so it gets its own small token set
+     (src/app/globals.css .board-* rules) instead of a new GlassPanel
+     variant every other surface would inherit. */
+  --board-bg-base: #07080f;
+  --board-glow-indigo: radial-gradient(ellipse 820px 480px at 8% -6%, rgb(99 102 241 / 0.14), transparent 58%);
+  --board-glow-violet: radial-gradient(ellipse 680px 460px at 50% 30%, rgb(168 85 247 / 0.08), transparent 62%);
+  --board-glow-teal: radial-gradient(ellipse 780px 520px at 96% 104%, rgb(45 212 191 / 0.11), transparent 60%);
+  --board-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='matrix' values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.035 0'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E");
+
+  --board-column-bg: rgb(255 255 255 / 0.03);
+  --board-column-border: rgb(255 255 255 / 0.07);
+  --board-wash-indigo: rgb(99 102 241 / 0.16);
+  --board-wash-violet: rgb(168 85 247 / 0.16);
+  --board-wash-teal: rgb(45 212 191 / 0.14);
+
+  --board-card-bg: #12151f;
+  --board-card-border: rgb(255 255 255 / 0.09);
+  --board-card-border-hover: rgb(255 255 255 / 0.22);
+  --board-card-shadow: 0 6px 14px -8px rgb(0 0 0 / 0.6);
+  --board-card-shadow-hover: 0 10px 22px -10px rgb(0 0 0 / 0.7);
 }
