@@ -74,7 +74,9 @@
       "Bash(node cleanup-verify-user.mjs)",
       "Bash(git -C /home/hoang/projects/PersonalAssistant mv src/components/courses/DayOfWeekToggle.tsx src/components/recurrence/DayOfWeekToggle.tsx)",
       "Bash(git -C /home/hoang/projects/PersonalAssistant mv src/components/courses/RecurrencePicker.tsx src/components/recurrence/RecurrencePicker.tsx)",
-      "Bash(git -C /home/hoang/projects/PersonalAssistant mv src/components/courses/RecurrencePreview.tsx src/components/recurrence/RecurrencePreview.tsx)"
+      "Bash(git -C /home/hoang/projects/PersonalAssistant mv src/components/courses/RecurrencePreview.tsx src/components/recurrence/RecurrencePreview.tsx)",
+      "Bash(grep -rn \"getFullYear\\(\\)}-\\\\${\" /home/hoang/projects/PersonalAssistant/src --include=\"*.ts\" --include=\"*.tsx\")",
+      "Bash(echo \"started with pid $!\")"
     ],
     "additionalDirectories": [
       "/home/hoang/projects/PersonalAssistant/src/app/api/tasks/[id]",

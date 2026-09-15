@@ -20,6 +20,8 @@ type Props = {
   task?: TaskWithLabels;
   /** Pre-selects a Board List when creating a card from within a column (e.g. BoardColumn's "+ Add card"). Ignored when editing an existing card. */
   defaultListId?: string | null;
+  /** Pre-fills the due date/time when creating from a Calendar empty-slot click (src/components/calendar/CreateEventDialog.tsx). Ignored when editing an existing card. */
+  defaultDueAt?: string;
   onSubmit: (values: TaskPayload) => Promise<void> | void;
   onCancel?: () => void;
   submitLabel?: string;
@@ -39,6 +41,7 @@ const emptyToNull = (value: string) => (value === "" ? null : value);
 export function TaskForm({
   task,
   defaultListId,
+  defaultDueAt,
   onSubmit,
   onCancel,
   submitLabel = "Save",
@@ -57,7 +60,7 @@ export function TaskForm({
     resolver: zodResolver(taskPayloadSchema),
     defaultValues: {
       title: task?.title ?? "",
-      due_at: task?.due_at ?? null,
+      due_at: task?.due_at ?? defaultDueAt ?? null,
       reminders_enabled: task?.reminders_enabled ?? true,
       reminder_lead_minutes: task?.reminder_lead_minutes ?? 30,
       person_id: task?.person_id ?? undefined,

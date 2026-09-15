@@ -7,6 +7,19 @@ import { makeCourse, makeMeetingBlock, makeDeadline, makeTask, makePerson, makeA
 const REFERENCE = new Date("2026-01-07T12:00:00");
 
 describe("buildWeekGridData", () => {
+  it("stamps each day column with its real calendar date", () => {
+    const data = buildWeekGridData([], [], [], [], REFERENCE);
+    expect(data.days.map((day) => day.date)).toEqual([
+      "2026-01-04",
+      "2026-01-05",
+      "2026-01-06",
+      "2026-01-07",
+      "2026-01-08",
+      "2026-01-09",
+      "2026-01-10",
+    ]);
+  });
+
   it("places a course's meeting block on the correct days", () => {
     const data = buildWeekGridData(
       [makeCourse({ id: "c-1", meeting_blocks: [makeMeetingBlock({ days: [1, 3, 5], startMinutes: 600, endMinutes: 650 })] })],

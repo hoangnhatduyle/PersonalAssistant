@@ -93,3 +93,10 @@ export function layoutDayEvents(events: CalendarEvent[], windowStart: number, co
 export function weekGridHeightPx(windowStart: number, windowEnd: number): number {
   return (windowEnd - windowStart) * PIXELS_PER_MINUTE + EVENT_BLOCK_MIN_HEIGHT_PX;
 }
+
+/** Converts a click's vertical offset into a snapped minutes-of-day value, for empty-slot event creation. */
+export function pxToMinutes(offsetY: number, windowStart: number, snapMinutes = 30): number {
+  const raw = windowStart + offsetY / PIXELS_PER_MINUTE;
+  const snapped = Math.round(raw / snapMinutes) * snapMinutes;
+  return Math.min(Math.max(snapped, 0), 24 * 60 - snapMinutes);
+}

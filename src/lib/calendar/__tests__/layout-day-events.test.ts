@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { EVENT_BLOCK_MIN_HEIGHT_PX, eventHeightPx, layoutDayEvents, PIXELS_PER_MINUTE, STACK_PEEK_PX, weekGridHeightPx } from "../layout-day-events";
+import {
+  EVENT_BLOCK_MIN_HEIGHT_PX,
+  eventHeightPx,
+  layoutDayEvents,
+  PIXELS_PER_MINUTE,
+  pxToMinutes,
+  STACK_PEEK_PX,
+  weekGridHeightPx,
+} from "../layout-day-events";
 import type { CalendarEvent } from "../build-week-events";
 
 function makeEvent(overrides: Partial<CalendarEvent> & Pick<CalendarEvent, "id" | "startMinutes">): CalendarEvent {
@@ -83,5 +91,32 @@ describe("layoutDayEvents", () => {
 describe("weekGridHeightPx", () => {
   it("matches the visible time window plus one card of padding", () => {
     expect(weekGridHeightPx(8 * 60, 18 * 60)).toBe((18 * 60 - 8 * 60) * PIXELS_PER_MINUTE + EVENT_BLOCK_MIN_HEIGHT_PX);
+  });
+});
+
+describe("pxToMinutes", () => {
+  const windowStart = 8 * 60;
+
+  it("converts a pixel offset back into minutes-of-day, snapped to the nearest interval", () => {
+    const offsetY = 65 * PIXELS_PER_MINUTE; // 65 minutes past windowStart
+    expect(pxToMinutes(offsetY, windowStart)).toBe(windowStart + 60); // snaps down to the nearest 30
+  });
+
+  it("snaps up when closer to the next interval", () => {
+    const offsetY = 80 * PIXELS_PER_MINUTE; // 80 minutes past windowStart
+    expect(pxToMinutes(offsetY, windowStart)).toBe(windowStart + 90);
+  });
+
+  it("respects a custom snap interval", () => {
+    const offsetY = 22 * PIXELS_PER_MINUTE;
+    expect(pxToMinutes(offsetY, windowStart, 15)).toBe(windowStart + 15);
+  });
+
+  it("clamps to 0 for an offset above the top of the grid", () => {
+    expect(pxToMinutes(-1000, 0)).toBe(0);
+  });
+
+  it("clamps to the last valid slot for an offset past midnight", () => {
+    expect(pxToMinutes(100000, windowStart)).toBe(24 * 60 - 30);
   });
 });

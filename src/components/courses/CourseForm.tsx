@@ -15,6 +15,8 @@ import { RecurrencePreview } from "@/components/recurrence/RecurrencePreview";
 
 type Props = {
   course?: CourseRow;
+  /** Seeds the first meeting block when creating from a Calendar empty-slot click (src/components/calendar/CreateEventDialog.tsx). Ignored when editing an existing course or when meeting_blocks is already populated. */
+  defaultBlock?: { days: number[]; startMinutes: number; endMinutes: number };
   onSubmit: (values: CoursePayload) => Promise<void> | void;
   onCancel?: () => void;
   submitLabel?: string;
@@ -32,7 +34,7 @@ const emptyToUndefined = (value: string) => (value === "" ? undefined : value);
 // behind an "Add another time window" click.
 const DEFAULT_BLOCK = { days: [] as number[], startMinutes: 9 * 60, endMinutes: 9 * 60 + 50 };
 
-export function CourseForm({ course, onSubmit, onCancel, submitLabel = "Save" }: Props) {
+export function CourseForm({ course, defaultBlock, onSubmit, onCancel, submitLabel = "Save" }: Props) {
   const { data: people } = usePeople();
   const form = useForm<CoursePayload>({
     resolver: zodResolver(coursePayloadSchema),
@@ -40,7 +42,7 @@ export function CourseForm({ course, onSubmit, onCancel, submitLabel = "Save" }:
       code: course?.code ?? undefined,
       name: course?.name ?? "",
       term: course?.term ?? undefined,
-      meeting_blocks: course?.meeting_blocks && course.meeting_blocks.length > 0 ? course.meeting_blocks : [DEFAULT_BLOCK],
+      meeting_blocks: course?.meeting_blocks && course.meeting_blocks.length > 0 ? course.meeting_blocks : [defaultBlock ?? DEFAULT_BLOCK],
       recurrence_start_date: course?.recurrence_start_date ?? null,
       recurrence_end_date: course?.recurrence_end_date ?? null,
       location: course?.location ?? undefined,

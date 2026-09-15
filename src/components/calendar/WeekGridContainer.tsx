@@ -12,6 +12,8 @@ import { WeekGrid } from "@/components/calendar/WeekGrid";
 import { DayView } from "@/components/calendar/DayView";
 import { CalendarLegend } from "@/components/calendar/CalendarLegend";
 import { AppointmentsTimeline } from "@/components/calendar/AppointmentsTimeline";
+import { CreateEventDialog } from "@/components/calendar/CreateEventDialog";
+import type { CreateRequest } from "@/components/calendar/DayColumnEvents";
 import {
   PersonFilterToggle,
   defaultPersonFilterSelection,
@@ -61,6 +63,8 @@ export function WeekGridContainer() {
   // including an intentionally empty set — so each person can be toggled
   // independently (e.g. Mine + Châu at the same time).
   const [personFilter, setPersonFilter] = useState<PersonFilterSelection | null>(null);
+  // Set by an empty-slot click in WeekGrid/DayView; drives CreateEventDialog.
+  const [createRequest, setCreateRequest] = useState<CreateRequest | null>(null);
 
   const isLoading = coursesLoading || deadlinesLoading || tasksLoading || peopleLoading || appointmentsLoading;
   const selection = personFilter ?? defaultPersonFilterSelection(people?.rows ?? []);
@@ -177,13 +181,21 @@ export function WeekGridContainer() {
               windowEnd={weekGrid.windowEnd}
               onPrevDay={goToPrevDay}
               onNextDay={goToNextDay}
+              onCreateRequest={setCreateRequest}
             />
           ) : (
-            <WeekGrid days={weekGrid.days} hourMarks={weekGrid.hourMarks} windowStart={weekGrid.windowStart} windowEnd={weekGrid.windowEnd} />
+            <WeekGrid
+              days={weekGrid.days}
+              hourMarks={weekGrid.hourMarks}
+              windowStart={weekGrid.windowStart}
+              windowEnd={weekGrid.windowEnd}
+              onCreateRequest={setCreateRequest}
+            />
           )}
         </GlassPanel>
       )}
 
+      <CreateEventDialog request={createRequest} onClose={() => setCreateRequest(null)} />
       <AppointmentsTimeline />
     </div>
   );

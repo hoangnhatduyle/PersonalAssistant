@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { DayColumnEvents } from "@/components/calendar/DayColumnEvents";
+import { DayColumnEvents, type CreateRequest } from "@/components/calendar/DayColumnEvents";
 import { formatMinutesOfDay } from "@/lib/calendar/recurrence";
 import { layoutDayEvents, PIXELS_PER_MINUTE, weekGridHeightPx } from "@/lib/calendar/layout-day-events";
 import type { DayColumn } from "@/lib/calendar/build-week-events";
@@ -14,12 +14,13 @@ type Props = {
   windowEnd: number;
   onPrevDay: () => void;
   onNextDay: () => void;
+  onCreateRequest: (request: CreateRequest) => void;
 };
 
 const TIME_AXIS_WIDTH_PX = 64;
 
 /** Single-day mobile view of the week grid — same event layout primitives as WeekGrid, one full-width column. */
-export function DayView({ day, hourMarks, windowStart, windowEnd, onPrevDay, onNextDay }: Props) {
+export function DayView({ day, hourMarks, windowStart, windowEnd, onPrevDay, onNextDay, onCreateRequest }: Props) {
   const gridRef = useRef<HTMLDivElement>(null);
   const [columnWidthPx, setColumnWidthPx] = useState(0);
   const gridHeightPx = weekGridHeightPx(windowStart, windowEnd);
@@ -69,10 +70,12 @@ export function DayView({ day, hourMarks, windowStart, windowEnd, onPrevDay, onN
 
         <DayColumnEvents
           isToday={day.isToday}
+          date={day.date}
           events={layoutDayEvents(day.events, windowStart, columnWidthPx)}
           hourMarks={hourMarks}
           windowStart={windowStart}
           gridHeightPx={gridHeightPx}
+          onCreateRequest={onCreateRequest}
         />
       </div>
     </div>

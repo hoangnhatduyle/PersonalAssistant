@@ -25,6 +25,8 @@ export interface CalendarEvent {
 export interface DayColumn {
   key: string;
   dayOfWeek: number;
+  /** This column's calendar date as YYYY-MM-DD (same convention as AppointmentPayload.date). */
+  date: string;
   label: string;
   isToday: boolean;
   events: CalendarEvent[];
@@ -57,6 +59,12 @@ function startOfWeek(date: Date): Date {
 
 function sameDay(a: Date, b: Date): boolean {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
+
+/** Local YYYY-MM-DD (not `.toISOString()`, which converts to UTC and can shift the date in positive-offset timezones). */
+function toDateKey(date: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
 /** "14:00" / "14:00:00" -> 840. Returns null for a missing or unparseable time so the caller can skip that row. */
@@ -317,6 +325,7 @@ export function buildWeekGridData(
     return {
       key: String(dayOfWeek),
       dayOfWeek,
+      date: toDateKey(date),
       label: `${label} ${date.getDate()}`,
       isToday: sameDay(date, today),
       events,

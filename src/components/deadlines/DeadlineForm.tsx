@@ -15,6 +15,8 @@ import { Button } from "@/components/ui/Button";
 
 type Props = {
   deadline?: DeadlineRow;
+  /** Pre-fills the due date/time when creating from a Calendar empty-slot click (src/components/calendar/CreateEventDialog.tsx). Ignored when editing an existing deadline. */
+  defaultDueAt?: string;
   onSubmit: (values: DeadlinePayload) => Promise<void> | void;
   onCancel?: () => void;
   submitLabel?: string;
@@ -25,7 +27,7 @@ type Props = {
 // so leaving it on "Unset" actually omits the key.
 const emptyToUndefined = (value: string) => (value === "" ? undefined : value);
 
-export function DeadlineForm({ deadline, onSubmit, onCancel, submitLabel = "Save" }: Props) {
+export function DeadlineForm({ deadline, defaultDueAt, onSubmit, onCancel, submitLabel = "Save" }: Props) {
   const { data: courses } = useCourses({ personId: "me" });
   const {
     register,
@@ -38,7 +40,7 @@ export function DeadlineForm({ deadline, onSubmit, onCancel, submitLabel = "Save
     defaultValues: {
       course_id: deadline?.course_id ?? "",
       title: deadline?.title ?? "",
-      due_at: deadline?.due_at ?? "",
+      due_at: deadline?.due_at ?? defaultDueAt ?? "",
       priority: deadline?.priority ?? undefined,
     },
   });

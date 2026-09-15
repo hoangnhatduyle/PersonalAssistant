@@ -31,20 +31,25 @@ const DEFAULT_BLOCK = { days: [] as number[], startMinutes: 9 * 60, endMinutes: 
 
 type Props = {
   appointment?: AppointmentRow;
+  /** Pre-fills date/time when creating from a Calendar empty-slot click (src/components/calendar/CreateEventDialog.tsx). Ignored when editing an existing appointment. */
+  defaultDate?: string;
+  defaultTime?: string;
   onSubmit: (values: AppointmentPayload) => void;
   onCancel: () => void;
 };
 
-export function AppointmentForm({ appointment, onSubmit, onCancel }: Props) {
+export function AppointmentForm({ appointment, defaultDate, defaultTime, onSubmit, onCancel }: Props) {
   const [isRecurring, setIsRecurring] = useState(() => (appointment?.meeting_blocks?.length ?? 0) > 0);
   const [title, setTitle] = useState(appointment?.title ?? "");
   const [category, setCategory] = useState(appointment?.category ?? APPOINTMENT_CATEGORIES[0]);
-  const [date, setDate] = useState(appointment?.date ?? "");
+  const [date, setDate] = useState(appointment?.date ?? defaultDate ?? "");
   // Structured HH:MM (not free text) — required so appointment-vs-appointment
   // conflict detection (src/lib/appointments/conflicts.ts) has a real start
   // time to compare, unlike a Deadline Session's free-text time.
-  const [time, setTime] = useState(appointment?.time ?? "");
-  const [duration, setDuration] = useState(appointment?.duration_minutes ? String(appointment.duration_minutes) : "");
+  const [time, setTime] = useState(appointment?.time ?? defaultTime ?? "");
+  const [duration, setDuration] = useState(
+    appointment?.duration_minutes ? String(appointment.duration_minutes) : defaultTime ? "60" : "",
+  );
   const [location, setLocation] = useState(appointment?.location ?? "");
   const [notes, setNotes] = useState((appointment?.notes ?? []).join("\n"));
   const [isEditingNotes, setIsEditingNotes] = useState(() => (appointment?.notes ?? []).length === 0);
