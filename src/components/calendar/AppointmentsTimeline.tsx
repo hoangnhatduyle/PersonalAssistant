@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useAppointments, useCreateAppointment, useUpdateAppointment, useDeleteAppointment } from "@/hooks/useAppointments";
 import { useCourses } from "@/hooks/useCourses";
-import { AppointmentForm, type AppointmentFormValues } from "@/components/calendar/AppointmentForm";
+import { AppointmentForm } from "@/components/calendar/AppointmentForm";
 import { EventTransitionButtons } from "@/components/calendar/EventTransitionButtons";
 import { GlassPanel } from "@/components/ui/GlassPanel";
 import { Dialog } from "@/components/ui/Dialog";
@@ -14,8 +14,10 @@ import { Badge } from "@/components/ui/Badge";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { findConflictingAppointmentIds } from "@/lib/appointments/conflicts";
 import { findCourseConflictingAppointmentIds } from "@/lib/appointments/course-conflicts";
+import { formatBlocksSummary } from "@/lib/calendar/recurrence";
 import { EVENT_STATUS_TONE } from "@/lib/status-colors";
 import type { AppointmentRow } from "@/lib/api/entity-types";
+import type { AppointmentPayload } from "@/lib/api/schemas";
 
 function formatDate(date: string): string {
   return new Date(`${date}T00:00:00`).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
@@ -51,7 +53,7 @@ export function AppointmentsTimeline() {
     setFormOpen(true);
   };
 
-  const handleSubmit = (values: AppointmentFormValues) => {
+  const handleSubmit = (values: AppointmentPayload) => {
     if (editingId) {
       updateMutation.mutate(values, {
         onSuccess: () => {
@@ -96,6 +98,7 @@ export function AppointmentsTimeline() {
                 <div className="flex flex-wrap items-center gap-2">
                   <p className="truncate text-sm text-text-primary">{appointment.title}</p>
                   <Badge tone="neutral">{appointment.category}</Badge>
+                  {appointment.meeting_blocks.length > 0 && <Badge tone="purple">Recurring</Badge>}
                   {appointment.event_status && (
                     <Badge tone={EVENT_STATUS_TONE[appointment.event_status]}>{appointment.event_status}</Badge>
                   )}
@@ -103,9 +106,11 @@ export function AppointmentsTimeline() {
                   {courseConflictingIds.has(appointment.id) && <Badge tone="purple">Course Conflict</Badge>}
                 </div>
                 <span className="font-mono text-xs text-text-secondary">
-                  {formatDate(appointment.date)}
-                  {appointment.time ? ` · ${appointment.time}` : ""}
-                  {appointment.duration_minutes ? ` (${appointment.duration_minutes}m)` : ""}
+                  {appointment.meeting_blocks.length > 0
+                    ? formatBlocksSummary(appointment.meeting_blocks)
+                    : `${formatDate(appointment.date)}${appointment.time ? ` · ${appointment.time}` : ""}${
+                        appointment.duration_minutes ? ` (${appointment.duration_minutes}m)` : ""
+                      }`}
                   {appointment.location ? ` · ${appointment.location}` : ""}
                 </span>
                 <EventTransitionButtons appointment={appointment} suggestMissed={courseConflictingIds.has(appointment.id)} />
@@ -130,7 +135,7 @@ export function AppointmentsTimeline() {
           setEditingId(null);
         }}
         title={editingAppointment ? "Edit Appointment" : "Add Appointment"}
-        size="lg"
+        size="xl"
       >
         <AppointmentForm
           appointment={editingAppointment}

@@ -77,15 +77,21 @@ const RECURRENCE_DATE_ORDER_CHECK = {
   path: ["recurrence_end_date"],
 };
 
-export const coursePayloadSchema = courseBaseSchema.refine(
-  (value) => !value.recurrence_start_date || !value.recurrence_end_date || value.recurrence_start_date <= value.recurrence_end_date,
-  RECURRENCE_DATE_ORDER_CHECK,
-);
+// Shared by Courses and Appointments' own base+refine pairs below (see the
+// comment on courseBaseSchema for why each refine call is duplicated inline
+// rather than wrapped in a single generic helper -- only the boolean
+// predicate itself is safe to share, not the whole schema).
+interface RecurrenceDateRange {
+  recurrence_start_date?: string | null;
+  recurrence_end_date?: string | null;
+}
+function isRecurrenceDateOrderValid(value: RecurrenceDateRange): boolean {
+  return !value.recurrence_start_date || !value.recurrence_end_date || value.recurrence_start_date <= value.recurrence_end_date;
+}
+
+export const coursePayloadSchema = courseBaseSchema.refine(isRecurrenceDateOrderValid, RECURRENCE_DATE_ORDER_CHECK);
 export type CoursePayload = z.infer<typeof coursePayloadSchema>;
-export const coursePatchSchema = courseBaseSchema.partial().refine(
-  (value) => !value.recurrence_start_date || !value.recurrence_end_date || value.recurrence_start_date <= value.recurrence_end_date,
-  RECURRENCE_DATE_ORDER_CHECK,
-);
+export const coursePatchSchema = courseBaseSchema.partial().refine(isRecurrenceDateOrderValid, RECURRENCE_DATE_ORDER_CHECK);
 export type CoursePatch = z.infer<typeof coursePatchSchema>;
 
 export const deadlinePayloadSchema = z.object({
@@ -110,7 +116,17 @@ export type TodoListPayload = z.infer<typeof todoListPayloadSchema>;
 export const todoListPatchSchema = todoListPayloadSchema.partial();
 export type TodoListPatch = z.infer<typeof todoListPatchSchema>;
 
-export const appointmentPayloadSchema = z.object({
+// meeting_blocks/recurrence_start_date/recurrence_end_date (Course-style
+// recurrence, supabase/migrations/0035_appointment_recurrence.sql): an
+// appointment may optionally recur the same way a course does, reusing the
+// identical MeetingBlock shape/field names so every existing recurrence
+// utility (getNextOccurrence, expandBlockInWeek, formatBlocksSummary) and the
+// RecurrencePicker/RecurrencePreview UI work unchanged. date/time/
+// duration_minutes stay as-is (still required for a non-recurring, non-
+// Session appointment, enforced in the POST route, not here) — a recurring
+// appointment's client fills `date` with recurrence_start_date (or today) as
+// a stand-in so unrelated readers of appointments.date keep working.
+const appointmentBaseSchema = z.object({
   title: z.string().trim().min(1),
   date: z.iso.date(),
   category: z.string().trim().min(1).optional(),
@@ -126,9 +142,17 @@ export const appointmentPayloadSchema = z.object({
   // omitting course_id.
   deadline_id: z.uuid().nullable().optional(),
   duration_minutes: z.number().int().positive().nullable().optional(),
+  meeting_blocks: z.array(meetingBlockSchema).max(10).optional(),
+  recurrence_start_date: z.string().regex(RECURRENCE_DATE_REGEX, "Expected YYYY-MM-DD").nullable().optional(),
+  recurrence_end_date: z.string().regex(RECURRENCE_DATE_REGEX, "Expected YYYY-MM-DD").nullable().optional(),
 });
+
+export const appointmentPayloadSchema = appointmentBaseSchema.refine(isRecurrenceDateOrderValid, RECURRENCE_DATE_ORDER_CHECK);
 export type AppointmentPayload = z.infer<typeof appointmentPayloadSchema>;
-export const appointmentPatchSchema = appointmentPayloadSchema.omit({ deadline_id: true }).partial();
+export const appointmentPatchSchema = appointmentBaseSchema
+  .omit({ deadline_id: true })
+  .partial()
+  .refine(isRecurrenceDateOrderValid, RECURRENCE_DATE_ORDER_CHECK);
 export type AppointmentPatch = z.infer<typeof appointmentPatchSchema>;
 // session_status/event_status are never in either schema above — both only
 // change through the dedicated transition route (NC-API-002), like

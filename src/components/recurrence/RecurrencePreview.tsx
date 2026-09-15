@@ -1,9 +1,14 @@
 "use client";
 
-import { useFormContext } from "react-hook-form";
+import { useFormContext, type FieldPath } from "react-hook-form";
 import { GlassPanel } from "@/components/ui/GlassPanel";
-import { getNextOccurrence, formatBlocksSummary, formatMinutesOfDay, type MeetingBlock } from "@/lib/calendar/recurrence";
-import type { CoursePayload } from "@/lib/api/schemas";
+import {
+  getNextOccurrence,
+  formatBlocksSummary,
+  formatMinutesOfDay,
+  type MeetingBlock,
+  type RecurrenceFormFields,
+} from "@/lib/calendar/recurrence";
 
 const DAY_ABBR = ["S", "M", "T", "W", "T", "F", "S"];
 const PREVIEW_WINDOW_START = 8 * 60;
@@ -20,13 +25,20 @@ function isCompleteBlock(block: Partial<MeetingBlock> | undefined): block is Mee
   );
 }
 
-/** "LIVE RECURRENCE PREVIEW" — next occurrence, a compact week grid, and a plain-language summary, all driven by the form's current in-memory values (no submit needed). */
-export function RecurrencePreview() {
-  const { watch } = useFormContext<CoursePayload>();
-  const rawBlocks = watch("meeting_blocks") ?? [];
+/**
+ * "LIVE RECURRENCE PREVIEW" — next occurrence, a compact week grid, and a
+ * plain-language summary, all driven by the form's current in-memory values
+ * (no submit needed). Generic over any form shape that adopts the
+ * meeting_blocks/recurrence_start_date/recurrence_end_date field names —
+ * pass the concrete type explicitly at the call site, e.g.
+ * `<RecurrencePreview<CoursePayload> />`.
+ */
+export function RecurrencePreview<T extends RecurrenceFormFields>() {
+  const { watch } = useFormContext<T>();
+  const rawBlocks = (watch("meeting_blocks" as FieldPath<T>) as MeetingBlock[] | undefined) ?? [];
   const blocks = rawBlocks.filter(isCompleteBlock);
-  const rangeStart = watch("recurrence_start_date") ?? null;
-  const rangeEnd = watch("recurrence_end_date") ?? null;
+  const rangeStart = (watch("recurrence_start_date" as FieldPath<T>) as string | null | undefined) ?? null;
+  const rangeEnd = (watch("recurrence_end_date" as FieldPath<T>) as string | null | undefined) ?? null;
 
   const next = getNextOccurrence(blocks, new Date(), rangeStart, rangeEnd);
 

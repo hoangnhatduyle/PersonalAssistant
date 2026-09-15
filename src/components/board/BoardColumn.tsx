@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useDroppable } from "@dnd-kit/core";
 import {
   SortableContext,
@@ -7,6 +8,8 @@ import {
 } from "@dnd-kit/sortable";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
+import { useToast } from "@/components/ui/Toast";
+import { useUpdateTodoList } from "@/hooks/useTodoLists";
 import { BoardCard } from "@/components/board/BoardCard";
 import type { TaskWithLabels } from "@/lib/api/entity-types";
 
@@ -41,20 +44,76 @@ export function BoardColumn({
     data: { type: "column", listId: isUnsorted ? null : id },
   });
 
+  const { showToast } = useToast();
+  const updateTodoList = useUpdateTodoList(id);
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [draftName, setDraftName] = useState(name);
+
+  function startEditingName() {
+    setDraftName(name);
+    setIsEditingName(true);
+  }
+
+  async function commitEditingName() {
+    const trimmed = draftName.trim();
+    setIsEditingName(false);
+    if (!trimmed || trimmed === name) return;
+    try {
+      await updateTodoList.mutateAsync({ name: trimmed });
+    } catch {
+      showToast("Could not rename list", "error");
+    }
+  }
+
   return (
     <div
       className={`board-column flex w-72 shrink-0 flex-col gap-3 rounded-panel border p-3 transition-colors ${isOver ? "ring-2 ring-accent-indigo" : ""}`}
     >
       <div className="board-column-head flex items-start justify-between gap-2">
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           {courseName && (
             <p className="truncate font-mono text-[10px] uppercase tracking-wide text-text-eyebrow">
               {courseName}
             </p>
           )}
-          <h3 className="truncate font-display text-sm font-semibold text-text-primary">
-            {name}
-          </h3>
+          {isUnsorted ? (
+            <h3 className="truncate font-display text-sm font-semibold text-text-primary">
+              {name}
+            </h3>
+          ) : isEditingName ? (
+            <input
+              type="text"
+              value={draftName}
+              autoFocus
+              disabled={updateTodoList.isPending}
+              onChange={(event) => setDraftName(event.target.value)}
+              onBlur={commitEditingName}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.currentTarget.blur();
+                } else if (event.key === "Escape") {
+                  setIsEditingName(false);
+                }
+              }}
+              className="w-full rounded border border-accent-indigo bg-bg-void px-1 py-0.5 font-display text-sm font-semibold text-text-primary outline-none"
+            />
+          ) : (
+            <h3
+              role="button"
+              tabIndex={0}
+              aria-label={`Rename list ${name}`}
+              onClick={startEditingName}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  startEditingName();
+                }
+              }}
+              className="cursor-text truncate rounded font-display text-sm font-semibold text-text-primary hover:bg-white/5"
+            >
+              {name}
+            </h3>
+          )}
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
           <Badge tone="neutral">{tasks.length}</Badge>

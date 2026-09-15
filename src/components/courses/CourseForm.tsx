@@ -10,8 +10,8 @@ import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { Button } from "@/components/ui/Button";
-import { RecurrencePicker } from "@/components/courses/RecurrencePicker";
-import { RecurrencePreview } from "@/components/courses/RecurrencePreview";
+import { RecurrencePicker } from "@/components/recurrence/RecurrencePicker";
+import { RecurrencePreview } from "@/components/recurrence/RecurrencePreview";
 
 type Props = {
   course?: CourseRow;
@@ -86,8 +86,8 @@ export function CourseForm({ course, onSubmit, onCancel, submitLabel = "Save" }:
         </div>
 
         <div className="grid gap-4 lg:grid-cols-2">
-          <RecurrencePicker />
-          <RecurrencePreview />
+          <RecurrencePicker<CoursePayload> />
+          <RecurrencePreview<CoursePayload> />
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2">

@@ -71,7 +71,10 @@
       "Bash(cp /tmp/setup-verify-user.mjs /home/hoang/projects/PersonalAssistant/setup-verify-user.mjs)",
       "Bash(node setup-verify-user.mjs)",
       "mcp__playwright__browser_close",
-      "Bash(node cleanup-verify-user.mjs)"
+      "Bash(node cleanup-verify-user.mjs)",
+      "Bash(git -C /home/hoang/projects/PersonalAssistant mv src/components/courses/DayOfWeekToggle.tsx src/components/recurrence/DayOfWeekToggle.tsx)",
+      "Bash(git -C /home/hoang/projects/PersonalAssistant mv src/components/courses/RecurrencePicker.tsx src/components/recurrence/RecurrencePicker.tsx)",
+      "Bash(git -C /home/hoang/projects/PersonalAssistant mv src/components/courses/RecurrencePreview.tsx src/components/recurrence/RecurrencePreview.tsx)"
     ],
     "additionalDirectories": [
       "/home/hoang/projects/PersonalAssistant/src/app/api/tasks/[id]",

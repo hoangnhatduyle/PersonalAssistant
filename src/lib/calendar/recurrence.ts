@@ -15,6 +15,17 @@ export interface MeetingBlock {
   endMinutes: number;
 }
 
+/**
+ * The subset of a payload shape RecurrencePicker/RecurrencePreview need to
+ * operate generically over any form (CoursePayload, AppointmentPayload, ...)
+ * that adopts these three field names for its own recurrence data.
+ */
+export interface RecurrenceFormFields {
+  meeting_blocks?: MeetingBlock[];
+  recurrence_start_date?: string | null;
+  recurrence_end_date?: string | null;
+}
+
 const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 function toDateOnly(date: Date): string {

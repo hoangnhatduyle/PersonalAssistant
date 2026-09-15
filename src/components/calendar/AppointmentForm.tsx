@@ -1,34 +1,45 @@
 "use client";
 
 import { useState } from "react";
+import { useForm, FormProvider } from "react-hook-form";
 import { FormField } from "@/components/ui/FormField";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
+import { Checkbox } from "@/components/ui/Checkbox";
 import { Button } from "@/components/ui/Button";
+import { RecurrencePicker } from "@/components/recurrence/RecurrencePicker";
+import { RecurrencePreview } from "@/components/recurrence/RecurrencePreview";
 import { APPOINTMENT_CATEGORIES } from "@/lib/appointments/types";
 import { splitLinks } from "@/lib/text/linkify";
 import type { AppointmentRow } from "@/lib/api/entity-types";
+import type { AppointmentPayload } from "@/lib/api/schemas";
 
-export type AppointmentFormValues = {
-  title: string;
-  date: string;
-  category: string;
-  time: string;
-  duration_minutes: number;
-  location?: string;
-  notes?: string[];
-};
+// The subset of AppointmentPayload the Course-style recurrence editor
+// (RecurrencePicker/RecurrencePreview) needs its own react-hook-form instance
+// for. Kept separate from the rest of the appointment's fields (title, date,
+// time, ...), which stay plain component state exactly as before this
+// appointment recurrence feature — only these three fields need a real form
+// context, since RecurrencePicker/RecurrencePreview are generic over
+// RecurrenceFormFields and call useFormContext() internally.
+type RecurrenceFields = Pick<AppointmentPayload, "meeting_blocks" | "recurrence_start_date" | "recurrence_end_date">;
+
+// Matches CourseForm.tsx's DEFAULT_BLOCK: a brand-new recurring appointment
+// starts with one blank block so the picker's sections are visible the
+// moment "Recurring" is checked, instead of an empty state behind an
+// "Add another time window" click.
+const DEFAULT_BLOCK = { days: [] as number[], startMinutes: 9 * 60, endMinutes: 9 * 60 + 50 };
 
 type Props = {
   appointment?: AppointmentRow;
-  onSubmit: (values: AppointmentFormValues) => void;
+  onSubmit: (values: AppointmentPayload) => void;
   onCancel: () => void;
 };
 
 export function AppointmentForm({ appointment, onSubmit, onCancel }: Props) {
+  const [isRecurring, setIsRecurring] = useState(() => (appointment?.meeting_blocks?.length ?? 0) > 0);
   const [title, setTitle] = useState(appointment?.title ?? "");
-  const [date, setDate] = useState(appointment?.date ?? "");
   const [category, setCategory] = useState(appointment?.category ?? APPOINTMENT_CATEGORIES[0]);
+  const [date, setDate] = useState(appointment?.date ?? "");
   // Structured HH:MM (not free text) — required so appointment-vs-appointment
   // conflict detection (src/lib/appointments/conflicts.ts) has a real start
   // time to compare, unlike a Deadline Session's free-text time.
@@ -39,13 +50,52 @@ export function AppointmentForm({ appointment, onSubmit, onCancel }: Props) {
   const [isEditingNotes, setIsEditingNotes] = useState(() => (appointment?.notes ?? []).length === 0);
   const [error, setError] = useState<string | null>(null);
 
+  const recurrenceForm = useForm<RecurrenceFields>({
+    defaultValues: {
+      meeting_blocks:
+        appointment?.meeting_blocks && appointment.meeting_blocks.length > 0 ? appointment.meeting_blocks : [DEFAULT_BLOCK],
+      recurrence_start_date: appointment?.recurrence_start_date ?? null,
+      recurrence_end_date: appointment?.recurrence_end_date ?? null,
+    },
+  });
+
   const durationMinutes = Number(duration);
   const isDurationValid = duration.trim() !== "" && Number.isInteger(durationMinutes) && durationMinutes > 0;
 
   const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault();
-    if (!title.trim() || !date || !time || !isDurationValid) {
-      setError("Title, date, time, and duration are required.");
+    if (!title.trim()) {
+      setError("Title is required.");
+      return;
+    }
+
+    const parsedNotes = notes
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+
+    if (isRecurring) {
+      const { meeting_blocks, recurrence_start_date, recurrence_end_date } = recurrenceForm.getValues();
+      onSubmit({
+        title: title.trim(),
+        // date stays required by the stored row (see 0035_appointment_recurrence.sql's
+        // comment) even though it's not user-facing here — recurrence_start_date
+        // (or today, if that's also unset) stands in for it.
+        date: recurrence_start_date ?? new Date().toISOString().slice(0, 10),
+        category,
+        time: null,
+        duration_minutes: null,
+        location: location.trim() || undefined,
+        notes: parsedNotes,
+        meeting_blocks,
+        recurrence_start_date,
+        recurrence_end_date,
+      });
+      return;
+    }
+
+    if (!date || !time || !isDurationValid) {
+      setError("Date, time, and duration are required.");
       return;
     }
     onSubmit({
@@ -55,10 +105,10 @@ export function AppointmentForm({ appointment, onSubmit, onCancel }: Props) {
       time,
       duration_minutes: durationMinutes,
       location: location.trim() || undefined,
-      notes: notes
-        .split("\n")
-        .map((line) => line.trim())
-        .filter(Boolean),
+      notes: parsedNotes,
+      meeting_blocks: [],
+      recurrence_start_date: null,
+      recurrence_end_date: null,
     });
   };
 
@@ -68,10 +118,9 @@ export function AppointmentForm({ appointment, onSubmit, onCancel }: Props) {
         <Input id="appointment-title" placeholder="e.g. Dentist Appointment" value={title} onChange={(event) => setTitle(event.target.value)} />
       </FormField>
 
+      <Checkbox label="Recurring" checked={isRecurring} onChange={(event) => setIsRecurring(event.target.checked)} />
+
       <div className="grid grid-cols-2 gap-4">
-        <FormField label="Date" htmlFor="appointment-date" error={!date ? error ?? undefined : undefined}>
-          <Input id="appointment-date" type="date" value={date} onChange={(event) => setDate(event.target.value)} />
-        </FormField>
         <FormField label="Category" htmlFor="appointment-category">
           <Select id="appointment-category" value={category} onChange={(event) => setCategory(event.target.value)}>
             {APPOINTMENT_CATEGORIES.map((option) => (
@@ -81,29 +130,42 @@ export function AppointmentForm({ appointment, onSubmit, onCancel }: Props) {
             ))}
           </Select>
         </FormField>
-      </div>
-
-      <div className="grid grid-cols-2 gap-4">
-        <FormField label="Time" htmlFor="appointment-time" error={!time ? error ?? undefined : undefined}>
-          <Input id="appointment-time" type="time" required value={time} onChange={(event) => setTime(event.target.value)} />
-        </FormField>
-        <FormField label="Duration (minutes)" htmlFor="appointment-duration" error={!isDurationValid ? error ?? undefined : undefined}>
-          <Input
-            id="appointment-duration"
-            type="number"
-            min={1}
-            step={5}
-            required
-            placeholder="e.g. 60"
-            value={duration}
-            onChange={(event) => setDuration(event.target.value)}
-          />
+        <FormField label="Location" htmlFor="appointment-location">
+          <Input id="appointment-location" placeholder="e.g. Baldwin Hall 544" value={location} onChange={(event) => setLocation(event.target.value)} />
         </FormField>
       </div>
 
-      <FormField label="Location" htmlFor="appointment-location">
-        <Input id="appointment-location" placeholder="e.g. Baldwin Hall 544" value={location} onChange={(event) => setLocation(event.target.value)} />
-      </FormField>
+      {isRecurring ? (
+        <FormProvider {...recurrenceForm}>
+          <div className="grid gap-4 lg:grid-cols-2">
+            <RecurrencePicker<RecurrenceFields> />
+            <RecurrencePreview<RecurrenceFields> />
+          </div>
+        </FormProvider>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 gap-4">
+            <FormField label="Date" htmlFor="appointment-date" error={!date ? error ?? undefined : undefined}>
+              <Input id="appointment-date" type="date" value={date} onChange={(event) => setDate(event.target.value)} />
+            </FormField>
+            <FormField label="Time" htmlFor="appointment-time" error={!time ? error ?? undefined : undefined}>
+              <Input id="appointment-time" type="time" required value={time} onChange={(event) => setTime(event.target.value)} />
+            </FormField>
+          </div>
+          <FormField label="Duration (minutes)" htmlFor="appointment-duration" error={!isDurationValid ? error ?? undefined : undefined}>
+            <Input
+              id="appointment-duration"
+              type="number"
+              min={1}
+              step={5}
+              required
+              placeholder="e.g. 60"
+              value={duration}
+              onChange={(event) => setDuration(event.target.value)}
+            />
+          </FormField>
+        </>
+      )}
 
       <div className="flex flex-col gap-1.5">
         <div className="flex items-center justify-between gap-2">

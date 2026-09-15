@@ -75,8 +75,10 @@ function parseTimeToMinutes(time: string | null): number | null {
  * meeting_blocks, each expanded to this week's matching weekdays and bounded
  * by recurrence_start_date/recurrence_end_date), Deadlines (single-day
  * markers on due_at), open Tasks with a due_at (single-day markers, same
- * treatment as Deadlines), and Appointments with a structured time (blocks
- * sized by duration_minutes, same treatment as Course occurrences) — only
+ * treatment as Deadlines), and Appointments — either single-date (a
+ * structured time, sized by duration_minutes) or, since
+ * supabase/migrations/0035_appointment_recurrence.sql, Course-style
+ * recurring (meeting_blocks set, expanded exactly like a Course's) — only
  * those falling within the displayed week. Deadline Sessions (appointments
  * rows tagged category "Session") are excluded — they're managed through
  * their own dedicated flow (SessionsSection/SessionForm on a Deadline's
@@ -155,8 +157,35 @@ export function buildWeekGridData(
     return dueAt >= weekStart && dueAt < weekEnd;
   });
 
+  // Course-style recurrence (supabase/migrations/0035_appointment_recurrence.sql):
+  // an appointment with meeting_blocks set recurs like a Course instead of
+  // living on a single date — expanded the same way courseOccurrences is
+  // above, via the same expandBlockInWeek utility.
+  interface AppointmentOccurrence {
+    appointment: AppointmentRow;
+    blockIndex: number;
+    dayOfWeek: number;
+    startMinutes: number;
+    endMinutes: number;
+  }
+  const recurringAppointments = appointments.filter((appointment) => appointment.category !== "Session" && appointment.meeting_blocks.length > 0);
+  const recurringAppointmentOccurrences: AppointmentOccurrence[] = [];
+  for (const appointment of recurringAppointments) {
+    appointment.meeting_blocks.forEach((block, blockIndex) => {
+      for (const occurrence of expandBlockInWeek(block, weekStart, weekEnd, appointment.recurrence_start_date, appointment.recurrence_end_date)) {
+        recurringAppointmentOccurrences.push({
+          appointment,
+          blockIndex,
+          dayOfWeek: occurrence.dayOfWeek,
+          startMinutes: occurrence.startMinutes,
+          endMinutes: occurrence.endMinutes,
+        });
+      }
+    });
+  }
+
   const weekAppointments = appointments.filter((appointment) => {
-    if (appointment.category === "Session") return false;
+    if (appointment.category === "Session" || appointment.meeting_blocks.length > 0) return false;
     const appointmentDate = new Date(`${appointment.date}T00:00:00`);
     return appointmentDate >= weekStart && appointmentDate < weekEnd;
   });
@@ -185,6 +214,10 @@ export function buildWeekGridData(
     const durationMinutes = appointment.duration_minutes ?? APPOINTMENT_MARKER_MINUTES;
     windowStart = Math.min(windowStart, minutesOfDay);
     windowEnd = Math.max(windowEnd, minutesOfDay + durationMinutes);
+  }
+  for (const occurrence of recurringAppointmentOccurrences) {
+    windowStart = Math.min(windowStart, occurrence.startMinutes);
+    windowEnd = Math.max(windowEnd, occurrence.endMinutes);
   }
   windowStart = Math.max(0, Math.floor((windowStart - WINDOW_PADDING) / HOUR) * HOUR);
   windowEnd = Math.min(24 * HOUR, Math.ceil((windowEnd + WINDOW_PADDING) / HOUR) * HOUR);
@@ -261,6 +294,21 @@ export function buildWeekGridData(
         // No dedicated Appointment detail page — links back to this page's
         // own Appointments & Events Timeline panel (AppointmentsTimeline),
         // where it's actually editable.
+        href: "/calendar#appointments-timeline",
+        ...personInfo(null),
+      });
+    }
+
+    for (const occurrence of recurringAppointmentOccurrences) {
+      if (occurrence.dayOfWeek !== dayOfWeek) continue;
+      events.push({
+        id: `appointment-${occurrence.appointment.id}-${occurrence.blockIndex}-${dayOfWeek}`,
+        title: occurrence.appointment.title,
+        timeLabel: `${formatMinutesOfDay(occurrence.startMinutes)}–${formatMinutesOfDay(occurrence.endMinutes)}`,
+        subtitle: occurrence.appointment.location ?? occurrence.appointment.category,
+        startMinutes: occurrence.startMinutes,
+        endMinutes: occurrence.endMinutes,
+        tone: "warn",
         href: "/calendar#appointments-timeline",
         ...personInfo(null),
       });

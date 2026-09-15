@@ -59,8 +59,12 @@ export async function POST(request: NextRequest) {
   // A Deadline Session (deadline_id set) keeps its existing free-text/optional
   // time — this requirement is only for general Appointments/Events, which
   // need a real structured start time + duration for conflict detection
-  // (src/lib/appointments/conflicts.ts) to work at all.
-  if (!parsed.data.deadline_id) {
+  // (src/lib/appointments/conflicts.ts) to work at all. A recurring
+  // appointment (Course-style meeting_blocks set) is exempt too: each
+  // occurrence's time comes from its own block's startMinutes/endMinutes
+  // instead of this top-level time/duration_minutes pair.
+  const isRecurring = (parsed.data.meeting_blocks?.length ?? 0) > 0;
+  if (!parsed.data.deadline_id && !isRecurring) {
     if (parseStructuredTime(parsed.data.time) === null) {
       return validationErrorResponse("time is required in HH:MM format for an appointment");
     }

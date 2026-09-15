@@ -50,7 +50,10 @@ export type Database = {
           event_status: Database["public"]["Enums"]["event_status"] | null;
           id: string;
           location: string | null;
+          meeting_blocks: Json;
           notes: string[];
+          recurrence_end_date: string | null;
+          recurrence_start_date: string | null;
           reminder_lead_minutes: number;
           reminders_enabled: boolean;
           session_status: Database["public"]["Enums"]["session_status"] | null;
@@ -69,7 +72,10 @@ export type Database = {
           event_status?: Database["public"]["Enums"]["event_status"] | null;
           id?: string;
           location?: string | null;
+          meeting_blocks?: Json;
           notes?: string[];
+          recurrence_end_date?: string | null;
+          recurrence_start_date?: string | null;
           reminder_lead_minutes?: number;
           reminders_enabled?: boolean;
           session_status?: Database["public"]["Enums"]["session_status"] | null;
@@ -88,7 +94,10 @@ export type Database = {
           event_status?: Database["public"]["Enums"]["event_status"] | null;
           id?: string;
           location?: string | null;
+          meeting_blocks?: Json;
           notes?: string[];
+          recurrence_end_date?: string | null;
+          recurrence_start_date?: string | null;
           reminder_lead_minutes?: number;
           reminders_enabled?: boolean;
           session_status?: Database["public"]["Enums"]["session_status"] | null;

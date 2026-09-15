@@ -48,7 +48,12 @@ export type TaskWithLabels = TaskRow & {
   task_labels: { label: Pick<LabelRow, "id" | "name" | "color"> }[];
 };
 
-export type AppointmentRow = Database["public"]["Tables"]["appointments"]["Row"];
+// meeting_blocks is typed as generic Json by the Supabase generator, same
+// reason as CourseRow's override above — overridden here with the precise
+// MeetingBlock[] shape (Course-style recurrence, supabase/migrations/0035_appointment_recurrence.sql).
+export type AppointmentRow = Omit<Database["public"]["Tables"]["appointments"]["Row"], "meeting_blocks"> & {
+  meeting_blocks: MeetingBlock[];
+};
 export type SessionStatus = Database["public"]["Enums"]["session_status"];
 export type EventStatus = Database["public"]["Enums"]["event_status"];
 

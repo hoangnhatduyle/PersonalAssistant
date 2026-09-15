@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  appointmentPatchSchema,
+  appointmentPayloadSchema,
   coursePatchSchema,
   coursePayloadSchema,
   deadlinePatchSchema,
@@ -26,6 +28,55 @@ describe("coursePayloadSchema", () => {
   it("coursePatchSchema makes every field optional", () => {
     expect(coursePatchSchema.safeParse({}).success).toBe(true);
     expect(coursePatchSchema.safeParse({ reminders_enabled: false }).success).toBe(true);
+  });
+
+  it("rejects a recurrence_start_date after recurrence_end_date", () => {
+    const parsed = coursePayloadSchema.safeParse({
+      name: "CS 101",
+      recurrence_start_date: "2026-02-01",
+      recurrence_end_date: "2026-01-01",
+    });
+    expect(parsed.success).toBe(false);
+  });
+});
+
+describe("appointmentPayloadSchema", () => {
+  const base = { title: "Dentist", date: "2026-01-05" };
+
+  it("accepts a minimal valid one-time payload", () => {
+    expect(appointmentPayloadSchema.safeParse(base).success).toBe(true);
+  });
+
+  it("rejects a missing title", () => {
+    expect(appointmentPayloadSchema.safeParse({ date: "2026-01-05" }).success).toBe(false);
+  });
+
+  it("accepts Course-style recurrence fields (meeting_blocks + recurrence date range)", () => {
+    const parsed = appointmentPayloadSchema.safeParse({
+      ...base,
+      meeting_blocks: [{ days: [1, 3], startMinutes: 540, endMinutes: 600 }],
+      recurrence_start_date: "2026-01-05",
+      recurrence_end_date: "2026-05-01",
+    });
+    expect(parsed.success).toBe(true);
+  });
+
+  it("rejects a recurrence_start_date after recurrence_end_date", () => {
+    const parsed = appointmentPayloadSchema.safeParse({
+      ...base,
+      recurrence_start_date: "2026-02-01",
+      recurrence_end_date: "2026-01-01",
+    });
+    expect(parsed.success).toBe(false);
+  });
+
+  it("appointmentPatchSchema makes every field optional and still rejects deadline_id", () => {
+    expect(appointmentPatchSchema.safeParse({}).success).toBe(true);
+    const parsed = appointmentPatchSchema.safeParse({ deadline_id: "550e8400-e29b-41d4-a716-446655440000", title: "x" });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect("deadline_id" in parsed.data).toBe(false);
+    }
   });
 });
 

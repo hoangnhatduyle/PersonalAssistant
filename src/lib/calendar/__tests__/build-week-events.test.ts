@@ -292,6 +292,56 @@ describe("buildWeekGridData", () => {
     expect(data.days.every((day) => day.events.length === 0)).toBe(true);
   });
 
+  it("expands a recurring appointment's meeting block onto the matching weekdays, same as a course", () => {
+    const data = buildWeekGridData(
+      [],
+      [],
+      [],
+      [],
+      REFERENCE,
+      [
+        makeAppointment({
+          id: "a-1",
+          category: "Personal",
+          location: "Gym",
+          meeting_blocks: [makeMeetingBlock({ days: [1, 3, 5], startMinutes: 600, endMinutes: 650 })],
+        }),
+      ],
+    );
+    const withEvents = data.days.filter((day) => day.events.length > 0);
+    expect(withEvents.map((day) => day.dayOfWeek).sort()).toEqual([1, 3, 5]);
+    expect(withEvents[0].events[0]).toMatchObject({
+      id: "appointment-a-1-0-1",
+      title: "Job Search Webinar",
+      timeLabel: "10 AM–10:50 AM",
+      subtitle: "Gym",
+      startMinutes: 600,
+      endMinutes: 650,
+      tone: "warn",
+      href: "/calendar#appointments-timeline",
+      personId: null,
+      personLabel: "Me",
+    });
+  });
+
+  it("bounds a recurring appointment's occurrences by recurrence_start_date/recurrence_end_date", () => {
+    const data = buildWeekGridData(
+      [],
+      [],
+      [],
+      [],
+      REFERENCE,
+      [
+        makeAppointment({
+          id: "a-1",
+          meeting_blocks: [makeMeetingBlock({ days: [1, 3, 5] })],
+          recurrence_start_date: "2026-02-01",
+        }),
+      ],
+    );
+    expect(data.days.every((day) => day.events.length === 0)).toBe(true);
+  });
+
   it("falls back to an 'Unknown' label when an event's person_id has no matching People row", () => {
     const data = buildWeekGridData(
       [makeCourse({ id: "c-1", meeting_blocks: [makeMeetingBlock({ days: [1], startMinutes: 600, endMinutes: 650 })], person_id: "missing" })],
