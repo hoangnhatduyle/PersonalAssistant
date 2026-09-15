@@ -3,7 +3,6 @@
 import { useMemo } from "react";
 import { useDeadlines } from "@/hooks/useDeadlines";
 import { useTasks } from "@/hooks/useTasks";
-import { useReminders } from "@/hooks/useReminders";
 import { useTodoLists } from "@/hooks/useTodoLists";
 import { useCourses } from "@/hooks/useCourses";
 import { useAppointments } from "@/hooks/useAppointments";
@@ -26,13 +25,12 @@ export function DashboardContainer() {
   // here (labeled with their name by UpNextPanel below), unlike every other
   // kind on this page.
   const { data: tasks, isLoading: tasksLoading } = useTasks({ limit: 100 });
-  const { data: reminders, isLoading: remindersLoading } = useReminders({ state: ["Delivered", "Snoozed"] });
   const { data: todoLists } = useTodoLists({ limit: 100 });
   const { data: courses } = useCourses({ limit: 100 });
   const { data: appointments } = useAppointments({ limit: 100 });
   const { data: people, isLoading: peopleLoading } = usePeople();
 
-  const isLoading = deadlinesLoading || tasksLoading || remindersLoading || peopleLoading;
+  const isLoading = deadlinesLoading || tasksLoading || peopleLoading;
 
   // MomentumCard/WorkloadDensityStrip/StaleItemsCard have no label-rendering
   // capability of their own — feed them mine-only Tasks so a tracked
@@ -70,7 +68,6 @@ export function DashboardContainer() {
               deadlines={deadlines?.rows ?? []}
               tasks={tasks?.rows ?? []}
               people={people?.rows ?? []}
-              reminders={reminders?.rows ?? []}
               todoLists={todoLists?.rows ?? []}
               courses={courses?.rows ?? []}
               appointments={appointments?.rows ?? []}

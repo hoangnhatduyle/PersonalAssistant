@@ -68,10 +68,10 @@ export async function POST(request: Request) {
 
   const [tasksResult, deadlinesResult, profilesResult] = await Promise.all([
     taskIds.length
-      ? supabase.from("tasks").select("id, title, due_at, deleted_at").in("id", taskIds)
+      ? supabase.from("tasks").select("id, title, due_at, deleted_at, priority, tags").in("id", taskIds)
       : Promise.resolve({ data: [], error: null }),
     deadlineIds.length
-      ? supabase.from("deadlines").select("id, title, due_at, deleted_at").in("id", deadlineIds)
+      ? supabase.from("deadlines").select("id, title, due_at, deleted_at, priority, course_id").in("id", deadlineIds)
       : Promise.resolve({ data: [], error: null }),
     supabase.from("profiles").select("id, email").in("id", userIds),
   ]);
@@ -82,6 +82,21 @@ export async function POST(request: Request) {
   const taskById = new Map((tasksResult.data ?? []).map((task) => [task.id, task]));
   const deadlineById = new Map((deadlinesResult.data ?? []).map((deadline) => [deadline.id, deadline]));
   const emailByUserId = new Map((profilesResult.data ?? []).map((profile) => [profile.id, profile.email]));
+
+  // Enrichment only, so a lookup failure here shouldn't block sends — a
+  // deadline reminder just goes out without its course badge.
+  const courseIds = [...new Set((deadlinesResult.data ?? []).map((deadline) => deadline.course_id))];
+  const { data: courses } = courseIds.length
+    ? await supabase.from("courses").select("id, name").in("id", courseIds)
+    : { data: [] };
+  const courseNameById = new Map((courses ?? []).map((course) => [course.id, course.name]));
+
+  // REMINDER_EMAIL_URL is this same deployment's own public URL (already
+  // required by the GitHub Actions workflow that calls this route) — reused
+  // here, rather than a second env var, to build a deep link back into the
+  // app. Optional: local dev has no public URL, so the email just omits the
+  // button/Settings link in that case (see renderReminderEmail).
+  const appBaseUrl = process.env.REMINDER_EMAIL_URL?.replace(/\/$/, "") ?? null;
 
   let sent = 0;
   let skipped = 0;
@@ -105,10 +120,19 @@ export async function POST(request: Request) {
     }
 
     try {
+      const itemUrl = appBaseUrl
+        ? reminder.target_type === "task"
+          ? `${appBaseUrl}/board/${target.id}`
+          : `${appBaseUrl}/courses/deadlines/${target.id}`
+        : null;
       await sendReminderEmail(email, {
         targetType: reminder.target_type as "task" | "deadline",
         title: target.title,
         dueAt: target.due_at,
+        priority: target.priority,
+        tags: "tags" in target ? target.tags : undefined,
+        courseName: "course_id" in target ? (courseNameById.get(target.course_id) ?? null) : undefined,
+        itemUrl,
       });
       sent += 1;
     } catch (error) {

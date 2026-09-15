@@ -11,14 +11,13 @@ import { formatRelativeTime } from "@/lib/format-relative-time";
 import { DEADLINE_STATUS_TONE, EVENT_STATUS_TONE, SESSION_STATUS_TONE, TASK_STATUS_TONE } from "@/lib/status-colors";
 import { ITEM_KIND_FILL_CLASS, ITEM_KIND_LABEL } from "@/lib/dashboard/item-kind";
 import { EventTransitionButtons } from "@/components/calendar/EventTransitionButtons";
-import type { AppointmentRow, CourseRow, DeadlineRow, PersonRow, ReminderRow, TaskRow, TodoListRow } from "@/lib/api/entity-types";
+import type { AppointmentRow, CourseRow, DeadlineRow, PersonRow, TaskRow, TodoListRow } from "@/lib/api/entity-types";
 
 type Props = {
   deadlines: DeadlineRow[];
   tasks: TaskRow[];
   /** Tracked People (People feature) — for labeling a Task that belongs to someone other than the account owner. */
   people: PersonRow[];
-  reminders: ReminderRow[];
   todoLists: TodoListRow[];
   courses: CourseRow[];
   /** Deadline Sessions — appointments rows tagged category "Session". */
@@ -87,7 +86,7 @@ function useIsMounted(): boolean {
  * filterable upcoming-items queue on the right. Replaces the old
  * NowWidget + NextSequenceQueue pair to eliminate redundant item lists.
  */
-export function UpNextPanel({ deadlines, tasks, people, reminders, todoLists, courses, appointments }: Props) {
+export function UpNextPanel({ deadlines, tasks, people, todoLists, courses, appointments }: Props) {
   const isMounted = useIsMounted();
   const [, forceTick] = useState(0);
   const [timeWindow, setTimeWindow] = useState<TimeWindowFilter>("today");
@@ -99,11 +98,14 @@ export function UpNextPanel({ deadlines, tasks, people, reminders, todoLists, co
 
   const now = isMounted ? new Date() : null;
 
-  // Clock ring items (top 5 from all entity types including reminders and sessions)
-  const ringItems = buildUpcomingItems({ deadlines, tasks, reminders, appointments, people, courses }).slice(0, RING_ITEM_LIMIT);
+  // Clock ring items (top 5 from all entity types, sessions included). Reminders are
+  // deliberately excluded — they're just a notification echo of an underlying
+  // Deadline/Task, which already appears here in its own right, so including both
+  // showed the same item twice (see SignalInbox for the dedicated reminders view).
+  const ringItems = buildUpcomingItems({ deadlines, tasks, appointments, people, courses }).slice(0, RING_ITEM_LIMIT);
 
-  // Queue items (deadlines, tasks, reminders, sessions — full union)
-  const allQueueItems = buildUpcomingItems({ deadlines, tasks, reminders, appointments, people, courses });
+  // Queue items (deadlines, tasks, sessions — full union, reminders excluded per above)
+  const allQueueItems = buildUpcomingItems({ deadlines, tasks, appointments, people, courses });
   const deadlineById = new Map(deadlines.map((d) => [d.id, d]));
   const taskById = new Map(tasks.map((t) => [t.id, t]));
   const appointmentById = new Map(appointments.map((a) => [a.id, a]));
