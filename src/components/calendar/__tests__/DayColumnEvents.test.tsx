@@ -78,3 +78,44 @@ describe("DayColumnEvents empty-slot click", () => {
     expect(onCreateRequest).not.toHaveBeenCalled();
   });
 });
+
+describe("DayColumnEvents hover preview", () => {
+  it("shows the slot's start time while hovering empty space", () => {
+    const { container } = renderColumn(vi.fn());
+    const column = container.firstElementChild as HTMLElement;
+
+    fireEvent.mouseMove(column, { clientY: 90 * PIXELS_PER_MINUTE });
+
+    expect(screen.getByText("9:30 AM")).toBeInTheDocument();
+  });
+
+  it("hides the preview once the pointer leaves the column", () => {
+    const { container } = renderColumn(vi.fn());
+    const column = container.firstElementChild as HTMLElement;
+
+    fireEvent.mouseMove(column, { clientY: 90 * PIXELS_PER_MINUTE });
+    expect(screen.getByText("9:30 AM")).toBeInTheDocument();
+
+    fireEvent.mouseLeave(column);
+    expect(screen.queryByText("9:30 AM")).not.toBeInTheDocument();
+  });
+
+  it("does not show a start-time preview while hovering an event card", () => {
+    renderColumn(vi.fn(), [layoutedEvent]);
+
+    fireEvent.mouseMove(screen.getByRole("link", { name: /Standup/ }));
+
+    expect(screen.queryByText("9:30 AM")).not.toBeInTheDocument();
+  });
+
+  it("hides the preview once the create picker opens at that spot", () => {
+    const { container } = renderColumn(vi.fn());
+    const column = container.firstElementChild as HTMLElement;
+
+    fireEvent.mouseMove(column, { clientY: 90 * PIXELS_PER_MINUTE });
+    expect(screen.getByText("9:30 AM")).toBeInTheDocument();
+
+    fireEvent.click(column, { clientX: 40, clientY: 90 * PIXELS_PER_MINUTE });
+    expect(screen.queryByText("9:30 AM")).not.toBeInTheDocument();
+  });
+});

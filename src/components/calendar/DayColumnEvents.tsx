@@ -4,6 +4,7 @@ import { useState } from "react";
 import { EventBlock } from "@/components/calendar/EventBlock";
 import { OverlapEventPicker } from "@/components/calendar/OverlapEventPicker";
 import { EmptySlotCreatePicker, type CreateEntityType } from "@/components/calendar/EmptySlotCreatePicker";
+import { formatMinutesOfDay } from "@/lib/calendar/recurrence";
 import { pxToMinutes, PIXELS_PER_MINUTE, type LayoutedCalendarEvent } from "@/lib/calendar/layout-day-events";
 
 export type CreateRequest = { type: CreateEntityType; date: string; minutes: number };
@@ -32,6 +33,10 @@ export function DayColumnEvents({ isToday, date, events, hourMarks, windowStart,
   const [elevatedEventId, setElevatedEventId] = useState<string | null>(null);
   const [picker, setPicker] = useState<OpenPicker | null>(null);
   const [createPicker, setCreatePicker] = useState<OpenCreatePicker | null>(null);
+  // Minutes-of-day under the pointer while hovering empty space — drives the
+  // "start time" preview line so the user knows what a click there will
+  // create before they commit to it.
+  const [hoverMinutes, setHoverMinutes] = useState<number | null>(null);
 
   const pickerEvents = picker
     ? events.filter((event) => event.clusterId === picker.clusterId).sort((a, b) => a.stackIndex - b.stackIndex)
@@ -39,9 +44,23 @@ export function DayColumnEvents({ isToday, date, events, hourMarks, windowStart,
 
   return (
     <div
-      className={`relative overflow-visible border-l ${isToday ? "bg-panel/40" : ""} border-panel-border`}
+      className={`relative overflow-visible border-l ${isToday ? "bg-panel/40" : ""} border-panel-border cursor-pointer`}
       style={{ height: gridHeightPx }}
-      onMouseLeave={() => setElevatedEventId(null)}
+      onMouseLeave={() => {
+        setElevatedEventId(null);
+        setHoverMinutes(null);
+      }}
+      onMouseMove={(event) => {
+        // Same background-only gate as the click handler below — hovering an
+        // EventBlock (or its stack-count badge) hides the preview instead of
+        // showing a start time for a slot the click wouldn't actually use.
+        if (event.target !== event.currentTarget) {
+          setHoverMinutes(null);
+          return;
+        }
+        const rect = event.currentTarget.getBoundingClientRect();
+        setHoverMinutes(pxToMinutes(event.clientY - rect.top, windowStart));
+      }}
       onClick={(event) => {
         // Only a genuine background click (not one bubbling up from an
         // EventBlock or a pointer-events-none hour-row marker) should open
@@ -50,6 +69,7 @@ export function DayColumnEvents({ isToday, date, events, hourMarks, windowStart,
         if (event.target !== event.currentTarget) return;
         const rect = event.currentTarget.getBoundingClientRect();
         const minutes = pxToMinutes(event.clientY - rect.top, windowStart);
+        setHoverMinutes(null);
         setCreatePicker({ anchorRect: new DOMRect(event.clientX, event.clientY, 0, 0), minutes });
       }}
     >
@@ -61,6 +81,17 @@ export function DayColumnEvents({ isToday, date, events, hourMarks, windowStart,
           style={{ top: (minute - windowStart) * PIXELS_PER_MINUTE }}
         />
       ))}
+      {hoverMinutes !== null && !createPicker && (
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-x-0 z-20 border-t-2 border-dashed border-accent-indigo"
+          style={{ top: (hoverMinutes - windowStart) * PIXELS_PER_MINUTE }}
+        >
+          <span className="absolute left-1 -translate-y-1/2 whitespace-nowrap rounded-full bg-accent-indigo px-1.5 py-0.5 font-mono text-[9px] font-medium text-white shadow-sm">
+            {formatMinutesOfDay(hoverMinutes)}
+          </span>
+        </div>
+      )}
       {events.map((event) => (
         <EventBlock
           key={event.id}
