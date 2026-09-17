@@ -125,7 +125,7 @@ export function AppointmentForm({ appointment, defaultDate, defaultTime, onSubmi
 
       <Checkbox label="Recurring" checked={isRecurring} onChange={(event) => setIsRecurring(event.target.checked)} />
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <FormField label="Category" htmlFor="appointment-category">
           <Select id="appointment-category" value={category} onChange={(event) => setCategory(event.target.value)}>
             {APPOINTMENT_CATEGORIES.map((option) => (
@@ -149,7 +149,7 @@ export function AppointmentForm({ appointment, defaultDate, defaultTime, onSubmi
         </FormProvider>
       ) : (
         <>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <FormField label="Date" htmlFor="appointment-date" error={!date ? error ?? undefined : undefined}>
               <Input id="appointment-date" type="date" value={date} onChange={(event) => setDate(event.target.value)} />
             </FormField>

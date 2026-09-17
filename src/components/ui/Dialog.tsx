@@ -34,7 +34,7 @@ export function Dialog({ open, onClose, title, children, size = "md" }: Props) {
   if (!open) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-x-hidden p-4">
       <div
         className="absolute inset-0 bg-bg-void/80 backdrop-blur-sm"
         aria-hidden="true"
@@ -49,7 +49,7 @@ export function Dialog({ open, onClose, title, children, size = "md" }: Props) {
         <h2 id="dialog-title" className="mb-4 shrink-0 font-display text-lg font-semibold text-text-primary">
           {title}
         </h2>
-        <div className="overflow-y-auto">{children}</div>
+        <div className="overflow-y-auto overflow-x-hidden">{children}</div>
       </div>
     </div>,
     document.body,

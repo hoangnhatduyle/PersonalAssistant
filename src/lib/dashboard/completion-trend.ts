@@ -8,25 +8,29 @@ function startOfDay(date: Date): number {
 
 /**
  * Daily counts of resolved Deadlines/Tasks over the trailing `days` window
- * (oldest first, today last), derived from `updated_at` as a completion-time
- * proxy — there's no dedicated `completed_at` column. Feeds MomentumCard's
- * sparkline; grounded in real fetched data, not fabricated.
+ * (oldest first, today last), derived from `completed_at` (set once, only on
+ * the guarded transition into Done/Completed — see 0036_task_deadline_completed_at.sql
+ * — so later edits like a board reorder can never move it). Rows completed
+ * before that migration and left unbackfilled (ambiguous batch-write
+ * timestamp) have `completed_at: null` and are excluded rather than guessed
+ * at. Feeds MomentumCard's sparkline; grounded in real fetched data, not
+ * fabricated.
  */
 export function buildCompletionTrend(deadlines: DeadlineRow[], tasks: TaskRow[], days = 7): number[] {
   const todayStart = startOfDay(new Date());
   const buckets = new Array(days).fill(0) as number[];
 
-  const record = (updatedAt: string) => {
-    const diffDays = Math.round((todayStart - startOfDay(new Date(updatedAt))) / DAY_MS);
+  const record = (completedAt: string) => {
+    const diffDays = Math.round((todayStart - startOfDay(new Date(completedAt))) / DAY_MS);
     const index = days - 1 - diffDays;
     if (index >= 0 && index < days) buckets[index] += 1;
   };
 
   for (const deadline of deadlines) {
-    if (deadline.status === "Completed") record(deadline.updated_at);
+    if (deadline.status === "Completed" && deadline.completed_at) record(deadline.completed_at);
   }
   for (const task of tasks) {
-    if (task.status === "Done") record(task.updated_at);
+    if (task.status === "Done" && task.completed_at) record(task.completed_at);
   }
 
   return buckets;
@@ -43,25 +47,25 @@ export interface CompletedItem {
 /**
  * The actual rows behind buildCompletionTrend's counts, most-recent-first —
  * feeds MomentumCard's "what got done" breakdown list. Same trailing-window
- * and updated_at-as-completion-proxy logic as buildCompletionTrend.
+ * and completed_at logic as buildCompletionTrend.
  */
 export function buildCompletedThisWeek(deadlines: DeadlineRow[], tasks: TaskRow[], days = 7): CompletedItem[] {
   const todayStart = startOfDay(new Date());
-  const isWithinWindow = (updatedAt: string) => {
-    const diffDays = Math.round((todayStart - startOfDay(new Date(updatedAt))) / DAY_MS);
+  const isWithinWindow = (completedAt: string) => {
+    const diffDays = Math.round((todayStart - startOfDay(new Date(completedAt))) / DAY_MS);
     return diffDays >= 0 && diffDays < days;
   };
 
   const items: CompletedItem[] = [];
 
   for (const deadline of deadlines) {
-    if (deadline.status === "Completed" && isWithinWindow(deadline.updated_at)) {
-      items.push({ id: deadline.id, kind: "deadline", title: deadline.title, at: new Date(deadline.updated_at), href: `/courses/deadlines/${deadline.id}` });
+    if (deadline.status === "Completed" && deadline.completed_at && isWithinWindow(deadline.completed_at)) {
+      items.push({ id: deadline.id, kind: "deadline", title: deadline.title, at: new Date(deadline.completed_at), href: `/courses/deadlines/${deadline.id}` });
     }
   }
   for (const task of tasks) {
-    if (task.status === "Done" && isWithinWindow(task.updated_at)) {
-      items.push({ id: task.id, kind: "task", title: task.title, at: new Date(task.updated_at), href: `/board/${task.id}` });
+    if (task.status === "Done" && task.completed_at && isWithinWindow(task.completed_at)) {
+      items.push({ id: task.id, kind: "task", title: task.title, at: new Date(task.completed_at), href: `/board/${task.id}` });
     }
   }
 
@@ -74,17 +78,19 @@ function cycleTimeDays(createdAt: string, completedAt: string): number {
 
 /** Terminal-status + trailing-window predicate shared by every stat below —
  * same rule buildCompletionTrend/buildCompletedThisWeek already encode,
- * factored out so it isn't repeated four more times. */
+ * factored out so it isn't repeated four more times. Rows without a
+ * completed_at (pre-migration batch-write rows left unbackfilled) never
+ * match any window — excluded, not guessed at. */
 function isCompletedWithin(
   status: string,
   terminalStatus: string,
-  updatedAt: string,
+  completedAt: string | null,
   todayStart: number,
   windowStart: number,
   windowEnd: number,
 ): boolean {
-  if (status !== terminalStatus) return false;
-  const diffDays = Math.round((todayStart - startOfDay(new Date(updatedAt))) / DAY_MS);
+  if (status !== terminalStatus || completedAt === null) return false;
+  const diffDays = Math.round((todayStart - startOfDay(new Date(completedAt))) / DAY_MS);
   return diffDays >= windowStart && diffDays < windowEnd;
 }
 
@@ -96,8 +102,8 @@ export interface CycleTimeStats {
 }
 
 /**
- * Avg time from created_at to updated_at-at-completion, for items completed
- * this trailing window vs. the window immediately before it — the actual
+ * Avg time from created_at to completed_at, for items completed this
+ * trailing window vs. the window immediately before it — the actual
  * "faster or slower" signal MomentumCard's headline stat needs, as opposed
  * to buildCompletionTrend's raw activity count.
  */
@@ -106,16 +112,16 @@ export function buildCycleTimeStats(deadlines: DeadlineRow[], tasks: TaskRow[], 
   const thisWeek: number[] = [];
   const lastWeek: number[] = [];
 
-  const bucket = (status: string, terminalStatus: string, createdAt: string, updatedAt: string) => {
-    if (isCompletedWithin(status, terminalStatus, updatedAt, todayStart, 0, days)) {
-      thisWeek.push(cycleTimeDays(createdAt, updatedAt));
-    } else if (isCompletedWithin(status, terminalStatus, updatedAt, todayStart, days, days * 2)) {
-      lastWeek.push(cycleTimeDays(createdAt, updatedAt));
+  const bucket = (status: string, terminalStatus: string, createdAt: string, completedAt: string | null) => {
+    if (isCompletedWithin(status, terminalStatus, completedAt, todayStart, 0, days)) {
+      thisWeek.push(cycleTimeDays(createdAt, completedAt as string));
+    } else if (isCompletedWithin(status, terminalStatus, completedAt, todayStart, days, days * 2)) {
+      lastWeek.push(cycleTimeDays(createdAt, completedAt as string));
     }
   };
 
-  for (const deadline of deadlines) bucket(deadline.status, "Completed", deadline.created_at, deadline.updated_at);
-  for (const task of tasks) bucket(task.status, "Done", task.created_at, task.updated_at);
+  for (const deadline of deadlines) bucket(deadline.status, "Completed", deadline.created_at, deadline.completed_at);
+  for (const task of tasks) bucket(task.status, "Done", task.created_at, task.completed_at);
 
   const average = (values: number[]) => (values.length === 0 ? null : values.reduce((sum, v) => sum + v, 0) / values.length);
   const thisWeekAvgDays = average(thisWeek);
@@ -144,16 +150,16 @@ export function buildOnTimeCompletionRate(deadlines: DeadlineRow[], tasks: TaskR
   let eligibleCount = 0;
   let completedCount = 0;
 
-  const record = (status: string, terminalStatus: string, updatedAt: string, dueAt: string | null) => {
-    if (!isCompletedWithin(status, terminalStatus, updatedAt, todayStart, 0, days)) return;
+  const record = (status: string, terminalStatus: string, completedAt: string | null, dueAt: string | null) => {
+    if (!isCompletedWithin(status, terminalStatus, completedAt, todayStart, 0, days)) return;
     completedCount += 1;
     if (dueAt === null) return;
     eligibleCount += 1;
-    if (new Date(updatedAt).getTime() <= new Date(dueAt).getTime()) onTimeCount += 1;
+    if (new Date(completedAt as string).getTime() <= new Date(dueAt).getTime()) onTimeCount += 1;
   };
 
-  for (const deadline of deadlines) record(deadline.status, "Completed", deadline.updated_at, deadline.due_at);
-  for (const task of tasks) record(task.status, "Done", task.updated_at, task.due_at);
+  for (const deadline of deadlines) record(deadline.status, "Completed", deadline.completed_at, deadline.due_at);
+  for (const task of tasks) record(task.status, "Done", task.completed_at, task.due_at);
 
   return {
     rate: eligibleCount === 0 ? null : (onTimeCount / eligibleCount) * 100,
@@ -186,11 +192,11 @@ export function buildNetBacklogDelta(deadlines: DeadlineRow[], tasks: TaskRow[],
   let createdCount = 0;
 
   for (const deadline of deadlines) {
-    if (deadline.status === "Completed" && isWithinWindow(deadline.updated_at)) completedCount += 1;
+    if (deadline.status === "Completed" && deadline.completed_at && isWithinWindow(deadline.completed_at)) completedCount += 1;
     if (isWithinWindow(deadline.created_at)) createdCount += 1;
   }
   for (const task of tasks) {
-    if (task.status === "Done" && isWithinWindow(task.updated_at)) completedCount += 1;
+    if (task.status === "Done" && task.completed_at && isWithinWindow(task.completed_at)) completedCount += 1;
     if (isWithinWindow(task.created_at)) createdCount += 1;
   }
 
@@ -208,20 +214,20 @@ export function buildCycleTimeSparkline(deadlines: DeadlineRow[], tasks: TaskRow
   const sums = new Array(days).fill(0) as number[];
   const counts = new Array(days).fill(0) as number[];
 
-  const record = (createdAt: string, updatedAt: string) => {
-    const diffDays = Math.round((todayStart - startOfDay(new Date(updatedAt))) / DAY_MS);
+  const record = (createdAt: string, completedAt: string) => {
+    const diffDays = Math.round((todayStart - startOfDay(new Date(completedAt))) / DAY_MS);
     const index = days - 1 - diffDays;
     if (index >= 0 && index < days) {
-      sums[index] += cycleTimeDays(createdAt, updatedAt);
+      sums[index] += cycleTimeDays(createdAt, completedAt);
       counts[index] += 1;
     }
   };
 
   for (const deadline of deadlines) {
-    if (deadline.status === "Completed") record(deadline.created_at, deadline.updated_at);
+    if (deadline.status === "Completed" && deadline.completed_at) record(deadline.created_at, deadline.completed_at);
   }
   for (const task of tasks) {
-    if (task.status === "Done") record(task.created_at, task.updated_at);
+    if (task.status === "Done" && task.completed_at) record(task.created_at, task.completed_at);
   }
 
   return sums.map((sum, index) => (counts[index] === 0 ? 0 : sum / counts[index]));
