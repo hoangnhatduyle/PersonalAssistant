@@ -6,10 +6,15 @@ import { GlassPanel } from "@/components/ui/GlassPanel";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { StatusPill } from "@/components/ui/StatusPill";
 import { Badge } from "@/components/ui/Badge";
-import { buildUpcomingItems, filterUpcomingItemsByTimeWindow, type TimeWindowFilter } from "@/lib/dashboard/upcoming-items";
+import {
+  buildUpcomingItems,
+  filterUpcomingItemsByTimeWindow,
+  type TimeWindowFilter,
+  type UpcomingItem,
+} from "@/lib/dashboard/upcoming-items";
 import { formatRelativeTime } from "@/lib/format-relative-time";
 import { formatRingCountdown, ringFillFraction } from "@/lib/dashboard/countdown-rings";
-import { DEADLINE_STATUS_TONE, EVENT_STATUS_TONE, SESSION_STATUS_TONE, TASK_STATUS_TONE } from "@/lib/status-colors";
+import { DEADLINE_STATUS_TONE, EVENT_STATUS_TONE, SESSION_STATUS_TONE, TASK_STATUS_TONE, type StatusTone } from "@/lib/status-colors";
 import { ITEM_KIND_BG_CLASS, ITEM_KIND_LABEL, ITEM_KIND_STROKE_CLASS } from "@/lib/dashboard/item-kind";
 import { EventTransitionButtons } from "@/components/calendar/EventTransitionButtons";
 import type { AppointmentRow, CourseRow, DeadlineRow, PersonRow, TaskRow, TodoListRow } from "@/lib/api/entity-types";
@@ -78,6 +83,8 @@ export function UpNextPanel({ deadlines, tasks, people, todoLists, courses, appo
   const isMounted = useIsMounted();
   const [, forceTick] = useState(0);
   const [timeWindow, setTimeWindow] = useState<TimeWindowFilter>("today");
+  /** The ring currently hovered/focused, anchored at its bounding box for the floating tooltip. */
+  const [hoveredRing, setHoveredRing] = useState<{ item: UpcomingItem; x: number; y: number } | null>(null);
 
   useEffect(() => {
     const id = setInterval(() => forceTick((tick) => tick + 1), COUNTDOWN_TICK_MS);
@@ -97,6 +104,40 @@ export function UpNextPanel({ deadlines, tasks, people, todoLists, courses, appo
   const deadlineById = new Map(deadlines.map((d) => [d.id, d]));
   const taskById = new Map(tasks.map((t) => [t.id, t]));
   const appointmentById = new Map(appointments.map((a) => [a.id, a]));
+
+  /** Shared by the countdown rings' hover tooltip and the queue rows below — one status/tone lookup per item kind. */
+  function resolveItemStatus(item: UpcomingItem): { status?: string; tone?: StatusTone } {
+    const status =
+      item.kind === "deadline"
+        ? deadlineById.get(item.id)?.status
+        : item.kind === "task"
+          ? taskById.get(item.id)?.status
+          : item.kind === "session"
+            ? appointmentById.get(item.id)?.session_status
+            : item.kind === "appointment"
+              ? appointmentById.get(item.id)?.event_status
+              : undefined;
+    const tone =
+      item.kind === "deadline"
+        ? DEADLINE_STATUS_TONE[status as DeadlineRow["status"]]
+        : item.kind === "task"
+          ? TASK_STATUS_TONE[status as TaskRow["status"]]
+          : item.kind === "session" && status
+            ? SESSION_STATUS_TONE[status as NonNullable<AppointmentRow["session_status"]>]
+            : item.kind === "appointment" && status
+              ? EVENT_STATUS_TONE[status as NonNullable<AppointmentRow["event_status"]>]
+              : undefined;
+    return { status: status ?? undefined, tone };
+  }
+
+  function showRingTooltip(item: UpcomingItem, target: SVGCircleElement) {
+    const rect = target.getBoundingClientRect();
+    setHoveredRing({ item, x: rect.left + rect.width / 2, y: rect.top });
+  }
+
+  function hideRingTooltip() {
+    setHoveredRing(null);
+  }
 
   // Board merge: a Task can belong to a Board List (task.list_id) the same
   // way a Course To-Do item used to belong to a todo_lists row — resolve
@@ -137,9 +178,17 @@ export function UpNextPanel({ deadlines, tasks, people, todoLists, courses, appo
               const fill = ringFillFraction(item.at, now, item.urgent);
               const strokeClass = item.urgent ? "stroke-status-urgent" : ITEM_KIND_STROKE_CLASS[item.kind];
 
+              const isHovered = hoveredRing?.item.kind === item.kind && hoveredRing?.item.id === item.id;
+
               return (
                 <g key={`${item.kind}-${item.id}`}>
-                  <circle cx={CENTER} cy={CENTER} r={radius} className="fill-none stroke-panel-border/50" strokeWidth={RING_STROKE_WIDTH} />
+                  <circle
+                    cx={CENTER}
+                    cy={CENTER}
+                    r={radius}
+                    className={`fill-none stroke-panel-border/50 ${isHovered ? "stroke-panel-border" : ""}`}
+                    strokeWidth={RING_STROKE_WIDTH}
+                  />
                   {fill > 0 && (
                     <circle
                       cx={CENTER}
@@ -153,6 +202,24 @@ export function UpNextPanel({ deadlines, tasks, people, todoLists, courses, appo
                       transform={`rotate(-90 ${CENTER} ${CENTER})`}
                     />
                   )}
+                  {/* Wide, invisible hit area — the visible stroke is too thin to hover reliably. Hover/focus both open the same tooltip. */}
+                  <circle
+                    cx={CENTER}
+                    cy={CENTER}
+                    r={radius}
+                    fill="none"
+                    stroke="transparent"
+                    strokeWidth={RING_STROKE_WIDTH + 16}
+                    style={{ pointerEvents: "stroke" }}
+                    className="cursor-pointer focus:outline-none"
+                    tabIndex={0}
+                    role="button"
+                    aria-label={`${ITEM_KIND_LABEL[item.kind]}: ${item.title}, ${formatRingCountdown(item.at, now, item.urgent)}`}
+                    onMouseEnter={(e) => showRingTooltip(item, e.currentTarget)}
+                    onMouseLeave={hideRingTooltip}
+                    onFocus={(e) => showRingTooltip(item, e.currentTarget)}
+                    onBlur={hideRingTooltip}
+                  />
                 </g>
               );
             })}
@@ -174,6 +241,10 @@ export function UpNextPanel({ deadlines, tasks, people, todoLists, courses, appo
             </g>
           )}
         </svg>
+
+        {hoveredRing && now && (
+          <RingTooltip hovered={hoveredRing} now={now} resolveStatus={resolveItemStatus} />
+        )}
 
         {ringItems.length > 0 && (
           <ul className="flex w-full max-w-[220px] flex-col gap-1">
@@ -243,26 +314,7 @@ export function UpNextPanel({ deadlines, tasks, people, todoLists, courses, appo
         ) : (
           <ul className="flex max-h-[28rem] flex-col divide-y divide-panel-border overflow-y-auto pr-1">
             {queueItems.map((item) => {
-              const status =
-                item.kind === "deadline"
-                  ? deadlineById.get(item.id)?.status
-                  : item.kind === "task"
-                    ? taskById.get(item.id)?.status
-                    : item.kind === "session"
-                      ? appointmentById.get(item.id)?.session_status
-                      : item.kind === "appointment"
-                        ? appointmentById.get(item.id)?.event_status
-                        : undefined;
-              const tone =
-                item.kind === "deadline"
-                  ? DEADLINE_STATUS_TONE[status as DeadlineRow["status"]]
-                  : item.kind === "task"
-                    ? TASK_STATUS_TONE[status as TaskRow["status"]]
-                    : item.kind === "session" && status
-                      ? SESSION_STATUS_TONE[status as NonNullable<AppointmentRow["session_status"]>]
-                      : item.kind === "appointment" && status
-                        ? EVENT_STATUS_TONE[status as NonNullable<AppointmentRow["event_status"]>]
-                        : undefined;
+              const { status, tone } = resolveItemStatus(item);
               const showPastDueTag = item.urgent && item.kind !== "deadline";
               const taskListInfo = item.kind === "task" ? taskListLabelMap.get(item.id) : undefined;
               const kindLabel = ITEM_KIND_LABEL[item.kind];
@@ -314,5 +366,53 @@ export function UpNextPanel({ deadlines, tasks, people, todoLists, courses, appo
         )}
       </div>
     </GlassPanel>
+  );
+}
+
+type RingTooltipProps = {
+  hovered: { item: UpcomingItem; x: number; y: number };
+  now: Date;
+  resolveStatus: (item: UpcomingItem) => { status?: string; tone?: StatusTone };
+};
+
+/**
+ * Floating detail card for a hovered/focused countdown ring. Anchored to the
+ * hit circle's bounding box (fixed positioning), not the cursor — GlassPanel
+ * has no transform/filter, so `position: fixed` stays viewport-relative.
+ */
+function RingTooltip({ hovered, now, resolveStatus }: RingTooltipProps) {
+  const { item, x, y } = hovered;
+  const { status, tone } = resolveStatus(item);
+  const fullDateTime = item.at.toLocaleString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+
+  return (
+    <div
+      className="pointer-events-none fixed z-50 w-max max-w-[240px] -translate-x-1/2 -translate-y-[calc(100%+10px)] rounded-lg border border-panel-border bg-panel px-3 py-2 shadow-panel-raised"
+      style={{ left: x, top: y }}
+      role="tooltip"
+    >
+      <p className="truncate text-sm font-medium text-text-primary">{item.title}</p>
+      <p className="mt-0.5 font-mono text-[10px] uppercase tracking-wide text-text-eyebrow">
+        {ITEM_KIND_LABEL[item.kind]} · {formatRingCountdown(item.at, now, item.urgent)}
+      </p>
+      <p className="mt-1 font-mono text-[10px] text-text-secondary">{fullDateTime}</p>
+      <div className="mt-1.5 flex flex-wrap items-center gap-1">
+        {item.urgent && (
+          <span className="rounded-full bg-status-urgent/15 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide text-status-urgent">
+            Past due
+          </span>
+        )}
+        {status && tone && <StatusPill status={status} tone={tone} />}
+        {item.kind === "task" && item.personId && <Badge tone="accent">For {item.personLabel}</Badge>}
+        {item.kind === "appointment" && item.conflict && <Badge tone="urgent">Conflict</Badge>}
+        {item.kind === "appointment" && item.courseConflict && <Badge tone="purple">Course Conflict</Badge>}
+      </div>
+    </div>
   );
 }
