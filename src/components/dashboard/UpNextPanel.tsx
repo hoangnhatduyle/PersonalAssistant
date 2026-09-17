@@ -8,8 +8,9 @@ import { StatusPill } from "@/components/ui/StatusPill";
 import { Badge } from "@/components/ui/Badge";
 import { buildUpcomingItems, filterUpcomingItemsByTimeWindow, type TimeWindowFilter } from "@/lib/dashboard/upcoming-items";
 import { formatRelativeTime } from "@/lib/format-relative-time";
+import { formatRingCountdown, ringFillFraction } from "@/lib/dashboard/countdown-rings";
 import { DEADLINE_STATUS_TONE, EVENT_STATUS_TONE, SESSION_STATUS_TONE, TASK_STATUS_TONE } from "@/lib/status-colors";
-import { ITEM_KIND_FILL_CLASS, ITEM_KIND_LABEL } from "@/lib/dashboard/item-kind";
+import { ITEM_KIND_BG_CLASS, ITEM_KIND_LABEL, ITEM_KIND_STROKE_CLASS } from "@/lib/dashboard/item-kind";
 import { EventTransitionButtons } from "@/components/calendar/EventTransitionButtons";
 import type { AppointmentRow, CourseRow, DeadlineRow, PersonRow, TaskRow, TodoListRow } from "@/lib/api/entity-types";
 
@@ -25,16 +26,11 @@ type Props = {
 };
 
 const RING_ITEM_LIMIT = 5;
-const CLOCK_TICK_MS = 1_000;
+const COUNTDOWN_TICK_MS = 1_000;
 const CENTER = 150;
-const FACE_RADIUS = 100;
-const RING_RADIUS = 108;
-const DOT_RADIUS = 128;
-const LABEL_RADIUS = 148;
-const HOUR_HAND_LENGTH = 54;
-const MINUTE_HAND_LENGTH = 80;
-const HOUR_TICK_INNER = FACE_RADIUS - 12;
-const MINUTE_TICK_INNER = FACE_RADIUS - 5;
+const RING_MIN_RADIUS = 44;
+const RING_MAX_RADIUS = 108;
+const RING_STROKE_WIDTH = 8;
 
 const TIME_WINDOW_FILTERS: Array<{ value: TimeWindowFilter; label: string }> = [
   { value: "today", label: "Today" },
@@ -52,19 +48,11 @@ const EMPTY_COPY: Record<TimeWindowFilter, { title: string; description: string 
   all: { title: "Queue is clear", description: "No open deadlines or tasks with a due date." },
 };
 
-function clockHandAngles(now: Date): { hour: number; minute: number } {
-  const hours = now.getHours() % 12;
-  const minutes = now.getMinutes();
-  const seconds = now.getSeconds();
-  return {
-    hour: (hours + minutes / 60 + seconds / 3600) * 30,
-    minute: (minutes + seconds / 60) * 6,
-  };
-}
-
-function polarPoint(radius: number, angleDeg: number): { x: number; y: number } {
-  const angleRad = ((angleDeg - 90) * Math.PI) / 180;
-  return { x: CENTER + radius * Math.cos(angleRad), y: CENTER + radius * Math.sin(angleRad) };
+/** Ring radii step outward from the center — index 0 (most urgent item) is the innermost ring. */
+function ringRadius(index: number, count: number): number {
+  if (count <= 1) return RING_MAX_RADIUS;
+  const step = (RING_MAX_RADIUS - RING_MIN_RADIUS) / (count - 1);
+  return RING_MIN_RADIUS + step * index;
 }
 
 function truncate(title: string, max = 16): string {
@@ -82,8 +70,8 @@ function useIsMounted(): boolean {
 }
 
 /**
- * Combined "Up Next" panel: live clock with radial dots on the left,
- * filterable upcoming-items queue on the right. Replaces the old
+ * Combined "Up Next" panel: countdown rings for the top 5 upcoming items on
+ * the left, filterable upcoming-items queue on the right. Replaces the old
  * NowWidget + NextSequenceQueue pair to eliminate redundant item lists.
  */
 export function UpNextPanel({ deadlines, tasks, people, todoLists, courses, appointments }: Props) {
@@ -92,13 +80,13 @@ export function UpNextPanel({ deadlines, tasks, people, todoLists, courses, appo
   const [timeWindow, setTimeWindow] = useState<TimeWindowFilter>("today");
 
   useEffect(() => {
-    const id = setInterval(() => forceTick((tick) => tick + 1), CLOCK_TICK_MS);
+    const id = setInterval(() => forceTick((tick) => tick + 1), COUNTDOWN_TICK_MS);
     return () => clearInterval(id);
   }, []);
 
   const now = isMounted ? new Date() : null;
 
-  // Clock ring items (top 5 from all entity types, sessions included). Reminders are
+  // Countdown ring items (top 5 from all entity types, sessions included). Reminders are
   // deliberately excluded — they're just a notification echo of an underlying
   // Deadline/Task, which already appears here in its own right, so including both
   // showed the same item twice (see SignalInbox for the dedicated reminders view).
@@ -132,92 +120,77 @@ export function UpNextPanel({ deadlines, tasks, people, todoLists, courses, appo
   const queueItems = now ? filterUpcomingItemsByTimeWindow(allQueueItems, timeWindow, now) : allQueueItems;
   const emptyCopy = EMPTY_COPY[timeWindow];
 
-  const minuteIndices = Array.from({ length: 60 }, (_, index) => index * 6);
-  const hands = now ? clockHandAngles(now) : null;
-  const hourTip = hands ? polarPoint(HOUR_HAND_LENGTH, hands.hour) : null;
-  const minuteTip = hands ? polarPoint(MINUTE_HAND_LENGTH, hands.minute) : null;
+  const heroItem = ringItems[0] ?? null;
 
   return (
     <GlassPanel variant="glow-ok" className="flex flex-col gap-6 p-6 lg:flex-row lg:items-stretch">
-      {/* Clock — 40% width on lg */}
+      {/* Countdown rings — 40% width on lg. Each ring is one of the top 5 upcoming
+          items, innermost = most urgent, filling toward solid as its due time
+          closes in over a fixed 24h window (see countdown-rings.ts) so fill level
+          is comparable across items regardless of how long ago each was created. */}
       <div className="flex flex-col items-center justify-center gap-3 lg:w-2/5">
         <svg viewBox="0 0 300 300" aria-hidden="true" className="h-64 w-64">
-          <circle cx={CENTER} cy={CENTER} r={FACE_RADIUS} className="fill-panel/30 stroke-panel-border/60" strokeWidth={1} />
-          <circle cx={CENTER} cy={CENTER} r={RING_RADIUS} className="fill-none stroke-panel-border" strokeWidth={1} />
+          {now &&
+            ringItems.map((item, index) => {
+              const radius = ringRadius(index, ringItems.length);
+              const circumference = 2 * Math.PI * radius;
+              const fill = ringFillFraction(item.at, now, item.urgent);
+              const strokeClass = item.urgent ? "stroke-status-urgent" : ITEM_KIND_STROKE_CLASS[item.kind];
 
-          {minuteIndices.map((angle) => {
-            const isHour = angle % 30 === 0;
-            const inner = polarPoint(isHour ? HOUR_TICK_INNER : MINUTE_TICK_INNER, angle);
-            const outer = polarPoint(FACE_RADIUS, angle);
-            return (
-              <line
-                key={angle}
-                x1={inner.x}
-                y1={inner.y}
-                x2={outer.x}
-                y2={outer.y}
-                className={isHour ? "stroke-text-secondary" : "stroke-text-eyebrow/80"}
-                strokeWidth={isHour ? 1.5 : 0.75}
-                strokeLinecap="round"
-              />
-            );
-          })}
+              return (
+                <g key={`${item.kind}-${item.id}`}>
+                  <circle cx={CENTER} cy={CENTER} r={radius} className="fill-none stroke-panel-border/50" strokeWidth={RING_STROKE_WIDTH} />
+                  {fill > 0 && (
+                    <circle
+                      cx={CENTER}
+                      cy={CENTER}
+                      r={radius}
+                      className={`fill-none ${strokeClass} transition-[stroke-dashoffset] duration-500 ease-out`}
+                      strokeWidth={RING_STROKE_WIDTH}
+                      strokeLinecap="round"
+                      strokeDasharray={circumference}
+                      strokeDashoffset={circumference * (1 - fill)}
+                      transform={`rotate(-90 ${CENTER} ${CENTER})`}
+                    />
+                  )}
+                </g>
+              );
+            })}
 
-          {hourTip && minuteTip && (
+          {heroItem && now && (
             <g>
-              <line
-                x1={CENTER}
-                y1={CENTER}
-                x2={hourTip.x}
-                y2={hourTip.y}
-                className="stroke-text-primary"
-                strokeWidth={3.5}
-                strokeLinecap="round"
-              />
-              <line
-                x1={CENTER}
-                y1={CENTER}
-                x2={minuteTip.x}
-                y2={minuteTip.y}
-                className="stroke-accent-teal"
-                strokeWidth={2}
-                strokeLinecap="round"
-              />
-              <circle cx={CENTER} cy={CENTER} r={4} className="fill-bg-void stroke-accent-teal" strokeWidth={1.5} />
+              <text x={CENTER} y={CENTER - 6} textAnchor="middle" dominantBaseline="middle" className="fill-text-primary font-display text-2xl font-semibold">
+                {formatRingCountdown(heroItem.at, now, heroItem.urgent)}
+              </text>
+              <text
+                x={CENTER}
+                y={CENTER + 20}
+                textAnchor="middle"
+                dominantBaseline="middle"
+                className="fill-text-secondary font-mono text-[10px] uppercase tracking-wide"
+              >
+                {truncate(heroItem.title, 20)}
+              </text>
             </g>
           )}
-
-          {ringItems.map((item, index) => {
-            const angle = (360 / ringItems.length) * index;
-            const dot = polarPoint(DOT_RADIUS, angle);
-            const label = polarPoint(LABEL_RADIUS, angle);
-            const anchor = label.x < CENTER - 4 ? "end" : label.x > CENTER + 4 ? "start" : "middle";
-
-            return (
-              <g key={`${item.kind}-${item.id}`}>
-                <circle cx={dot.x} cy={dot.y} r={5} className={item.urgent ? "fill-status-urgent" : ITEM_KIND_FILL_CLASS[item.kind]} />
-                <text
-                  x={label.x}
-                  y={label.y}
-                  textAnchor={anchor}
-                  dominantBaseline="middle"
-                  className="fill-text-secondary font-mono text-[9px]"
-                >
-                  {truncate(item.title)}
-                </text>
-              </g>
-            );
-          })}
         </svg>
 
-        <div className="text-center" role="timer" aria-live="off">
-          <p className="font-display text-2xl font-semibold text-text-primary">
-            {now ? now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "--:--"}
-          </p>
-          <p className="font-mono text-[10px] uppercase tracking-wide text-text-secondary">
-            {now ? now.toLocaleDateString([], { weekday: "long", month: "short", day: "numeric" }) : ""}
-          </p>
-        </div>
+        {ringItems.length > 0 && (
+          <ul className="flex w-full max-w-[220px] flex-col gap-1">
+            {ringItems.map((item) => (
+              <li key={`${item.kind}-${item.id}-legend`} className="flex items-center gap-2 font-mono text-[10px]">
+                <span
+                  className={`h-2 w-2 shrink-0 rounded-full ${item.urgent ? "bg-status-urgent" : ITEM_KIND_BG_CLASS[item.kind]}`}
+                  aria-hidden="true"
+                />
+                <span className="min-w-0 flex-1 truncate text-text-secondary">{item.title}</span>
+                <span className={item.urgent ? "text-status-urgent" : "text-text-eyebrow"}>
+                  {now ? formatRingCountdown(item.at, now, item.urgent) : ""}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
 
       {/* Divider: a hairline on narrow screens where the two blocks stack,

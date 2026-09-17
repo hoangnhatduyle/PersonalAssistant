@@ -3,7 +3,7 @@ export type ItemKind = "deadline" | "task" | "reminder" | "session" | "appointme
 /**
  * Single source of truth for how each dashboard item kind is labeled and
  * colored, shared by WorkloadDensityStrip (bar segments + legend) and
- * UpNextPanel (clock ring dots + queue rows). Deliberately never reuses
+ * UpNextPanel (countdown rings + queue rows). Deliberately never reuses
  * status-urgent (red) for a kind's base color — that hue is reserved for
  * the urgent/past-due overlay, so it stays meaningful wherever it appears.
  */
@@ -24,11 +24,11 @@ export const ITEM_KIND_BG_CLASS: Record<ItemKind, string> = {
   appointment: "bg-status-warn",
 };
 
-/** Tailwind `fill-*` classes — SVG contexts (Up Next's clock ring dots). */
-export const ITEM_KIND_FILL_CLASS: Record<ItemKind, string> = {
-  deadline: "fill-accent-teal",
-  task: "fill-accent-indigo",
-  reminder: "fill-status-neutral",
-  session: "fill-status-ok",
-  appointment: "fill-status-warn",
+/** Tailwind `stroke-*` classes — SVG contexts (Up Next's countdown rings). */
+export const ITEM_KIND_STROKE_CLASS: Record<ItemKind, string> = {
+  deadline: "stroke-accent-teal",
+  task: "stroke-accent-indigo",
+  reminder: "stroke-status-neutral",
+  session: "stroke-status-ok",
+  appointment: "stroke-status-warn",
 };

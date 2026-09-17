@@ -53,7 +53,7 @@ const COLOR = {
   statusNeutral: "#64748b",
 } as const;
 
-// Mirrors ITEM_KIND_FILL_CLASS (src/lib/dashboard/item-kind.ts): deadline is
+// Mirrors ITEM_KIND_BG_CLASS (src/lib/dashboard/item-kind.ts): deadline is
 // teal, task is indigo, everywhere else in the app.
 const KIND_ACCENT: Record<ReminderEmailContent["targetType"], string> = {
   deadline: COLOR.accentTeal,
