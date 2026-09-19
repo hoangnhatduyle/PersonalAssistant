@@ -3,12 +3,18 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import type { Database } from "@/lib/supabase/types";
 import { requireEnv } from "@/lib/env";
-import { endConversation, loadConversationHistory, resolveActiveConversation } from "@/lib/voice/conversation-memory";
+import {
+  endConversation,
+  loadConversationHistory,
+  loadDraftMutation,
+  resolveActiveConversation,
+  type DraftMutationRecord,
+} from "@/lib/voice/conversation-memory";
 import { loadSchedule, toScheduleToolPayload, type ScheduleToolPayload } from "@/lib/voice/schedule-loader";
 import { runKnowledgeLookup, type KnowledgeCitation } from "@/lib/knowledge/retrieval";
 import { runSuggestionsLookup } from "@/lib/voice/suggestions-lookup";
 import { runDeadlineProgressLookup } from "@/lib/voice/deadline-progress-lookup";
-import { loadEntityContext, loadUserTimezone, mutationSchema, toPendingMutation, type EntityContext } from "@/lib/voice/intent";
+import { loadEntityContext, loadUserTimezone, mutationDraftSchema, mutationSchema, toPendingMutation, type EntityContext, type RawMutation } from "@/lib/voice/intent";
 import type { PendingMutation } from "@/lib/voice/mutations";
 import {
   CONVERSATION_TOOLS,
@@ -17,6 +23,7 @@ import {
   type GetScheduleArgs,
   type LookupKnowledgeArgs,
   type RespondToUserArgs,
+  type SaveMutationDraftArgs,
   type ToolName,
 } from "@/lib/voice/tools";
 import { timed } from "@/lib/voice/_perf-temp";
@@ -33,6 +40,8 @@ export interface ConversationAnswer {
   needsFollowUp?: boolean;
   /** May differ from the conversationId this was called with, if start_new_conversation fired mid-turn. */
   conversationId: string;
+  /** SPEC-VOICE-006: set only when save_mutation_draft fired this turn — session.ts persists this to voice_conversations.draft_mutation; every other outcome kind clears it instead. */
+  draftMutation?: DraftMutationRecord;
 }
 
 export interface ConversationMutationProposal {
@@ -82,13 +91,16 @@ You have tools to ground your answers in the user's real data, and to act on exp
 - get_personalization_suggestions: call this when the user asks to check the app's generated personalization/reminder-timing suggestions ("check my suggestions", "did the app recommend changing my reminder timing?"). It runs synchronously and its result is already final by the time you see it — there is nothing left "in progress." Relay its message near-verbatim as your actual answer via respond_to_user; never say something like "checking now" or "let me look into that" instead of the real message — that phrasing describes work you haven't done, since the tool has already run and returned by that point.
 - get_deadline_progress: call this when the user asks about planned-session progress toward a specific Deadline ("how much progress on Homework 1", "how many sessions do I have left", "did I finish my sessions for the project"). Match the deadline mentioned by title against the "deadlines" list in the entity context below and pass that deadline's id — never invent an id, and never guess when nothing in the list matches (respond that you don't have a matching deadline instead). Relay its message near-verbatim.
 - start_new_conversation: only when the user explicitly asks to start over, forget what was said before, or begin a new conversation. Never announce that you did it — just continue naturally with whatever else they asked in the same turn.
-- propose_mutation: call this when the user gives a clear instruction to change app data — create/update/delete a Deadline, Task, Note, or Course; mark a Deadline's or Task's status via a transition ("mark it in progress", "mark it submitted", "mark it done", "cancel it" — set operation "transition" and the matching event, never a raw status string); acknowledge/dismiss/snooze a Reminder; create/delete a Deadline work Session or mark one done/skipped; create a Board List (a simple named container for Task cards, e.g. "Misc" or a per-course reading list) — see the paragraph below for placing a Task into one. Call it alone, never alongside another tool call, and never in the same turn as respond_to_user. See "Deciding whether something is a mutation" below for when something is or isn't really a command — read it carefully, since acting on a data change the user didn't actually ask for is a much worse mistake than asking a question is.
+- propose_mutation: call this when the user gives a clear instruction to change app data — create/update/delete a Deadline, Task, Note, or Course; mark a Deadline's or Task's status via a transition ("mark it in progress", "mark it submitted", "mark it done", "cancel it" — set operation "transition" and the matching event, never a raw status string); acknowledge/dismiss/snooze a Reminder; create/delete a Deadline work Session or mark one done/skipped; create/rename/delete a Board List (a simple named container for Task cards, e.g. "Misc" or a per-course reading list) — see the paragraph below for placing a Task into one; create/update/delete a general Appointment/Event, or mark one done/missed via transition — see the dedicated Appointment paragraph below, since it has its own required-field rule. Call it alone, never alongside another tool call, and never in the same turn as respond_to_user. See "Deciding whether something is a mutation" below for when something is or isn't really a command — read it carefully, since acting on a data change the user didn't actually ask for is a much worse mistake than asking a question is.
+- save_mutation_draft: call this instead of propose_mutation when the user's instruction is clearly a mutation but is missing a required field you cannot resolve yourself (e.g. an Appointment's time — never a date/time you can already resolve from relative phrasing, that still goes through propose_mutation as usual). Pass every field you already know plus a natural spoken question ("question") asking for exactly what's missing, in the same turn — never guess a value, never fall back to a plain respond_to_user question instead (that would lose everything you already resolved). See "Cross-turn drafts" below for how a draft carries forward once the user answers.
 
 A Deadline/Task/Session status change is always a "transition", never a plain "update" with a status field — the app enforces this server-side, and inventing a raw status value fails validation. Deadline events: user_marks_in_progress (Not Started -> In Progress), user_marks_submitted (In Progress/Overdue -> Submitted), user_confirms_done (Submitted -> Completed), user_cancels (Not Started/In Progress -> Cancelled). Task events: user_marks_done (Open -> Done), user_cancels (Open -> Cancelled). Session events: user_marks_session_done (planned/skipped -> done), user_marks_session_skipped (planned -> skipped). Match the target against the "deadlines"/"tasks"/"sessions" lists in the entity context below by title — never invent an id, and if the requested transition doesn't apply from where that item actually stands (e.g. "mark it submitted" on something already Completed), set confidence below 0.95 rather than guessing.
 
 A Deadline work Session always belongs to an existing Deadline — match "session for Homework 1" or similar against the "deadlines" list below and pass that deadline's id as deadline_id (never invent one), plus a title and a date resolved the same way you resolve due_at. To delete or mark one done/skipped, match it against the "sessions" list in the entity context (each entry has an id, title, and deadline_id) by the session's own title or its parent deadline's title. There is no session "update" — only create, delete, and the two mark-done/mark-skipped events; a request to change a session's date/time/duration has no supported mutation, so answer via respond_to_user explaining that instead of proposing one.
 
-A Board List create only needs a name, plus an optional course_id (from the "courses" list below) when the user ties it to a specific course rather than a freestanding list ("Misc", "Project: X"). A Task can optionally be placed into a Board List via list_id on a Task create or update — match the list the user names ("my grocery list", "the reading list for CS 101") against the "todoLists" list in the entity context (each entry has id, name, and course_id). Omit list_id for a plain task with no list. There's no separate "item" concept anymore — what used to be a Course To-Do item is just a Task with list_id set, so create/update/mark-done/delete it exactly the way you would any other Task (see the transition-events paragraph above for marking done, and match an existing one against the "tasks" list, which also carries each task's list_id when it has one).
+A general Appointment/Event ("add an appointment", "add a dentist visit Friday at 3pm", "mark my dentist appointment as done", "I missed my haircut appointment") is a different target_type ("event") from a Deadline work Session, even though both live on the same underlying calendar — a Session always has a deadline_id and comes from the "sessions" list; an Event never does and comes from the "appointments" list instead (each entry has id, title, date, time). Match an existing one by title (and date, if given, to disambiguate) against "appointments" for update/delete/transition. Creating one needs title, date, time, AND duration_minutes — all four, unlike a Session, which tolerates a missing time. If any of those four is missing, call save_mutation_draft instead of propose_mutation, asking specifically for what's missing (e.g. "What time, and how long will it be?") — never guess a time or a default duration. "Mark it done"/"mark it missed" is a transition (user_marks_event_done/user_marks_event_missed), exactly like a Deadline/Task/Session status change — never a plain update.
+
+A Board List create only needs a name, plus an optional course_id (from the "courses" list below) when the user ties it to a specific course rather than a freestanding list ("Misc", "Project: X"). To rename or delete an existing Board List, match it against the "todoLists" entity context by name and pass its id as target_id — an update's name field is the new name; deleting a list also removes its cards, so if the user seems unaware of that, it's still fine to propose it (the confirmation prompt covers it), just don't understate what will happen in your summary. A Task can optionally be placed into a Board List via list_id on a Task create or update — match the list the user names ("my grocery list", "the reading list for CS 101") against the "todoLists" list in the entity context (each entry has id, name, and course_id). Omit list_id for a plain task with no list. There's no separate "item" concept anymore — what used to be a Course To-Do item is just a Task with list_id set, so create/update/mark-done/delete it exactly the way you would any other Task (see the transition-events paragraph above for marking done, and match an existing one against the "tasks" list, which also carries each task's list_id when it has one).
 
 When you narrate a schedule (from the pre-loaded Today's schedule block or a get_schedule/get_person_schedule result), account for every item across every kind due or happening in the window you're describing — Deadlines, Tasks (listed or not), Course meetings, and Appointments/Events alike. Never silently drop an item because it doesn't fit how you phrased the summary — e.g. describing a group as "tasks" and then only naming unlisted ones while a listed Task due the same day goes unmentioned. If you summarize by count rather than naming every item, that count must include every item actually present.
 
@@ -103,7 +115,9 @@ A bare verb like "test", "check", "look at", "try", or "open" in front of a noun
 
 A "remind me to X" phrase with no reference to an existing Course, Deadline, or Task is a request to create a new Task, not a Reminder operation directly — Reminders are always derived automatically from a Task's or Deadline's due_at, never created directly (the only supported Reminder operation is "acknowledge", against an id from the entity context below). Propose target_type "task", operation "create", and title set to the request stripped of the leading "remind me [to]" phrasing (e.g. "remind me to submit my assignment" -> title "Submit my assignment"). Use reminder_lead_minutes to capture reminder-timing phrasing on a task create/update: an explicit "remind me AT <time>" (fire exactly at due_at) sets it to 0; "remind me N minutes/hours before" sets it to that many minutes; no reminder-timing phrasing at all leaves it null (the task's own default lead time applies).
 
-A Task's priority is settable the same way a Deadline's is: set it to one of "Low", "Medium", "High", or "Urgent" only when the user states a priority level explicitly on a task create/update (e.g. "add a high priority task to call the bank", "mark my dentist task as urgent"); leave it null otherwise.
+A Task's priority is settable the same way a Deadline's is: set it to one of "Low", "Medium", "High", or "Urgent" only when the user states a priority level explicitly on a task/deadline create/update (e.g. "add a high priority task to call the bank", "mark my dentist task as urgent"); leave it null otherwise — a create with no stated priority is automatically defaulted to Medium, so never guess or state a priority the user didn't actually say.
+
+A Deadline create with no date mentioned at all is automatically defaulted to the end of today, in the user's own timezone — you do not need to ask for a date before proposing the create, and you must not guess a specific different date the user didn't say. If the user gives any date/time phrasing at all, resolve it yourself as usual (the same way due_at is always resolved) rather than relying on this default.
 
 If the request doesn't map confidently to a supported mutation, or names an entity not in the entity context below, set confidence below 0.95 rather than guessing at a target_id — still call propose_mutation with that low confidence rather than quietly answering via respond_to_user instead, since only a propose_mutation call goes through the confirmation safety check before anything happens; answering conversationally when you're genuinely unsure skips that check entirely. Never invent an id.
 
@@ -116,6 +130,11 @@ Examples:
 - "Test the bucket list" / "Check out the bucket list" against a Knowledge Source titled "My Girlfriend (Tien) Bucket List" -> lookup_knowledge, then respond_to_user. NOT a Task create — "test" here is the user exercising the lookup feature, not naming a new Task.
 - "What is my sister's schedule today?" (entity context people list has {id: "...", name: "Châu", relationship: "sister"}) -> get_person_schedule with that id, window "date", and date resolved to today's date from the current time/timezone below, then respond_to_user. NOT get_schedule — the question is about a tracked person, not the user's own schedule. NOT the pre-loaded Today's schedule block either — that's always the user's own data, never hers.
 - "Is Tien free right now?" but no person in the entity context has that name or a matching relationship -> respond_to_user explaining no one tracked matches "Tien". NOT a guessed person_id.
+- "Add an appointment for my dentist visit Friday at 3pm for 30 minutes" -> propose_mutation, target_type "event", operation create, title "Dentist visit", date resolved to Friday, time "3:00 PM", duration_minutes 30, high confidence.
+- "Add an appointment for my dentist visit Friday" (no time or duration given) -> save_mutation_draft, target_type "event", operation create, title "Dentist visit", date resolved to Friday, time and duration_minutes both null, question asking for the time and how long it will be. NOT propose_mutation with a guessed time, and NOT a plain respond_to_user question that would lose the title/date you already resolved.
+- "Mark my dentist appointment as done" (an "appointments" entry titled "Dentist visit" exists) -> propose_mutation, target_type "event", operation transition, target_id from that entry, event "user_marks_event_done", high confidence.
+
+Cross-turn drafts: when a save_mutation_draft call from an earlier turn in this same conversation is still open, you're given its known fields and the question you last asked, appended below your own current-time/entity-context block. Treat the user's newest message as a possible answer to that exact question first — if it plausibly answers it, merge the new information with what the draft already has and call propose_mutation (or save_mutation_draft again, only if still genuinely incomplete — never re-ask a question the draft already answers). If the newest message is clearly about something else entirely, ignore the draft and handle the new message normally; it clears itself automatically, you don't need to do anything to dismiss it.
 
 Only claim to have looked something up when you actually called a tool for it — never imply a web search or a source you didn't actually retrieve. Only describe having created, changed, cancelled, or acted on something in the same turn you actually call propose_mutation for it — the spoken summary you give there is what gets confirmed, so it must accurately describe the change.
 
@@ -125,7 +144,16 @@ Every answer is read aloud by text-to-speech, so it must sound like natural spok
 
 Keep your response concise enough to be comfortably spoken aloud — aim for well under 100 words for most answers, and never more than roughly 250 words even for a detailed recommendation or a day with many items due. When there's more to say than that, summarize rather than enumerate everything, and offer to go into more detail if asked.`;
 
-function buildSystemPrompt(now: Date, timezone: string, context: EntityContext, todaySchedule: ScheduleToolPayload): string {
+function buildSystemPrompt(
+  now: Date,
+  timezone: string,
+  context: EntityContext,
+  todaySchedule: ScheduleToolPayload,
+  draft: DraftMutationRecord | null,
+): string {
+  const draftSection = draft
+    ? `\n\nYou have an in-progress, not-yet-proposed mutation from earlier in this conversation, still missing something — see "Cross-turn drafts" above for how to use this. What you already know: ${JSON.stringify(draft.mutation)}. The question you last asked the user: "${draft.question}"`
+    : "";
   return `${CONVERSATION_SYSTEM_PROMPT}
 
 Current time: ${now.toISOString()} (UTC). The user's IANA timezone is ${timezone} — resolve any relative date/time phrase ("today", "this afternoon", "tomorrow", "5pm") against that timezone, not UTC. Resolve a time-of-day phrase to that time in the user's timezone, then convert it to an ISO datetime string with that timezone's correct UTC offset for that instant — never assume UTC or guess at today's date. The same resolution applies to get_schedule/get_person_schedule's \`date\` argument when window is "date": resolve the user's relative-date phrase into a plain YYYY-MM-DD calendar date in this timezone, the same way you resolve due_at.
@@ -133,8 +161,8 @@ Current time: ${now.toISOString()} (UTC). The user's IANA timezone is ${timezone
 Today's schedule (already loaded — same shape get_schedule returns for other windows; never call get_schedule for today again). This is exclusively the user's own data, never a tracked Person's — never use it to answer a question about a tracked Person; only an actual get_person_schedule result may describe what a Person has going on:
 ${JSON.stringify(todaySchedule)}
 
-The user's current data, for referencing real ids with propose_mutation, get_person_schedule, or matching a Knowledge Source by title — never invent an id not in this list. \`tasks\` (id, title, list_id) includes list_id when a Task is filed under a Board List. \`todoLists\` (id, name, course_id) are Board Lists — match a list the user names against this the same way you match a deadline or task. \`sessions\` (id, title, deadline_id) are planned Deadline work Sessions — match each against the user's own wording by title/name the same way you already match a deadline or task. knowledgeSources here is id+title only; a title match means call lookup_knowledge for the actual content, not that you already have it. \`people\` lists every tracked person's id, name, and relationship (e.g. "sister") for get_person_schedule — match the person the user names or describes by relationship against this list, and never invent a person_id:
-${JSON.stringify(context)}`;
+The user's current data, for referencing real ids with propose_mutation, get_person_schedule, or matching a Knowledge Source by title — never invent an id not in this list. \`tasks\` (id, title, list_id) includes list_id when a Task is filed under a Board List. \`todoLists\` (id, name, course_id) are Board Lists — match a list the user names against this the same way you match a deadline or task. \`sessions\` (id, title, deadline_id) are planned Deadline work Sessions — match each against the user's own wording by title/name the same way you already match a deadline or task. \`appointments\` (id, title, date, time) are general Appointments/Events (never a Deadline work Session, never a Course meeting) — match each by title (and date, if given) the same way. knowledgeSources here is id+title only; a title match means call lookup_knowledge for the actual content, not that you already have it. \`people\` lists every tracked person's id, name, and relationship (e.g. "sister") for get_person_schedule — match the person the user names or describes by relationship against this list, and never invent a person_id:
+${JSON.stringify(context)}${draftSection}`;
 }
 
 // `date` is required (non-null) iff window is "date" -- same per-branch
@@ -223,6 +251,8 @@ function parseToolArgs<T>(schema: z.ZodType<T>, toolCall: OpenAI.ChatCompletionM
  */
 function parseProposeMutationArgs(
   toolCall: OpenAI.ChatCompletionMessageFunctionToolCall,
+  now: Date,
+  timezone: string,
 ): { confidence: number; summary: string; mutation: PendingMutation } {
   let raw: unknown;
   try {
@@ -232,7 +262,30 @@ function parseProposeMutationArgs(
   }
   const meta = proposeMutationMetaSchema.parse(raw);
   const rawMutation = mutationSchema.parse(raw);
-  return { confidence: meta.confidence, summary: meta.summary, mutation: toPendingMutation(rawMutation) };
+  return { confidence: meta.confidence, summary: meta.summary, mutation: toPendingMutation(rawMutation, now, timezone) };
+}
+
+const saveMutationDraftMetaSchema: z.ZodType<SaveMutationDraftArgs> = z.object({
+  question: z.string().trim().min(1),
+});
+
+/**
+ * Parses a save_mutation_draft tool call. Deliberately parses the raw args
+ * through intent.ts's mutationDraftSchema (mutationSchemaBase, no
+ * superRefine) rather than mutationSchema — a draft is by definition allowed
+ * to be missing a required field for its operation; only structural
+ * validity (right target_type/operation/enum values) is enforced here.
+ */
+function parseSaveMutationDraftArgs(toolCall: OpenAI.ChatCompletionMessageFunctionToolCall): { question: string; mutation: RawMutation } {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(toolCall.function.arguments);
+  } catch {
+    throw new Error("save_mutation_draft returned arguments that were not valid JSON");
+  }
+  const meta = saveMutationDraftMetaSchema.parse(raw);
+  const mutation = mutationDraftSchema.parse(raw);
+  return { question: meta.question, mutation };
 }
 
 function dedupeCitationsBySourceId(citations: KnowledgeCitation[]): KnowledgeCitation[] {
@@ -308,8 +361,9 @@ async function dispatchTool(
     }
     case "respond_to_user":
     case "propose_mutation":
-      // The loop below intercepts both finalizing tools before they ever
-      // reach dispatchTool — these cases only exist to keep the switch
+    case "save_mutation_draft":
+      // The loop below intercepts all three finalizing tools before they
+      // ever reach dispatchTool — these cases only exist to keep the switch
       // exhaustive over ToolName.
       throw new Error(`${name} must be handled by the calling loop, not dispatched`);
     default: {
@@ -319,11 +373,11 @@ async function dispatchTool(
   }
 }
 
-// Both "finalize this turn" tools -- a batch containing either one bundled
+// All three "finalize this turn" tools -- a batch containing one bundled
 // with anything else means the model committed to a final action before
-// seeing a data tool's result, so neither may share a batch with another
-// call (see the loop below).
-const FINALIZING_TOOL_NAMES = new Set<ToolName>(["respond_to_user", "propose_mutation"]);
+// seeing a data tool's result, so none may share a batch with another call
+// (see the loop below).
+const FINALIZING_TOOL_NAMES = new Set<ToolName>(["respond_to_user", "propose_mutation", "save_mutation_draft"]);
 
 /**
  * The tool-calling conversational core replacing both the old classify-then-
@@ -339,17 +393,18 @@ const FINALIZING_TOOL_NAMES = new Set<ToolName>(["respond_to_user", "propose_mut
  */
 export const runConversationTurn: RunConversationTurnFn = async (supabase, userId, transcript, conversationId) => {
   const now = new Date();
-  const [history, timezone, context, todaySchedule] = await timed("setup (history+timezone+entityContext+todaySchedule)", () =>
+  const [history, timezone, context, todaySchedule, draft] = await timed("setup (history+timezone+entityContext+todaySchedule+draft)", () =>
     Promise.all([
       timed("  -> history", () => loadConversationHistory(supabase, userId, conversationId)),
       timed("  -> timezone", () => loadUserTimezone(supabase, userId)),
       timed("  -> entityContext", () => loadEntityContext(supabase, userId)),
       timed("  -> todaySchedule", () => loadSchedule(supabase, userId, "today", now)),
+      timed("  -> draft", () => loadDraftMutation(supabase, userId, conversationId)),
     ]),
   );
 
   const messages: OpenAI.ChatCompletionMessageParam[] = [
-    { role: "system", content: buildSystemPrompt(now, timezone, context, toScheduleToolPayload(todaySchedule)) },
+    { role: "system", content: buildSystemPrompt(now, timezone, context, toScheduleToolPayload(todaySchedule), draft) },
     ...history.map((turn): OpenAI.ChatCompletionMessageParam => ({ role: turn.role, content: turn.content })),
     { role: "user", content: transcript },
   ];
@@ -439,7 +494,17 @@ export const runConversationTurn: RunConversationTurnFn = async (supabase, userI
           conversationId: activeConversationId,
         };
       }
-      const { confidence, summary, mutation } = parseProposeMutationArgs(finalizingCall);
+      if (finalizingCall.function.name === "save_mutation_draft") {
+        const { question, mutation } = parseSaveMutationDraftArgs(finalizingCall);
+        return {
+          kind: "answer",
+          message: question,
+          needsFollowUp: true,
+          conversationId: activeConversationId,
+          draftMutation: { mutation, question },
+        };
+      }
+      const { confidence, summary, mutation } = parseProposeMutationArgs(finalizingCall, now, timezone);
       return { kind: "mutation_proposal", confidence, summary, mutation, conversationId: activeConversationId };
     }
 

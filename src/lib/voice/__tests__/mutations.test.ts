@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import {
   adminClient,
+  createAppointment,
   createAuthenticatedUser,
   createCourse,
   createDeadline,
@@ -386,6 +387,155 @@ describe("executePendingMutation", () => {
           payload: { name: "Homework", course_id: "00000000-0000-0000-0000-000000000000" },
         }),
       ).rejects.toBeInstanceOf(MutationTargetNotFoundError);
+    });
+
+    it("renames a to-do list", async () => {
+      const listId = await createTodoList(admin, userId, { name: "Old name" });
+      const result = await executePendingMutation(user.client, userId, {
+        targetType: "todo_list",
+        operation: "update",
+        targetId: listId,
+        payload: { name: "New name" },
+      });
+      expect((result.data as { name: string }).name).toBe("New name");
+    });
+
+    it("throws MutationTargetNotFoundError renaming a nonexistent list", async () => {
+      await expect(
+        executePendingMutation(user.client, userId, {
+          targetType: "todo_list",
+          operation: "update",
+          targetId: "00000000-0000-0000-0000-000000000000",
+          payload: { name: "New name" },
+        }),
+      ).rejects.toBeInstanceOf(MutationTargetNotFoundError);
+    });
+
+    it("deletes a to-do list and cascades to its live cards", async () => {
+      const listId = await createTodoList(admin, userId);
+      await executePendingMutation(user.client, userId, {
+        targetType: "task",
+        operation: "create",
+        payload: { title: "Read chapter 3", list_id: listId },
+      });
+
+      const result = await executePendingMutation(user.client, userId, { targetType: "todo_list", operation: "delete", targetId: listId });
+      expect(result.cascade?.todoItemsDeleted).toBe(1);
+
+      const { data } = await admin.from("todo_lists").select("deleted_at").eq("id", listId).single();
+      expect(data?.deleted_at).not.toBeNull();
+    });
+
+    it("throws MutationTargetNotFoundError deleting a nonexistent/already-deleted list", async () => {
+      await expect(
+        executePendingMutation(user.client, userId, {
+          targetType: "todo_list",
+          operation: "delete",
+          targetId: "00000000-0000-0000-0000-000000000000",
+        }),
+      ).rejects.toBeInstanceOf(MutationTargetNotFoundError);
+    });
+  });
+
+  describe("event", () => {
+    it("creates a general appointment, forcing event_status to planned", async () => {
+      const result = await executePendingMutation(user.client, userId, {
+        targetType: "event",
+        operation: "create",
+        payload: { title: "Dentist visit", date: "2026-09-06", time: "3:00 PM", duration_minutes: 30 },
+      });
+      const event = result.data as { title: string; event_status: string };
+      expect(event.title).toBe("Dentist visit");
+      expect(event.event_status).toBe("planned");
+    });
+
+    it("updates an appointment's location", async () => {
+      const eventId = await createAppointment(admin, userId);
+      const result = await executePendingMutation(user.client, userId, {
+        targetType: "event",
+        operation: "update",
+        targetId: eventId,
+        payload: { location: "Downtown clinic" },
+      });
+      expect((result.data as { location: string }).location).toBe("Downtown clinic");
+    });
+
+    it("throws MutationTargetNotFoundError updating a nonexistent/already-deleted appointment", async () => {
+      await expect(
+        executePendingMutation(user.client, userId, {
+          targetType: "event",
+          operation: "update",
+          targetId: "00000000-0000-0000-0000-000000000000",
+          payload: { location: "Downtown clinic" },
+        }),
+      ).rejects.toBeInstanceOf(MutationTargetNotFoundError);
+    });
+
+    it("deletes an appointment (soft-delete)", async () => {
+      const eventId = await createAppointment(admin, userId);
+      await executePendingMutation(user.client, userId, { targetType: "event", operation: "delete", targetId: eventId });
+
+      const { data } = await admin.from("appointments").select("deleted_at").eq("id", eventId).single();
+      expect(data?.deleted_at).not.toBeNull();
+    });
+
+    it("throws MutationTargetNotFoundError deleting a nonexistent/already-deleted appointment", async () => {
+      await expect(
+        executePendingMutation(user.client, userId, {
+          targetType: "event",
+          operation: "delete",
+          targetId: "00000000-0000-0000-0000-000000000000",
+        }),
+      ).rejects.toBeInstanceOf(MutationTargetNotFoundError);
+    });
+
+    it("transitions planned -> done", async () => {
+      const eventId = await createAppointment(admin, userId);
+      const result = await executePendingMutation(user.client, userId, {
+        targetType: "event",
+        operation: "transition",
+        targetId: eventId,
+        event: "user_marks_event_done",
+      });
+      expect((result.data as { event_status: string }).event_status).toBe("done");
+    });
+
+    it("transitions planned -> missed", async () => {
+      const eventId = await createAppointment(admin, userId);
+      const result = await executePendingMutation(user.client, userId, {
+        targetType: "event",
+        operation: "transition",
+        targetId: eventId,
+        event: "user_marks_event_missed",
+      });
+      expect((result.data as { event_status: string }).event_status).toBe("missed");
+    });
+
+    it("rejects a transition from the terminal 'done' status", async () => {
+      const eventId = await createAppointment(admin, userId);
+      await walkTransitions(admin, "appointments", eventId, "event_status", ["done"]);
+      await expect(
+        executePendingMutation(user.client, userId, {
+          targetType: "event",
+          operation: "transition",
+          targetId: eventId,
+          event: "user_marks_event_missed",
+        }),
+      ).rejects.toThrow(/Cannot apply/);
+    });
+
+    it("rejects a transition against a Deadline Session (event_status is null for a session row)", async () => {
+      const courseId = await createCourse(admin, userId);
+      const deadlineId = await createDeadline(admin, userId, courseId);
+      const sessionId = await createSession(admin, userId, deadlineId);
+      await expect(
+        executePendingMutation(user.client, userId, {
+          targetType: "event",
+          operation: "transition",
+          targetId: sessionId,
+          event: "user_marks_event_done",
+        }),
+      ).rejects.toThrow(/not an event/);
     });
   });
 

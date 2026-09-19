@@ -1,0 +1,26 @@
+-- Cross-turn "draft mutation" memory (SPEC-VOICE-006). Fixes a confirmed gap:
+-- a low-confidence/clarification voice turn never wrote voice_sessions.
+-- response_message, so loadConversationHistory's `.not("response_message",
+-- "is", null)` filter silently dropped the exchange -- if the assistant
+-- asked "what time?", the next turn had zero record that it had asked, or
+-- what the user had already told it (title/date/etc already resolved).
+--
+-- draft_mutation holds the flat, partially-specified propose_mutation-shaped
+-- object the model persists via the new save_mutation_draft tool when it
+-- recognizes a mutation but is missing a required field -- never a complete,
+-- ready-to-execute mutation (that's still voice_sessions.pending_mutation,
+-- unchanged). Lives on voice_conversations, not voice_sessions: this is
+-- cross-turn continuity state, the same thing voice_conversations already
+-- models (with its own 30-minute idle timeout and 48h retention sweep
+-- naturally bounding how long a stale draft can linger), not per-turn state.
+--
+-- Deliberately NOT given the same tamper-lockdown trigger voice_sessions.
+-- pending_mutation has (0005_voice_session_column_lockdown.sql): that lockdown
+-- exists because pending_mutation is executed verbatim on confirm, so a
+-- forged value could bypass the confirmation safety check. A draft is never
+-- executed directly -- it only ever informs a later, fresh propose_mutation
+-- call that still has to pass the 0.95 confidence bar and the full
+-- AwaitingConfirmation confirm/decline dance, so tampering with it has no
+-- privilege-escalation path; the owner-only RLS policy below is sufficient.
+alter table public.voice_conversations
+  add column draft_mutation jsonb;

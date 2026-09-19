@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Database } from "@/lib/supabase/types";
+import type { Database, Json } from "@/lib/supabase/types";
+import type { RawMutation } from "@/lib/voice/intent";
 
 const POSTGRES_UNIQUE_VIOLATION = "23505";
 
@@ -136,4 +137,57 @@ export async function loadConversationHistory(
     turns.push({ role: "assistant", content: row.response_message! });
   }
   return turns;
+}
+
+/** What's actually persisted for an in-progress mutation: the fields resolved so far, plus the question last asked about what's still missing. */
+export interface DraftMutationRecord {
+  mutation: RawMutation;
+  question: string;
+}
+
+/**
+ * The in-progress, not-yet-complete mutation (if any) the conversational
+ * core last asked a clarifying question about via save_mutation_draft —
+ * conversation-core.ts injects this into the next turn's system prompt so a
+ * follow-up answer ("3pm for 30 minutes") isn't evaluated from a blank
+ * slate. Null once cleared (setDraftMutation below) or once the
+ * conversation itself has moved on/expired.
+ */
+export async function loadDraftMutation(
+  supabase: SupabaseClient<Database>,
+  userId: string,
+  conversationId: string,
+): Promise<DraftMutationRecord | null> {
+  const { data, error } = await supabase
+    .from("voice_conversations")
+    .select("draft_mutation")
+    .eq("id", conversationId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (error) throw error;
+  return (data?.draft_mutation as DraftMutationRecord | null) ?? null;
+}
+
+/**
+ * Sets (save_mutation_draft fired) or clears (any other turn outcome — a
+ * plain answer or a completed propose_mutation) the conversation's draft. A
+ * draft is single-shot: either the very next relevant turn completes it, or
+ * anything else — an unrelated question, a different mutation, an explicit
+ * reset — supersedes and discards it, same as the caller passing `null`
+ * here does. No tamper-lockdown trigger guards this column (unlike
+ * voice_sessions.pending_mutation) — see 0037_voice_conversation_draft_mutation.sql
+ * for why that's a deliberate, not missing, decision.
+ */
+export async function setDraftMutation(
+  supabase: SupabaseClient<Database>,
+  userId: string,
+  conversationId: string,
+  draft: DraftMutationRecord | null,
+): Promise<void> {
+  const { error } = await supabase
+    .from("voice_conversations")
+    .update({ draft_mutation: draft as unknown as Json })
+    .eq("id", conversationId)
+    .eq("user_id", userId);
+  if (error) throw error;
 }

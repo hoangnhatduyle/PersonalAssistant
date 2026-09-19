@@ -11,7 +11,7 @@ import {
 import { formatCascadeDisclosure, previewCourseDeleteCascade } from "@/lib/voice/cascade-preview";
 import { executePendingMutation, type MutationExecutionResult, type PendingMutation } from "@/lib/voice/mutations";
 import type { KnowledgeCitation } from "@/lib/knowledge/retrieval";
-import { resolveActiveConversation } from "@/lib/voice/conversation-memory";
+import { resolveActiveConversation, setDraftMutation } from "@/lib/voice/conversation-memory";
 import { runConversationTurn, type ConversationTurnOutcome, type RunConversationTurnFn } from "@/lib/voice/conversation-core";
 import { timed } from "@/lib/voice/_perf-temp";
 
@@ -241,6 +241,19 @@ async function intakeVoiceTurnInner(
       error_message: errorMessage,
     });
   }
+
+  // SPEC-VOICE-006: persist the draft this turn produced (save_mutation_draft
+  // fired) or clear one that existed before this turn (any other outcome —
+  // a plain answer or a completed propose_mutation both mean the earlier
+  // draft is either superseded or resolved). Uses outcome.conversationId,
+  // not the id this call started with, for the same reason every other
+  // conversation-scoped write below does.
+  await setDraftMutation(
+    supabase,
+    userId,
+    outcome.conversationId,
+    outcome.kind === "answer" ? (outcome.draftMutation ?? null) : null,
+  );
 
   if (outcome.kind === "answer") {
     // query_kind/schedule_time_window stay null for every new row going

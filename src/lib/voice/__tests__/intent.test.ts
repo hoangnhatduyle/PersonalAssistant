@@ -4,6 +4,11 @@ import { adminClient, createAuthenticatedUser, createCourse, createDeadline, cre
 
 const VALID_TARGET_ID = "11111111-1111-4111-8111-111111111111";
 const VALID_COURSE_ID = "22222222-2222-4222-8222-222222222222";
+// Fixed clock/timezone for toPendingMutation's due_at-default tests -- UTC
+// keeps "end of today" arithmetic trivial to assert against.
+const NOW = new Date("2026-06-15T12:00:00.000Z");
+const TIMEZONE = "UTC";
+const END_OF_TODAY_UTC = "2026-06-15T23:59:59.999Z";
 
 describe("mutationSchema", () => {
   it("accepts a valid create (no target_id required)", () => {
@@ -43,6 +48,19 @@ describe("mutationSchema", () => {
       priority: null,
     });
     expect(missingTitle.success).toBe(false);
+  });
+
+  it("accepts a deadline create with no due_at -- toPendingMutation defaults it, so the schema itself must not require it", () => {
+    const result = mutationSchema.safeParse({
+      target_type: "deadline",
+      operation: "create",
+      target_id: null,
+      course_id: VALID_COURSE_ID,
+      title: "Essay draft",
+      due_at: null,
+      priority: null,
+    });
+    expect(result.success).toBe(true);
   });
 
   it("rejects a task create with no title", () => {
@@ -196,14 +214,103 @@ describe("mutationSchema", () => {
     expect(result.success).toBe(false);
   });
 
+  it("accepts an event create with title, date, time, and duration_minutes all present", () => {
+    const result = mutationSchema.safeParse({
+      target_type: "event",
+      operation: "create",
+      target_id: null,
+      title: "Dentist visit",
+      date: "2026-09-06",
+      time: "3:00 PM",
+      duration_minutes: 30,
+      location: null,
+      event: null,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects an event create missing time or duration_minutes (unlike a session, an event always needs both)", () => {
+    const missingTime = mutationSchema.safeParse({
+      target_type: "event",
+      operation: "create",
+      target_id: null,
+      title: "Dentist visit",
+      date: "2026-09-06",
+      time: null,
+      duration_minutes: 30,
+      location: null,
+      event: null,
+    });
+    expect(missingTime.success).toBe(false);
+
+    const missingDuration = mutationSchema.safeParse({
+      target_type: "event",
+      operation: "create",
+      target_id: null,
+      title: "Dentist visit",
+      date: "2026-09-06",
+      time: "3:00 PM",
+      duration_minutes: null,
+      location: null,
+      event: null,
+    });
+    expect(missingDuration.success).toBe(false);
+  });
+
+  it("rejects an event transition with no event", () => {
+    const result = mutationSchema.safeParse({
+      target_type: "event",
+      operation: "transition",
+      target_id: VALID_TARGET_ID,
+      title: null,
+      date: null,
+      time: null,
+      duration_minutes: null,
+      location: null,
+      event: null,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts an event transition with a valid event", () => {
+    const result = mutationSchema.safeParse({
+      target_type: "event",
+      operation: "transition",
+      target_id: VALID_TARGET_ID,
+      title: null,
+      date: null,
+      time: null,
+      duration_minutes: null,
+      location: null,
+      event: "user_marks_event_missed",
+    });
+    expect(result.success).toBe(true);
+  });
+
   it("accepts a to-do list create with just a name", () => {
-    const result = mutationSchema.safeParse({ target_type: "todo_list", operation: "create", course_id: null, name: "Misc" });
+    const result = mutationSchema.safeParse({ target_type: "todo_list", operation: "create", target_id: null, course_id: null, name: "Misc" });
     expect(result.success).toBe(true);
   });
 
   it("rejects a to-do list create with no name", () => {
-    const result = mutationSchema.safeParse({ target_type: "todo_list", operation: "create", course_id: null, name: null });
+    const result = mutationSchema.safeParse({ target_type: "todo_list", operation: "create", target_id: null, course_id: null, name: null });
     expect(result.success).toBe(false);
+  });
+
+  it("rejects a to-do list update/delete with a null target_id", () => {
+    const result = mutationSchema.safeParse({ target_type: "todo_list", operation: "delete", target_id: null, course_id: null, name: null });
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts a to-do list rename (update)", () => {
+    const result = mutationSchema.safeParse({
+      target_type: "todo_list",
+      operation: "update",
+      target_id: VALID_TARGET_ID,
+      course_id: null,
+      name: "New name",
+    });
+    expect(result.success).toBe(true);
   });
 
   // Board merge (supabase/migrations/0029_board_merge.sql): a "Course To-Do
@@ -310,10 +417,10 @@ describe("mutationSchema", () => {
 describe("toPendingMutation", () => {
   it("maps a course delete", () => {
     const raw = mutationSchema.parse({ target_type: "course", operation: "delete", target_id: VALID_TARGET_ID });
-    expect(toPendingMutation(raw)).toEqual({ targetType: "course", operation: "delete", targetId: VALID_TARGET_ID });
+    expect(toPendingMutation(raw, NOW, TIMEZONE)).toEqual({ targetType: "course", operation: "delete", targetId: VALID_TARGET_ID });
   });
 
-  it("maps a deadline create, dropping null-valued optional fields", () => {
+  it("maps a deadline create, defaulting a null priority to Medium", () => {
     const raw = mutationSchema.parse({
       target_type: "deadline",
       operation: "create",
@@ -323,10 +430,27 @@ describe("toPendingMutation", () => {
       due_at: "2026-09-01T00:00:00.000Z",
       priority: null,
     });
-    expect(toPendingMutation(raw)).toEqual({
+    expect(toPendingMutation(raw, NOW, TIMEZONE)).toEqual({
       targetType: "deadline",
       operation: "create",
-      payload: { course_id: VALID_COURSE_ID, title: "Essay draft", due_at: "2026-09-01T00:00:00.000Z", priority: undefined },
+      payload: { course_id: VALID_COURSE_ID, title: "Essay draft", due_at: "2026-09-01T00:00:00.000Z", priority: "Medium" },
+    });
+  });
+
+  it("maps a deadline create with no due_at, defaulting to end-of-today in the user's timezone", () => {
+    const raw = mutationSchema.parse({
+      target_type: "deadline",
+      operation: "create",
+      target_id: null,
+      course_id: VALID_COURSE_ID,
+      title: "Essay draft",
+      due_at: null,
+      priority: "High",
+    });
+    expect(toPendingMutation(raw, NOW, TIMEZONE)).toEqual({
+      targetType: "deadline",
+      operation: "create",
+      payload: { course_id: VALID_COURSE_ID, title: "Essay draft", due_at: END_OF_TODAY_UTC, priority: "High" },
     });
   });
 
@@ -340,7 +464,7 @@ describe("toPendingMutation", () => {
       reminder_lead_minutes: null,
       priority: null,
     });
-    expect(toPendingMutation(raw)).toEqual({
+    expect(toPendingMutation(raw, NOW, TIMEZONE)).toEqual({
       targetType: "task",
       operation: "update",
       targetId: VALID_TARGET_ID,
@@ -358,7 +482,7 @@ describe("toPendingMutation", () => {
       reminder_lead_minutes: null,
       priority: "Urgent",
     });
-    expect(toPendingMutation(raw)).toEqual({
+    expect(toPendingMutation(raw, NOW, TIMEZONE)).toEqual({
       targetType: "task",
       operation: "update",
       targetId: VALID_TARGET_ID,
@@ -368,7 +492,7 @@ describe("toPendingMutation", () => {
 
   it("maps a note delete", () => {
     const raw = mutationSchema.parse({ target_type: "note", operation: "delete", target_id: VALID_TARGET_ID, body: null });
-    expect(toPendingMutation(raw)).toEqual({ targetType: "note", operation: "delete", targetId: VALID_TARGET_ID });
+    expect(toPendingMutation(raw, NOW, TIMEZONE)).toEqual({ targetType: "note", operation: "delete", targetId: VALID_TARGET_ID });
   });
 
   it("maps a task create with an explicit reminder_lead_minutes: 0", () => {
@@ -381,14 +505,14 @@ describe("toPendingMutation", () => {
       reminder_lead_minutes: 0,
       priority: null,
     });
-    expect(toPendingMutation(raw)).toEqual({
+    expect(toPendingMutation(raw, NOW, TIMEZONE)).toEqual({
       targetType: "task",
       operation: "create",
-      payload: { title: "Submit assignment", due_at: "2026-09-01T17:00:00.000Z", reminder_lead_minutes: 0, priority: undefined },
+      payload: { title: "Submit assignment", due_at: "2026-09-01T17:00:00.000Z", reminder_lead_minutes: 0, priority: "Medium" },
     });
   });
 
-  it("maps a task create with reminder_lead_minutes: null by omitting the key entirely", () => {
+  it("maps a task create with reminder_lead_minutes: null by omitting the key entirely, defaulting priority to Medium but leaving due_at null (unlike a Deadline)", () => {
     const raw = mutationSchema.parse({
       target_type: "task",
       operation: "create",
@@ -398,11 +522,11 @@ describe("toPendingMutation", () => {
       reminder_lead_minutes: null,
       priority: null,
     });
-    const mutation = toPendingMutation(raw);
+    const mutation = toPendingMutation(raw, NOW, TIMEZONE);
     expect(mutation).toEqual({
       targetType: "task",
       operation: "create",
-      payload: { title: "Buy milk", due_at: null, priority: undefined },
+      payload: { title: "Buy milk", due_at: null, priority: "Medium" },
     });
     expect(mutation).not.toHaveProperty("payload.reminder_lead_minutes");
   });
@@ -417,7 +541,7 @@ describe("toPendingMutation", () => {
       reminder_lead_minutes: null,
       priority: "High",
     });
-    expect(toPendingMutation(raw)).toEqual({
+    expect(toPendingMutation(raw, NOW, TIMEZONE)).toEqual({
       targetType: "task",
       operation: "create",
       payload: { title: "Call the bank", due_at: null, priority: "High" },
@@ -432,7 +556,7 @@ describe("toPendingMutation", () => {
       event: "user_snoozes",
       snooze_until: "2026-09-01T00:00:00.000Z",
     });
-    expect(toPendingMutation(raw)).toEqual({
+    expect(toPendingMutation(raw, NOW, TIMEZONE)).toEqual({
       targetType: "reminder",
       operation: "acknowledge",
       targetId: VALID_TARGET_ID,
@@ -443,7 +567,7 @@ describe("toPendingMutation", () => {
 
   it("maps a course create, dropping omitted optional fields", () => {
     const raw = mutationSchema.parse({ target_type: "course", operation: "create", target_id: null, name: "CS 101" });
-    expect(toPendingMutation(raw)).toEqual({ targetType: "course", operation: "create", payload: { name: "CS 101" } });
+    expect(toPendingMutation(raw, NOW, TIMEZONE)).toEqual({ targetType: "course", operation: "create", payload: { name: "CS 101" } });
   });
 
   it("maps a deadline transition", () => {
@@ -457,7 +581,7 @@ describe("toPendingMutation", () => {
       priority: null,
       event: "user_marks_submitted",
     });
-    expect(toPendingMutation(raw)).toEqual({
+    expect(toPendingMutation(raw, NOW, TIMEZONE)).toEqual({
       targetType: "deadline",
       operation: "transition",
       targetId: VALID_TARGET_ID,
@@ -476,7 +600,7 @@ describe("toPendingMutation", () => {
       priority: null,
       event: "user_marks_done",
     });
-    expect(toPendingMutation(raw)).toEqual({
+    expect(toPendingMutation(raw, NOW, TIMEZONE)).toEqual({
       targetType: "task",
       operation: "transition",
       targetId: VALID_TARGET_ID,
@@ -496,7 +620,7 @@ describe("toPendingMutation", () => {
       duration_minutes: null,
       event: null,
     });
-    expect(toPendingMutation(raw)).toEqual({
+    expect(toPendingMutation(raw, NOW, TIMEZONE)).toEqual({
       targetType: "session",
       operation: "create",
       payload: { deadline_id: VALID_COURSE_ID, title: "Read chapter 3", date: "2026-09-06" },
@@ -515,7 +639,7 @@ describe("toPendingMutation", () => {
       duration_minutes: null,
       event: "user_marks_session_done",
     });
-    expect(toPendingMutation(raw)).toEqual({
+    expect(toPendingMutation(raw, NOW, TIMEZONE)).toEqual({
       targetType: "session",
       operation: "transition",
       targetId: VALID_TARGET_ID,
@@ -523,13 +647,127 @@ describe("toPendingMutation", () => {
     });
   });
 
+  it("maps an event create, dropping an omitted location", () => {
+    const raw = mutationSchema.parse({
+      target_type: "event",
+      operation: "create",
+      target_id: null,
+      title: "Dentist visit",
+      date: "2026-09-06",
+      time: "3:00 PM",
+      duration_minutes: 30,
+      location: null,
+      event: null,
+    });
+    expect(toPendingMutation(raw, NOW, TIMEZONE)).toEqual({
+      targetType: "event",
+      operation: "create",
+      payload: { title: "Dentist visit", date: "2026-09-06", time: "3:00 PM", duration_minutes: 30 },
+    });
+  });
+
+  it("maps an event create with a location", () => {
+    const raw = mutationSchema.parse({
+      target_type: "event",
+      operation: "create",
+      target_id: null,
+      title: "Dentist visit",
+      date: "2026-09-06",
+      time: "3:00 PM",
+      duration_minutes: 30,
+      location: "Downtown clinic",
+      event: null,
+    });
+    expect(toPendingMutation(raw, NOW, TIMEZONE)).toEqual({
+      targetType: "event",
+      operation: "create",
+      payload: { title: "Dentist visit", date: "2026-09-06", time: "3:00 PM", duration_minutes: 30, location: "Downtown clinic" },
+    });
+  });
+
+  it("maps an event delete", () => {
+    const raw = mutationSchema.parse({
+      target_type: "event",
+      operation: "delete",
+      target_id: VALID_TARGET_ID,
+      title: null,
+      date: null,
+      time: null,
+      duration_minutes: null,
+      location: null,
+      event: null,
+    });
+    expect(toPendingMutation(raw, NOW, TIMEZONE)).toEqual({ targetType: "event", operation: "delete", targetId: VALID_TARGET_ID });
+  });
+
+  it("maps an event update, including only the fields actually provided", () => {
+    const raw = mutationSchema.parse({
+      target_type: "event",
+      operation: "update",
+      target_id: VALID_TARGET_ID,
+      title: null,
+      date: null,
+      time: null,
+      duration_minutes: null,
+      location: "Downtown clinic",
+      event: null,
+    });
+    expect(toPendingMutation(raw, NOW, TIMEZONE)).toEqual({
+      targetType: "event",
+      operation: "update",
+      targetId: VALID_TARGET_ID,
+      payload: { location: "Downtown clinic" },
+    });
+  });
+
+  it("maps an event transition", () => {
+    const raw = mutationSchema.parse({
+      target_type: "event",
+      operation: "transition",
+      target_id: VALID_TARGET_ID,
+      title: null,
+      date: null,
+      time: null,
+      duration_minutes: null,
+      location: null,
+      event: "user_marks_event_done",
+    });
+    expect(toPendingMutation(raw, NOW, TIMEZONE)).toEqual({
+      targetType: "event",
+      operation: "transition",
+      targetId: VALID_TARGET_ID,
+      event: "user_marks_event_done",
+    });
+  });
+
   it("maps a to-do list create", () => {
-    const raw = mutationSchema.parse({ target_type: "todo_list", operation: "create", course_id: VALID_COURSE_ID, name: "Misc" });
-    expect(toPendingMutation(raw)).toEqual({
+    const raw = mutationSchema.parse({ target_type: "todo_list", operation: "create", target_id: null, course_id: VALID_COURSE_ID, name: "Misc" });
+    expect(toPendingMutation(raw, NOW, TIMEZONE)).toEqual({
       targetType: "todo_list",
       operation: "create",
       payload: { name: "Misc", course_id: VALID_COURSE_ID },
     });
+  });
+
+  it("maps a to-do list rename (update)", () => {
+    const raw = mutationSchema.parse({
+      target_type: "todo_list",
+      operation: "update",
+      target_id: VALID_TARGET_ID,
+      course_id: null,
+      name: "New name",
+    });
+    expect(toPendingMutation(raw, NOW, TIMEZONE)).toEqual({
+      targetType: "todo_list",
+      operation: "update",
+      targetId: VALID_TARGET_ID,
+      payload: { name: "New name" },
+    });
+  });
+
+  it("maps a to-do list delete", () => {
+    const raw = mutationSchema.parse({ target_type: "todo_list", operation: "delete", target_id: VALID_TARGET_ID, course_id: null, name: null });
+    expect(toPendingMutation(raw, NOW, TIMEZONE)).toEqual({ targetType: "todo_list", operation: "delete", targetId: VALID_TARGET_ID });
   });
 
   it("maps a task create with a list_id", () => {
@@ -543,10 +781,10 @@ describe("toPendingMutation", () => {
       priority: null,
       list_id: VALID_TARGET_ID,
     });
-    expect(toPendingMutation(raw)).toEqual({
+    expect(toPendingMutation(raw, NOW, TIMEZONE)).toEqual({
       targetType: "task",
       operation: "create",
-      payload: { title: "Read chapter 3", due_at: null, priority: undefined, list_id: VALID_TARGET_ID },
+      payload: { title: "Read chapter 3", due_at: null, priority: "Medium", list_id: VALID_TARGET_ID },
     });
   });
 
@@ -561,7 +799,7 @@ describe("toPendingMutation", () => {
       priority: null,
       list_id: VALID_COURSE_ID,
     });
-    expect(toPendingMutation(raw)).toEqual({
+    expect(toPendingMutation(raw, NOW, TIMEZONE)).toEqual({
       targetType: "task",
       operation: "update",
       targetId: VALID_TARGET_ID,

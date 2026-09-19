@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import type { Database } from "@/lib/supabase/types";
 import type { PendingMutation } from "@/lib/voice/mutations";
+import { localEndOfTodayUtc } from "@/lib/voice/schedule-time-window";
 
 // Shared across the deadline/task mutation variants below — mirrors
 // supabase/migrations/0021_item_priority.sql's item_priority enum. A bare
@@ -28,6 +29,7 @@ const deadlineTransitionEventSchema = z
   .default(null);
 const taskTransitionEventSchema = z.enum(["user_marks_done", "user_cancels"]).nullable().default(null);
 const sessionTransitionEventSchema = z.enum(["user_marks_session_done", "user_marks_session_skipped"]).nullable().default(null);
+const eventTransitionEventSchema = z.enum(["user_marks_event_done", "user_marks_event_missed"]).nullable().default(null);
 
 const mutationSchemaBase = z.discriminatedUnion("target_type", [
   z.object({
@@ -93,14 +95,32 @@ const mutationSchemaBase = z.discriminatedUnion("target_type", [
     duration_minutes: z.number().int().positive().nullable(),
     event: sessionTransitionEventSchema,
   }),
-  // Board List (todo_lists row) — create only, as today. A Task is placed
-  // into one via the "task" branch's own list_id field above; there's no
-  // separate "item" target_type anymore (board merge, 0029_board_merge.sql).
+  // Board List (todo_lists row). A Task is placed into one via the "task"
+  // branch's own list_id field above; there's no separate "item" target_type
+  // anymore (board merge, 0029_board_merge.sql).
   z.object({
     target_type: z.literal("todo_list"),
-    operation: z.literal("create"),
+    operation: z.enum(["create", "update", "delete"]),
+    target_id: z.uuid().nullable(),
     course_id: z.uuid().nullable(),
     name: z.string().nullable(),
+  }),
+  // General Appointments/Events (appointments rows with deadline_id null,
+  // category anything but "Session") -- the other, non-Session branch of the
+  // same appointments table "session" above covers. Unlike a Session, an
+  // Event needs a real start time + duration (mirrors POST /api/appointments'
+  // own runtime requirement for a non-Session, non-recurring appointment),
+  // enforced below in superRefine.
+  z.object({
+    target_type: z.literal("event"),
+    operation: z.enum(["create", "update", "delete", "transition"]),
+    target_id: z.uuid().nullable(),
+    title: z.string().nullable(),
+    date: z.iso.date().nullable(),
+    time: z.string().nullable(),
+    duration_minutes: z.number().int().positive().nullable(),
+    location: z.string().nullable(),
+    event: eventTransitionEventSchema,
   }),
 ]);
 
@@ -131,8 +151,12 @@ export const mutationSchema = mutationSchemaBase.superRefine((value, ctx) => {
     }
     case "deadline": {
       requireTargetIdUnlessCreate(value, ctx);
-      if (value.operation === "create" && (!value.course_id || !value.title || !value.due_at)) {
-        ctx.addIssue({ code: "custom", message: "course_id, title, and due_at are required to create a deadline", path: ["title"] });
+      // due_at is intentionally NOT required here (unlike course_id/title) --
+      // toPendingMutation defaults a create's missing due_at to end-of-today
+      // in the user's timezone, so a deadline with no date given still
+      // resolves to a real instant instead of failing validation.
+      if (value.operation === "create" && (!value.course_id || !value.title)) {
+        ctx.addIssue({ code: "custom", message: "course_id and title are required to create a deadline", path: ["title"] });
       }
       if (value.operation === "transition" && !value.event) {
         ctx.addIssue({ code: "custom", message: "event is required for a transition operation", path: ["event"] });
@@ -173,8 +197,26 @@ export const mutationSchema = mutationSchemaBase.superRefine((value, ctx) => {
       return;
     }
     case "todo_list": {
-      if (!value.name) {
+      requireTargetIdUnlessCreate(value, ctx);
+      if (value.operation === "create" && !value.name) {
         ctx.addIssue({ code: "custom", message: "name is required to create a Board List", path: ["name"] });
+      }
+      return;
+    }
+    case "event": {
+      requireTargetIdUnlessCreate(value, ctx);
+      // Mirrors POST /api/appointments' own runtime check for a non-Session,
+      // non-recurring appointment -- an Event always needs a real start time
+      // and duration, unlike a Deadline Session's optional free-text time.
+      if (value.operation === "create" && (!value.title || !value.date || !value.time || !value.duration_minutes)) {
+        ctx.addIssue({
+          code: "custom",
+          message: "title, date, time, and duration_minutes are required to create an Event",
+          path: ["title"],
+        });
+      }
+      if (value.operation === "transition" && !value.event) {
+        ctx.addIssue({ code: "custom", message: "event is required for a transition operation", path: ["event"] });
       }
       return;
     }
@@ -182,6 +224,17 @@ export const mutationSchema = mutationSchemaBase.superRefine((value, ctx) => {
 });
 
 export type RawMutation = z.infer<typeof mutationSchema>;
+
+/**
+ * The same discriminated union as mutationSchema, WITHOUT its superRefine
+ * per-operation completeness checks -- used by save_mutation_draft
+ * (conversation-core.ts), which by definition may be missing a required
+ * field. Structurally identical output type to RawMutation (superRefine
+ * never changes the inferred type, only adds validation), so a draft and a
+ * complete mutation share the same RawMutation shape -- only mutationSchema
+ * additionally guarantees completeness for the given operation.
+ */
+export const mutationDraftSchema = mutationSchemaBase;
 
 export interface EntityContext {
   courses: Array<{ id: string; name: string }>;
@@ -198,6 +251,11 @@ export interface EntityContext {
   // tagged category "Session", for resolving an existing session's id to
   // delete/mark done/mark skipped.
   sessions: Array<{ id: string; title: string; deadline_id: string | null }>;
+  // General Appointments/Events (appointments rows, category != "Session")
+  // -- for matching an existing one by title on an update/delete/transition,
+  // the same "id from the entity context, never invented" pattern as
+  // deadlines/tasks/sessions above.
+  appointments: Array<{ id: string; title: string; date: string; time: string | null }>;
   // Bug fix: without this, mutation-vs-read-only classification had zero
   // visibility into what the user's knowledge base actually contains, so a
   // request naming a saved source by its own title/topic (e.g. "test the
@@ -227,22 +285,34 @@ export async function loadEntityContext(supabase: SupabaseClient<Database>, user
   // person_id column at all (Board Lists and Deadline Sessions are
   // owner-only concepts — see schedule-loader.ts's own includeOwnerOnlyData
   // comment), so those two queries need no such filter.
-  const [{ data: courses }, { data: deadlines }, { data: tasks }, { data: todoLists }, { data: sessions }, { data: knowledgeSources }, { data: people }] =
-    await Promise.all([
-      supabase.from("courses").select("id, name").eq("user_id", userId).is("person_id", null).is("deleted_at", null),
-      supabase.from("deadlines").select("id, title, course_id").eq("user_id", userId).is("person_id", null).is("deleted_at", null),
-      supabase.from("tasks").select("id, title, list_id").eq("user_id", userId).is("person_id", null).is("deleted_at", null),
-      supabase.from("todo_lists").select("id, name, course_id").eq("user_id", userId).is("deleted_at", null),
-      supabase.from("appointments").select("id, title, deadline_id").eq("user_id", userId).eq("category", "Session").is("deleted_at", null),
-      supabase.from("knowledge_sources").select("id, title").eq("user_id", userId).eq("status", "Ready"),
-      supabase.from("people").select("id, name, relationship").eq("user_id", userId).is("deleted_at", null),
-    ]);
+  const [
+    { data: courses },
+    { data: deadlines },
+    { data: tasks },
+    { data: todoLists },
+    { data: sessions },
+    { data: appointments },
+    { data: knowledgeSources },
+    { data: people },
+  ] = await Promise.all([
+    supabase.from("courses").select("id, name").eq("user_id", userId).is("person_id", null).is("deleted_at", null),
+    supabase.from("deadlines").select("id, title, course_id").eq("user_id", userId).is("person_id", null).is("deleted_at", null),
+    supabase.from("tasks").select("id, title, list_id").eq("user_id", userId).is("person_id", null).is("deleted_at", null),
+    supabase.from("todo_lists").select("id, name, course_id").eq("user_id", userId).is("deleted_at", null),
+    supabase.from("appointments").select("id, title, deadline_id").eq("user_id", userId).eq("category", "Session").is("deleted_at", null),
+    // Same owner-only, not-deleted filter schedule-loader.ts's loadSchedule
+    // already applies for the general-Events branch of this same table.
+    supabase.from("appointments").select("id, title, date, time").eq("user_id", userId).neq("category", "Session").is("deleted_at", null),
+    supabase.from("knowledge_sources").select("id, title").eq("user_id", userId).eq("status", "Ready"),
+    supabase.from("people").select("id, name, relationship").eq("user_id", userId).is("deleted_at", null),
+  ]);
   return {
     courses: courses ?? [],
     deadlines: deadlines ?? [],
     tasks: tasks ?? [],
     todoLists: todoLists ?? [],
     sessions: sessions ?? [],
+    appointments: appointments ?? [],
     knowledgeSources: knowledgeSources ?? [],
     people: people ?? [],
   };
@@ -265,8 +335,13 @@ export async function loadUserTimezone(supabase: SupabaseClient<Database>, userI
  * asserts non-null on (`!`) is actually present for the given operation —
  * these are no longer bare compile-time-only assertions papering over a
  * runtime gap; a schema-violating response never reaches this function.
+ *
+ * `now`/`timeZone` are only used to default a Deadline create's missing
+ * due_at to end-of-today in the user's own timezone (a Task's due_at is
+ * legitimately nullable by product design — e.g. an undated shopping item —
+ * so it is deliberately left as-is here, unlike priority below).
  */
-export function toPendingMutation(raw: RawMutation): PendingMutation {
+export function toPendingMutation(raw: RawMutation, now: Date, timeZone: string): PendingMutation {
   switch (raw.target_type) {
     case "course": {
       if (raw.operation === "delete") {
@@ -295,7 +370,15 @@ export function toPendingMutation(raw: RawMutation): PendingMutation {
         return {
           targetType: "deadline",
           operation: "create",
-          payload: { course_id: raw.course_id!, title: raw.title!, due_at: raw.due_at!, priority: raw.priority ?? undefined },
+          payload: {
+            course_id: raw.course_id!,
+            title: raw.title!,
+            // Default to end-of-today (user's own timezone) when the user
+            // gave no date, rather than failing — a Deadline always needs a
+            // due-by instant, unlike a Task.
+            due_at: raw.due_at ?? localEndOfTodayUtc(now, timeZone).toISOString(),
+            priority: raw.priority ?? "Medium",
+          },
         };
       }
       if (raw.operation === "delete") {
@@ -324,7 +407,10 @@ export function toPendingMutation(raw: RawMutation): PendingMutation {
             title: raw.title!,
             due_at: raw.due_at,
             ...(raw.reminder_lead_minutes !== null ? { reminder_lead_minutes: raw.reminder_lead_minutes } : {}),
-            priority: raw.priority ?? undefined,
+            // Same Medium default as a Deadline create -- but a Task's
+            // due_at itself stays null when unspecified (an undated Task,
+            // e.g. a shopping item, is a legitimate product state).
+            priority: raw.priority ?? "Medium",
             ...(raw.list_id ? { list_id: raw.list_id } : {}),
           },
         };
@@ -389,11 +475,59 @@ export function toPendingMutation(raw: RawMutation): PendingMutation {
       }
       return { targetType: "session", operation: "transition", targetId: raw.target_id!, event: raw.event! };
     }
-    case "todo_list":
+    case "event": {
+      if (raw.operation === "create") {
+        return {
+          targetType: "event",
+          operation: "create",
+          payload: {
+            title: raw.title!,
+            date: raw.date!,
+            time: raw.time!,
+            duration_minutes: raw.duration_minutes!,
+            ...(raw.location ? { location: raw.location } : {}),
+          },
+        };
+      }
+      if (raw.operation === "delete") {
+        return { targetType: "event", operation: "delete", targetId: raw.target_id! };
+      }
+      if (raw.operation === "transition") {
+        return { targetType: "event", operation: "transition", targetId: raw.target_id!, event: raw.event! };
+      }
+      return {
+        targetType: "event",
+        operation: "update",
+        targetId: raw.target_id!,
+        payload: {
+          ...(raw.title ? { title: raw.title } : {}),
+          ...(raw.date ? { date: raw.date } : {}),
+          ...(raw.time ? { time: raw.time } : {}),
+          ...(raw.duration_minutes !== null ? { duration_minutes: raw.duration_minutes } : {}),
+          ...(raw.location ? { location: raw.location } : {}),
+        },
+      };
+    }
+    case "todo_list": {
+      if (raw.operation === "create") {
+        return {
+          targetType: "todo_list",
+          operation: "create",
+          payload: { name: raw.name!, ...(raw.course_id ? { course_id: raw.course_id } : {}) },
+        };
+      }
+      if (raw.operation === "delete") {
+        return { targetType: "todo_list", operation: "delete", targetId: raw.target_id! };
+      }
       return {
         targetType: "todo_list",
-        operation: "create",
-        payload: { name: raw.name!, ...(raw.course_id ? { course_id: raw.course_id } : {}) },
+        operation: "update",
+        targetId: raw.target_id!,
+        payload: {
+          ...(raw.name ? { name: raw.name } : {}),
+          ...(raw.course_id ? { course_id: raw.course_id } : {}),
+        },
       };
+    }
   }
 }

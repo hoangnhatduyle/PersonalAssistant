@@ -17,6 +17,7 @@ vi.mock("@/lib/voice/conversation-memory", () => ({
   loadConversationHistory: vi.fn().mockResolvedValue([]),
   endConversation: vi.fn(),
   resolveActiveConversation: vi.fn(),
+  loadDraftMutation: vi.fn().mockResolvedValue(null),
 }));
 
 vi.mock("@/lib/voice/schedule-loader", () => ({
@@ -48,7 +49,7 @@ vi.mock("@/lib/voice/intent", async (importOriginal) => {
     ...actual,
     loadEntityContext: vi
       .fn()
-      .mockResolvedValue({ courses: [], deadlines: [], tasks: [], todoLists: [], sessions: [], knowledgeSources: [], people: [] }),
+      .mockResolvedValue({ courses: [], deadlines: [], tasks: [], todoLists: [], sessions: [], appointments: [], knowledgeSources: [], people: [] }),
     loadUserTimezone: vi.fn().mockResolvedValue("UTC"),
   };
 });
@@ -238,6 +239,7 @@ describe("runConversationTurn", () => {
         tasks: [],
         todoLists: [],
         sessions: [],
+        appointments: [],
         knowledgeSources: [],
         people: [{ id: PERSON_ID, name: "Châu", relationship: "sister" }],
       });
@@ -273,6 +275,7 @@ describe("runConversationTurn", () => {
         tasks: [],
         todoLists: [],
         sessions: [],
+        appointments: [],
         knowledgeSources: [],
         people: [{ id: PERSON_ID, name: "Châu", relationship: null }],
       });
@@ -300,6 +303,7 @@ describe("runConversationTurn", () => {
         tasks: [],
         todoLists: [],
         sessions: [],
+        appointments: [],
         knowledgeSources: [],
         people: [{ id: PERSON_ID, name: "Châu", relationship: "sister" }],
       });
@@ -339,6 +343,7 @@ describe("runConversationTurn", () => {
         tasks: [],
         todoLists: [],
         sessions: [],
+        appointments: [],
         knowledgeSources: [],
         people: [],
       });
@@ -371,6 +376,7 @@ describe("runConversationTurn", () => {
         tasks: [],
         todoLists: [],
         sessions: [],
+        appointments: [],
         knowledgeSources: [],
         people: [],
       });
@@ -395,6 +401,7 @@ describe("runConversationTurn", () => {
         tasks: [],
         todoLists: [],
         sessions: [],
+        appointments: [],
         knowledgeSources: [],
         people: [],
       });

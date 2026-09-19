@@ -256,7 +256,7 @@ describe("transition-guard trigger", () => {
       expect(error).not.toBeNull();
     });
 
-    it("[event_status] accepts the three legal edges: planned->done, planned->missed, missed->done", async () => {
+    it("[event_status] accepts the two legal edges: planned->done, planned->missed", async () => {
       const doneId = await createAppointment(admin, userId);
       const { error: plannedToDoneError } = await admin.from("appointments").update({ event_status: "done" }).eq("id", doneId);
       expect(plannedToDoneError).toBeNull();
@@ -267,11 +267,14 @@ describe("transition-guard trigger", () => {
         .update({ event_status: "missed" })
         .eq("id", missedId);
       expect(plannedToMissedError).toBeNull();
+    });
 
-      const madeUpId = await createAppointment(admin, userId);
-      await walkTransitions(admin, "appointments", madeUpId, "event_status", ["missed", "done"]);
-      const { data: madeUpEvent } = await admin.from("appointments").select("event_status").eq("id", madeUpId).single();
-      expect(madeUpEvent?.event_status).toBe("done");
+    // 0028_event_status_missed_terminal.sql removed the missed->done edge 0027 allowed.
+    it("[event_status] rejects missed -> done (missed is terminal)", async () => {
+      const id = await createAppointment(admin, userId);
+      await walkTransitions(admin, "appointments", id, "event_status", ["missed"]);
+      const { error } = await admin.from("appointments").update({ event_status: "done" }).eq("id", id);
+      expect(error).not.toBeNull();
     });
   });
 });

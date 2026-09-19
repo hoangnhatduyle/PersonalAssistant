@@ -1129,6 +1129,7 @@ export type Database = {
       }
       voice_conversations: {
         Row: {
+          draft_mutation: Json | null
           end_reason:
             | Database["public"]["Enums"]["voice_conversation_end_reason"]
             | null
@@ -1139,6 +1140,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          draft_mutation?: Json | null
           end_reason?:
             | Database["public"]["Enums"]["voice_conversation_end_reason"]
             | null
@@ -1149,6 +1151,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          draft_mutation?: Json | null
           end_reason?:
             | Database["public"]["Enums"]["voice_conversation_end_reason"]
             | null
@@ -1861,6 +1864,7 @@ export type Database = {
       delete_expired_voice_conversations: {
         Args: never
         Returns: {
+          draft_mutation: Json | null
           end_reason:
             | Database["public"]["Enums"]["voice_conversation_end_reason"]
             | null

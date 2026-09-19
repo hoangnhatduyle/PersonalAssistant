@@ -60,7 +60,7 @@ export interface RespondToUserArgs {
 export interface ProposeMutationArgs {
   confidence: number;
   summary: string;
-  target_type: "course" | "deadline" | "task" | "note" | "reminder" | "session" | "todo_list";
+  target_type: "course" | "deadline" | "task" | "note" | "reminder" | "session" | "todo_list" | "event";
   operation: "create" | "update" | "delete" | "acknowledge" | "transition";
   target_id: string | null;
   course_id: string | null;
@@ -80,6 +80,8 @@ export interface ProposeMutationArgs {
     | "user_cancels"
     | "user_marks_session_done"
     | "user_marks_session_skipped"
+    | "user_marks_event_done"
+    | "user_marks_event_missed"
     | null;
   snooze_until: string | null;
   // Course (name/code/term) and Board List (name only, reusing the
@@ -87,7 +89,10 @@ export interface ProposeMutationArgs {
   name: string | null;
   code: string | null;
   term: string | null;
-  // Deadline Session (appointments row, category "Session") create fields.
+  // Deadline Session (appointments row, category "Session") create fields --
+  // date/time/duration_minutes are also reused for a general Event/
+  // Appointment create/update below (both are rows in the same appointments
+  // table with the same date/time/duration_minutes columns).
   deadline_id: string | null;
   date: string | null;
   time: string | null;
@@ -97,6 +102,8 @@ export interface ProposeMutationArgs {
   // (supabase/migrations/0029_board_merge.sql): a "Course To-Do item" is now
   // just a Task with list_id set, so there's no separate item shape anymore.
   list_id: string | null;
+  // General Event/Appointment (target_type "event") create/update field.
+  location: string | null;
 }
 
 /** get_personalization_suggestions and start_new_conversation both take no arguments. */
@@ -115,6 +122,7 @@ export type EmptyToolArgs = Record<string, never>;
  *   start_new_conversation           -> endConversation + resolveActiveConversation (conversation-memory.ts)
  *   respond_to_user                  -> handled directly in conversation-core's loop, not dispatchTool
  *   propose_mutation                 -> handled directly in conversation-core's loop, not dispatchTool
+ *   save_mutation_draft              -> handled directly in conversation-core's loop, not dispatchTool
  *
  * `strict: true` on every entry gets constrained decoding on arguments
  * (every property required, additionalProperties false) -- this refactor's
@@ -126,6 +134,81 @@ export type EmptyToolArgs = Record<string, never>;
  * is derived from this array instead of duplicated as a separate list --
  * the two can never drift out of lockstep.
  */
+/**
+ * Every field mutationSchema's discriminated union (intent.ts) needs across
+ * every target_type, shared verbatim between propose_mutation (a complete,
+ * ready-to-execute mutation) and save_mutation_draft (the same shape, but
+ * allowed to be incomplete -- see intent.ts's mutationDraftSchema). Factored
+ * out so the two tool schemas can never drift out of sync on a field's type
+ * or description.
+ */
+const MUTATION_FIELD_PROPERTIES = {
+  target_type: { type: "string", enum: ["course", "deadline", "task", "note", "reminder", "session", "todo_list", "event"] },
+  operation: { type: "string", enum: ["create", "update", "delete", "acknowledge", "transition"] },
+  target_id: {
+    type: ["string", "null"],
+    description: "An id from the provided entity context (deadlines/tasks/sessions/todoLists/appointments lists as appropriate). Null only for a create.",
+  },
+  course_id: { type: ["string", "null"], description: "A course id from the entity context. Used by a Deadline create and, optionally, a Board List create." },
+  title: { type: ["string", "null"], description: "Deadline/Task title, a new Deadline Session's title, or a general Event/Appointment's title." },
+  due_at: { type: ["string", "null"], description: "Deadline/Task due date-time. ISO 8601 datetime with a UTC offset." },
+  body: { type: ["string", "null"], description: "Note body." },
+  priority: { type: ["string", "null"], enum: ["Low", "Medium", "High", "Urgent", null], description: "Deadline/Task priority." },
+  reminder_lead_minutes: { type: ["integer", "null"] },
+  event: {
+    type: ["string", "null"],
+    enum: [
+      "user_acknowledges",
+      "user_dismisses",
+      "user_snoozes",
+      "user_marks_in_progress",
+      "user_marks_submitted",
+      "user_confirms_done",
+      "user_marks_done",
+      "user_cancels",
+      "user_marks_session_done",
+      "user_marks_session_skipped",
+      "user_marks_event_done",
+      "user_marks_event_missed",
+      null,
+    ],
+    description:
+      'Required for operation "transition"/"acknowledge". Deadline: user_marks_in_progress/user_marks_submitted/user_confirms_done/user_cancels. Task: user_marks_done/user_cancels. Session: user_marks_session_done/user_marks_session_skipped. Event: user_marks_event_done/user_marks_event_missed. Reminder (acknowledge): user_acknowledges/user_dismisses/user_snoozes. Null otherwise.',
+  },
+  snooze_until: { type: ["string", "null"], description: "Reminder acknowledge with event user_snoozes only." },
+  name: { type: ["string", "null"], description: "Course name, or a new Board List's name." },
+  code: { type: ["string", "null"], description: "Course code (e.g. \"CS 101\")." },
+  term: { type: ["string", "null"], description: "Course term (e.g. \"Fall 2026\")." },
+  deadline_id: { type: ["string", "null"], description: "A deadline id from the entity context. Required to create a Deadline Session." },
+  date: {
+    type: ["string", "null"],
+    description:
+      "A Deadline Session's or a general Event/Appointment's date, YYYY-MM-DD, resolved from relative phrasing the same way due_at is. Required to create an Event.",
+  },
+  time: {
+    type: ["string", "null"],
+    description:
+      "A Deadline Session's free-text time label (e.g. \"7:00 PM\"), if the user gave one. For a general Event/Appointment, this is required to create one (an Event, unlike a Session, always needs a real start time) -- if the user didn't give one, use save_mutation_draft to ask for it rather than guessing.",
+  },
+  duration_minutes: {
+    type: ["integer", "null"],
+    description:
+      "A Deadline Session's planned duration in minutes, if the user gave one. For a general Event/Appointment, this is required to create one -- if missing, use save_mutation_draft to ask for it rather than guessing.",
+  },
+  list_id: {
+    type: ["string", "null"],
+    description:
+      "A Board List id from the `todoLists` entity context, e.g. the account owner's grocery/reading list. Optional on a Task create/update to place/move the Task into that list; null leaves/puts it Unsorted. Not used for any other target_type.",
+  },
+  location: { type: ["string", "null"], description: "A general Event/Appointment's location, if the user gave one. Not used for any other target_type." },
+} as const;
+
+const MUTATION_FIELD_NAMES = Object.keys(MUTATION_FIELD_PROPERTIES) as (keyof typeof MUTATION_FIELD_PROPERTIES)[];
+
+export interface SaveMutationDraftArgs {
+  question: string;
+}
+
 export const CONVERSATION_TOOLS = [
   {
     type: "function",
@@ -260,80 +343,34 @@ export const CONVERSATION_TOOLS = [
     function: {
       name: "propose_mutation",
       description:
-        "Propose a single explicit, unambiguous data change the user just instructed: create/update/delete a Deadline, Task, Note, or Course; mark a Deadline's or Task's status via transition (\"mark done\", \"mark in progress\", \"mark submitted\", \"cancel\"); acknowledge/dismiss/snooze a Reminder; create/delete a Deadline Session or mark one done/skipped; create a Board List (a simple named container for Task cards, e.g. \"Misc\" or a per-course reading list) -- optionally place a Task into one via list_id on a Task create/update. Call this by itself, never alongside another tool call. Never invent an id -- target_id/course_id/deadline_id/list_id must come from the entity context provided to you. If you are not confident this is really a command (versus a question or hypothetical) or an id does not clearly match the context, set confidence below 0.95 rather than guessing -- do not silently answer via respond_to_user instead just because you are unsure, since that skips the confirmation step entirely.",
+        "Propose a single explicit, unambiguous data change the user just instructed: create/update/delete a Deadline, Task, Note, or Course; mark a Deadline's or Task's status via transition (\"mark done\", \"mark in progress\", \"mark submitted\", \"cancel\"); acknowledge/dismiss/snooze a Reminder; create/delete a Deadline Session or mark one done/skipped; create/rename/delete a Board List (a simple named container for Task cards, e.g. \"Misc\" or a per-course reading list) -- optionally place a Task into one via list_id on a Task create/update; create/update/delete a general Appointment/Event, or mark one done/missed via transition. Call this by itself, never alongside another tool call. Never invent an id -- target_id/course_id/deadline_id/list_id must come from the entity context provided to you. If you are not confident this is really a command (versus a question or hypothetical) or an id does not clearly match the context, set confidence below 0.95 rather than guessing -- do not silently answer via respond_to_user instead just because you are unsure, since that skips the confirmation step entirely. If the command is clearly a mutation but is missing a required field (e.g. an Appointment's time), use save_mutation_draft instead of guessing a value or proposing an incomplete mutation.",
       strict: true,
       parameters: {
         type: "object",
         properties: {
           confidence: { type: "number", description: "0-1, your genuine confidence this is the right mutation to propose." },
           summary: { type: "string", description: "One sentence describing the action, to be spoken back to the user for confirmation." },
-          target_type: { type: "string", enum: ["course", "deadline", "task", "note", "reminder", "session", "todo_list"] },
-          operation: { type: "string", enum: ["create", "update", "delete", "acknowledge", "transition"] },
-          target_id: {
-            type: ["string", "null"],
-            description: "An id from the provided entity context (deadlines/tasks/sessions lists as appropriate). Null only for a create.",
-          },
-          course_id: { type: ["string", "null"], description: "A course id from the entity context. Used by a Deadline create and, optionally, a Board List create." },
-          title: { type: ["string", "null"], description: "Deadline/Task title, or a new Deadline Session's title." },
-          due_at: { type: ["string", "null"], description: "Deadline/Task due date-time. ISO 8601 datetime with a UTC offset." },
-          body: { type: ["string", "null"], description: "Note body." },
-          priority: { type: ["string", "null"], enum: ["Low", "Medium", "High", "Urgent", null], description: "Deadline/Task priority." },
-          reminder_lead_minutes: { type: ["integer", "null"] },
-          event: {
-            type: ["string", "null"],
-            enum: [
-              "user_acknowledges",
-              "user_dismisses",
-              "user_snoozes",
-              "user_marks_in_progress",
-              "user_marks_submitted",
-              "user_confirms_done",
-              "user_marks_done",
-              "user_cancels",
-              "user_marks_session_done",
-              "user_marks_session_skipped",
-              null,
-            ],
-            description:
-              'Required for operation "transition"/"acknowledge". Deadline: user_marks_in_progress/user_marks_submitted/user_confirms_done/user_cancels. Task: user_marks_done/user_cancels. Session: user_marks_session_done/user_marks_session_skipped. Reminder (acknowledge): user_acknowledges/user_dismisses/user_snoozes. Null otherwise.',
-          },
-          snooze_until: { type: ["string", "null"], description: "Reminder acknowledge with event user_snoozes only." },
-          name: { type: ["string", "null"], description: "Course name, or a new Board List's name." },
-          code: { type: ["string", "null"], description: "Course code (e.g. \"CS 101\")." },
-          term: { type: ["string", "null"], description: "Course term (e.g. \"Fall 2026\")." },
-          deadline_id: { type: ["string", "null"], description: "A deadline id from the entity context. Required to create a Deadline Session." },
-          date: { type: ["string", "null"], description: "A Deadline Session's date, YYYY-MM-DD, resolved from relative phrasing the same way due_at is." },
-          time: { type: ["string", "null"], description: "A Deadline Session's free-text time label (e.g. \"7:00 PM\"), if the user gave one." },
-          duration_minutes: { type: ["integer", "null"], description: "A Deadline Session's planned duration in minutes, if the user gave one." },
-          list_id: {
-            type: ["string", "null"],
-            description:
-              "A Board List id from the `todoLists` entity context, e.g. the account owner's grocery/reading list. Optional on a Task create/update to place/move the Task into that list; null leaves/puts it Unsorted. Not used for any other target_type.",
-          },
+          ...MUTATION_FIELD_PROPERTIES,
         },
-        required: [
-          "confidence",
-          "summary",
-          "target_type",
-          "operation",
-          "target_id",
-          "course_id",
-          "title",
-          "due_at",
-          "body",
-          "priority",
-          "reminder_lead_minutes",
-          "event",
-          "snooze_until",
-          "name",
-          "code",
-          "term",
-          "deadline_id",
-          "date",
-          "time",
-          "duration_minutes",
-          "list_id",
-        ],
+        required: ["confidence", "summary", ...MUTATION_FIELD_NAMES],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "save_mutation_draft",
+      description:
+        "Call this instead of propose_mutation when the user's instruction is clearly a mutation but is missing a required field you cannot resolve yourself (e.g. a general Event/Appointment create with no time or duration given). Pass every field you already know (same shape as propose_mutation) plus a natural spoken `question` asking for exactly what's missing. Call it alone, never alongside another tool call, and never together with propose_mutation or respond_to_user. Never invent an id or guess a value just to satisfy a required field -- that is exactly what this tool exists to avoid. If, on a later turn, the user's reply answers the question (see the draft context you'll be given), merge it with what you already know and call propose_mutation as usual -- do not call save_mutation_draft again unless still incomplete, and do not ask the same question twice.",
+      strict: true,
+      parameters: {
+        type: "object",
+        properties: {
+          question: { type: "string", description: "The natural spoken question asking the user for exactly the missing information, to be spoken back to them." },
+          ...MUTATION_FIELD_PROPERTIES,
+        },
+        required: ["question", ...MUTATION_FIELD_NAMES],
         additionalProperties: false,
       },
     },

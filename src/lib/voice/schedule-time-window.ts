@@ -98,6 +98,17 @@ export function localEndOfDayUtc(year: number, month: number, day: number, timeZ
   return new Date(localMidnightUtc(year, month, day + 1, timeZone).getTime() - 1);
 }
 
+/**
+ * The last instant of "today" (the local calendar day `now` falls on in
+ * `timeZone`) -- used to default a voice-created Deadline's due_at when the
+ * user gave no date, so "add a deadline to submit my essay" resolves to a
+ * real due-by instant instead of failing validation.
+ */
+export function localEndOfTodayUtc(now: Date, timeZone: string): Date {
+  const { year, month, day } = partsInZone(now, timeZone);
+  return localEndOfDayUtc(year, month, day, timeZone);
+}
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** How many days after today's local midnight a window starts, and how many days it spans. Shared by both the instant-based and date-key-based resolvers below. */

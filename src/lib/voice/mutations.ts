@@ -1,14 +1,29 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/types";
-import type { CoursePatch, CoursePayload, DeadlinePatch, DeadlinePayload, NotePatch, NotePayload, TaskPatch, TaskPayload, TodoListPayload } from "@/lib/api/schemas";
+import type {
+  AppointmentPatch,
+  AppointmentPayload,
+  CoursePatch,
+  CoursePayload,
+  DeadlinePatch,
+  DeadlinePayload,
+  NotePatch,
+  NotePayload,
+  TaskPatch,
+  TaskPayload,
+  TodoListPatch,
+  TodoListPayload,
+} from "@/lib/api/schemas";
 import { syncReminderForTarget } from "@/lib/api/reminders";
-import { cascadeDeleteCourse, cascadeDeleteTask } from "@/lib/api/cascade";
+import { cascadeDeleteCourse, cascadeDeleteTask, cascadeDeleteTodoList } from "@/lib/api/cascade";
 import {
   resolveDeadlineTransition,
+  resolveEventTransition,
   resolveReminderTransition,
   resolveSessionTransition,
   resolveTaskTransition,
   type DeadlineTransitionEvent,
+  type EventTransitionEvent,
   type ReminderTransitionEvent,
   type SessionTransitionEvent,
   type TaskTransitionEvent,
@@ -49,7 +64,13 @@ export type PendingMutation =
   | { targetType: "session"; operation: "create"; payload: SessionCreatePayload }
   | { targetType: "session"; operation: "delete"; targetId: string }
   | { targetType: "session"; operation: "transition"; targetId: string; event: SessionTransitionEvent }
-  | { targetType: "todo_list"; operation: "create"; payload: TodoListPayload };
+  | { targetType: "todo_list"; operation: "create"; payload: TodoListPayload }
+  | { targetType: "todo_list"; operation: "update"; targetId: string; payload: TodoListPatch }
+  | { targetType: "todo_list"; operation: "delete"; targetId: string }
+  | { targetType: "event"; operation: "create"; payload: AppointmentPayload }
+  | { targetType: "event"; operation: "update"; targetId: string; payload: AppointmentPatch }
+  | { targetType: "event"; operation: "delete"; targetId: string }
+  | { targetType: "event"; operation: "transition"; targetId: string; event: EventTransitionEvent };
 
 export interface MutationExecutionResult {
   summary: string;
@@ -116,6 +137,9 @@ export async function executePendingMutation(
 
     case "todo_list":
       return executeTodoListMutation(supabase, userId, mutation);
+
+    case "event":
+      return executeEventMutation(supabase, userId, mutation);
   }
 }
 
@@ -526,30 +550,136 @@ async function executeSessionMutation(
   return { summary: `Session marked ${nextStatus}.`, data: updated };
 }
 
+/** Mirrors POST /api/todo-lists' + PATCH /api/todo-lists/[id]'s course-ownership + no-assigned-Person check. */
+async function assertOwnedUnassignedCourse(supabase: SupabaseClient<Database>, courseId: string, userId: string): Promise<void> {
+  const { data: course, error } = await supabase
+    .from("courses")
+    .select("id")
+    .eq("id", courseId)
+    .eq("user_id", userId)
+    .is("deleted_at", null)
+    .is("person_id", null)
+    .maybeSingle();
+  if (error) throw error;
+  if (!course) throw new MutationTargetNotFoundError(`course ${courseId} not found`);
+}
+
+/**
+ * General Appointments/Events (appointments rows with deadline_id null,
+ * category != "Session" -- the other branch of the same table executeSessionMutation
+ * covers). No cascade on delete, matching both Sessions' own precedent and
+ * POST/DELETE /api/appointments having none either. No reminder sync -- voice
+ * doesn't expose reminders_enabled for an Event, matching Notes/Sessions.
+ */
+async function executeEventMutation(
+  supabase: SupabaseClient<Database>,
+  userId: string,
+  mutation: Extract<PendingMutation, { targetType: "event" }>,
+): Promise<MutationExecutionResult> {
+  if (mutation.operation === "delete") {
+    const { data, error } = await supabase
+      .from("appointments")
+      .update({ deleted_at: new Date().toISOString() })
+      .eq("id", mutation.targetId)
+      .eq("user_id", userId)
+      .is("deleted_at", null)
+      .select("id")
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) throw new MutationTargetNotFoundError(`event ${mutation.targetId} not found or already deleted`);
+    return { summary: "Appointment deleted.", data: { id: mutation.targetId } };
+  }
+
+  if (mutation.operation === "create") {
+    // Mirrors POST /api/appointments' server-forced event_status for a
+    // general Event -- never client-set, same invariant as that route.
+    const { data: event, error } = await supabase
+      .from("appointments")
+      .insert({ user_id: userId, ...mutation.payload, event_status: "planned" })
+      .select("*")
+      .single();
+    if (error) throw error;
+    return { summary: `Created appointment "${event.title}".`, data: event };
+  }
+
+  if (mutation.operation === "update") {
+    const { data: updated, error } = await supabase
+      .from("appointments")
+      .update(mutation.payload)
+      .eq("id", mutation.targetId)
+      .eq("user_id", userId)
+      .is("deleted_at", null)
+      .select("*")
+      .maybeSingle();
+    if (error) throw error;
+    if (!updated) throw new MutationTargetNotFoundError(`event ${mutation.targetId} not found or already deleted`);
+    return { summary: `Updated appointment "${updated.title}".`, data: updated };
+  }
+
+  // transition -- NC-API-002: mirrors POST /api/appointments/[id]/transition exactly.
+  const { data: existing, error: fetchError } = await supabase
+    .from("appointments")
+    .select("id, event_status")
+    .eq("id", mutation.targetId)
+    .eq("user_id", userId)
+    .is("deleted_at", null)
+    .maybeSingle();
+  if (fetchError) throw fetchError;
+  if (!existing) throw new MutationTargetNotFoundError(`event ${mutation.targetId} not found or already deleted`);
+  if (existing.event_status === null) throw new Error("This appointment is not an event");
+
+  const nextStatus = resolveEventTransition(mutation.event, existing.event_status);
+  if (!nextStatus) throw new Error(`Cannot apply "${mutation.event}" from status "${existing.event_status}"`);
+
+  const { data: updated, error } = await supabase
+    .from("appointments")
+    .update({ event_status: nextStatus })
+    .eq("id", mutation.targetId)
+    .select("*")
+    .single();
+  if (error) throw error;
+  return { summary: `Appointment marked ${nextStatus}.`, data: updated };
+}
+
 async function executeTodoListMutation(
   supabase: SupabaseClient<Database>,
   userId: string,
   mutation: Extract<PendingMutation, { targetType: "todo_list" }>,
 ): Promise<MutationExecutionResult> {
-  if (mutation.payload.course_id) {
-    // Mirrors POST /api/todo-lists' course-ownership + no-assigned-Person check.
-    const { data: course, error: courseError } = await supabase
-      .from("courses")
-      .select("id")
-      .eq("id", mutation.payload.course_id)
-      .eq("user_id", userId)
-      .is("deleted_at", null)
-      .is("person_id", null)
-      .maybeSingle();
-    if (courseError) throw courseError;
-    if (!course) throw new MutationTargetNotFoundError(`course ${mutation.payload.course_id} not found`);
+  if (mutation.operation === "delete") {
+    await assertLiveAndOwnedTodoList(supabase, mutation.targetId, userId);
+    const cascade = await cascadeDeleteTodoList(supabase, mutation.targetId);
+    return {
+      summary: `Deleted the board list and ${cascade.itemsAffected} card(s).`,
+      data: { id: mutation.targetId },
+      cascade: { deadlinesDeleted: 0, remindersDismissed: 0, notesUnlinked: 0, todoItemsDeleted: cascade.itemsAffected },
+    };
   }
 
-  const { data: list, error } = await supabase
+  if (mutation.operation === "create") {
+    if (mutation.payload.course_id) await assertOwnedUnassignedCourse(supabase, mutation.payload.course_id, userId);
+
+    const { data: list, error } = await supabase
+      .from("todo_lists")
+      .insert({ user_id: userId, ...mutation.payload })
+      .select("*")
+      .single();
+    if (error) throw error;
+    return { summary: `Created board list "${list.name}".`, data: list };
+  }
+
+  // update (rename and/or relink course_id)
+  if (mutation.payload.course_id) await assertOwnedUnassignedCourse(supabase, mutation.payload.course_id, userId);
+
+  const { data: updated, error } = await supabase
     .from("todo_lists")
-    .insert({ user_id: userId, ...mutation.payload })
+    .update(mutation.payload)
+    .eq("id", mutation.targetId)
+    .eq("user_id", userId)
+    .is("deleted_at", null)
     .select("*")
-    .single();
+    .maybeSingle();
   if (error) throw error;
-  return { summary: `Created board list "${list.name}".`, data: list };
+  if (!updated) throw new MutationTargetNotFoundError(`todo list ${mutation.targetId} not found or already deleted`);
+  return { summary: `Updated board list "${updated.name}".`, data: updated };
 }
