@@ -11,17 +11,19 @@ import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Badge } from "@/components/ui/Badge";
+import { Input } from "@/components/ui/Input";
+import { Pagination } from "@/components/ui/Pagination";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { Switch } from "@/components/ui/Switch";
 import { findConflictingAppointmentIds } from "@/lib/appointments/conflicts";
 import { findCourseConflictingAppointmentIds } from "@/lib/appointments/course-conflicts";
+import { formatAppointmentDate, isPastAppointment, matchesSearch, paginate } from "@/lib/appointments/list-view";
 import { formatBlocksSummary } from "@/lib/calendar/recurrence";
 import { EVENT_STATUS_TONE } from "@/lib/status-colors";
 import type { AppointmentRow } from "@/lib/api/entity-types";
 import type { AppointmentPayload } from "@/lib/api/schemas";
 
-function formatDate(date: string): string {
-  return new Date(`${date}T00:00:00`).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
-}
+const PAGE_SIZE = 10;
 
 export function AppointmentsTimeline() {
   const { data, isLoading } = useAppointments({ limit: 100 });
@@ -37,11 +39,23 @@ export function AppointmentsTimeline() {
   const [isFormOpen, setFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [showPast, setShowPast] = useState(false);
+  const [page, setPage] = useState(1);
 
   const editingAppointment = appointments.find((item) => item.id === editingId);
   const deletingAppointment = appointments.find((item) => item.id === deletingId);
   const conflictingIds = findConflictingAppointmentIds(appointments);
   const courseConflictingIds = findCourseConflictingAppointmentIds(appointments, coursesData?.rows ?? []);
+
+  // Conflicts above are computed over the full set on purpose — a hidden past
+  // or non-matching appointment can still be what a visible one conflicts with.
+  const now = new Date();
+  const timeVisible = showPast ? appointments : appointments.filter((item) => !isPastAppointment(item, now));
+  const filtered = timeVisible.filter((item) => matchesSearch(item, search));
+  const hiddenPastCount = appointments.length - timeVisible.length;
+  const currentPage = paginate(filtered, page, PAGE_SIZE);
+  const isFiltering = search.trim() !== "";
 
   const openCreate = () => {
     setEditingId(null);
@@ -83,13 +97,48 @@ export function AppointmentsTimeline() {
         </Button>
       </div>
 
+      {!isLoading && appointments.length > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <Input
+            type="search"
+            aria-label="Search appointments"
+            placeholder="Search title, category, location, date…"
+            value={search}
+            onChange={(event) => {
+              setSearch(event.target.value);
+              setPage(1);
+            }}
+            className="sm:max-w-xs"
+          />
+          <Switch
+            label="Show past"
+            checked={showPast}
+            onCheckedChange={(checked) => {
+              setShowPast(checked);
+              setPage(1);
+            }}
+          />
+        </div>
+      )}
+
       {isLoading ? (
         <Skeleton className="h-20 w-full" />
       ) : appointments.length === 0 ? (
         <EmptyState title="No appointments yet" description='Click "+ Add Appointment" to create one.' />
+      ) : filtered.length === 0 ? (
+        <EmptyState
+          title={isFiltering ? "No matching appointments" : "No upcoming appointments"}
+          description={
+            isFiltering
+              ? showPast || hiddenPastCount === 0
+                ? "Try a different keyword."
+                : `Try a different keyword, or turn on "Show past" (${hiddenPastCount} hidden).`
+              : `${hiddenPastCount} past ${hiddenPastCount === 1 ? "appointment is" : "appointments are"} hidden. Turn on "Show past" to see ${hiddenPastCount === 1 ? "it" : "them"}.`
+          }
+        />
       ) : (
         <ul className="flex flex-col divide-y divide-panel-border">
-          {appointments.map((appointment) => (
+          {currentPage.items.map((appointment) => (
             <li
               key={appointment.id}
               className="flex flex-col gap-2 py-3 first:pt-0 last:pb-0 sm:flex-row sm:items-start sm:justify-between sm:gap-3"
@@ -108,7 +157,7 @@ export function AppointmentsTimeline() {
                 <span className="font-mono text-xs text-text-secondary">
                   {appointment.meeting_blocks.length > 0
                     ? formatBlocksSummary(appointment.meeting_blocks)
-                    : `${formatDate(appointment.date)}${appointment.time ? ` · ${appointment.time}` : ""}${
+                    : `${formatAppointmentDate(appointment.date)}${appointment.time ? ` · ${appointment.time}` : ""}${
                         appointment.duration_minutes ? ` (${appointment.duration_minutes}m)` : ""
                       }`}
                   {appointment.location ? ` · ${appointment.location}` : ""}
@@ -127,6 +176,16 @@ export function AppointmentsTimeline() {
           ))}
         </ul>
       )}
+
+      <Pagination
+        page={currentPage.page}
+        totalPages={currentPage.totalPages}
+        total={currentPage.total}
+        rangeStart={currentPage.rangeStart}
+        rangeEnd={currentPage.rangeEnd}
+        onPageChange={setPage}
+        itemLabel="appointments"
+      />
 
       <Dialog
         open={isFormOpen}
