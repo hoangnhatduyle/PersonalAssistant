@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  COMPACT_EVENT_MIN_HEIGHT_PX,
   EVENT_BLOCK_MIN_HEIGHT_PX,
   eventHeightPx,
   layoutDayEvents,
@@ -75,9 +76,8 @@ describe("layoutDayEvents", () => {
     expect(eventB.widthPx).toBe(contentWidthPx - STACK_PEEK_PX);
   });
 
-  it("stacks back-to-back events when the short one is drawn taller than its real duration", () => {
-    // 4:00–4:30 renders at the 60-minute minimum height, so it visually runs
-    // into the 4:30–5:55 block even though the clock times only touch.
+  it("keeps back-to-back events side by side in time by trimming the short one instead of overlapping", () => {
+    // 4:00–4:30 would render at the 72px minimum and run into 4:30–5:55.
     const layouted = layoutDayEvents(
       [
         makeEvent({ id: "short", startMinutes: 16 * 60, endMinutes: 16 * 60 + 30 }),
@@ -87,23 +87,84 @@ describe("layoutDayEvents", () => {
       columnWidthPx,
     );
 
-    expect(layouted.every((event) => event.stackSize === 2)).toBe(true);
     const short = layouted.find((event) => event.id === "short")!;
     const next = layouted.find((event) => event.id === "next")!;
-    expect(next.leftPx).toBe(short.leftPx + STACK_PEEK_PX);
+    expect(layouted.every((event) => event.stackSize === 1 && event.leftPx === 4)).toBe(true);
+    expect(short.topPx + short.heightPx).toBeLessThanOrEqual(next.topPx);
+    expect(short.heightPx).toBeGreaterThanOrEqual(COMPACT_EVENT_MIN_HEIGHT_PX);
   });
 
-  it("does not stack a short event with one that starts after its drawn height ends", () => {
+  it("keeps the full minimum height when nothing follows closely", () => {
     const layouted = layoutDayEvents(
       [
         makeEvent({ id: "short", startMinutes: 16 * 60, endMinutes: 16 * 60 + 30 }),
-        makeEvent({ id: "later", startMinutes: 17 * 60, endMinutes: 18 * 60 }),
+        makeEvent({ id: "later", startMinutes: 17 * 60 + 30, endMinutes: 18 * 60 + 30 }),
       ],
       windowStart,
       columnWidthPx,
     );
 
+    expect(layouted.find((event) => event.id === "short")!.heightPx).toBe(EVENT_BLOCK_MIN_HEIGHT_PX);
     expect(layouted.every((event) => event.stackSize === 1)).toBe(true);
+  });
+
+  it("trims stacked cards too so no card reaches into the event that follows the stack", () => {
+    const layouted = layoutDayEvents(
+      [
+        makeEvent({ id: "a", startMinutes: 10 * 60, endMinutes: 10 * 60 + 40 }),
+        makeEvent({ id: "b", startMinutes: 10 * 60 + 10, endMinutes: 10 * 60 + 40 }),
+        makeEvent({ id: "after", startMinutes: 10 * 60 + 45, endMinutes: 11 * 60 + 30 }),
+      ],
+      windowStart,
+      columnWidthPx,
+    );
+
+    const after = layouted.find((event) => event.id === "after")!;
+    for (const event of layouted.filter((item) => item.id !== "after")) {
+      expect(event.topPx + event.heightPx).toBeLessThanOrEqual(after.topPx);
+    }
+  });
+
+  it("stacks events whose gap is too small to draw both without overlap", () => {
+    const layouted = layoutDayEvents(
+      [
+        makeEvent({ id: "a", startMinutes: 10 * 60, endMinutes: 10 * 60 + 10 }),
+        makeEvent({ id: "b", startMinutes: 10 * 60 + 10, endMinutes: 11 * 60 }),
+      ],
+      windowStart,
+      columnWidthPx,
+    );
+
+    expect(layouted.every((event) => event.stackSize === 2)).toBe(true);
+  });
+
+  it("reports the uncovered height of a stacked card as the distance to the card layered on top of it", () => {
+    const layouted = layoutDayEvents(
+      [
+        makeEvent({ id: "a", startMinutes: 10 * 60, endMinutes: 11 * 60 }),
+        makeEvent({ id: "b", startMinutes: 10 * 60 + 10, endMinutes: 11 * 60 }),
+      ],
+      windowStart,
+      columnWidthPx,
+    );
+
+    const eventA = layouted.find((event) => event.id === "a")!;
+    const eventB = layouted.find((event) => event.id === "b")!;
+    expect(eventA.visibleHeightPx).toBe(10 * PIXELS_PER_MINUTE);
+    expect(eventB.visibleHeightPx).toBe(eventB.heightPx);
+  });
+
+  it("reports the trimmed height as visible for a card that nothing is layered on", () => {
+    const layouted = layoutDayEvents(
+      [
+        makeEvent({ id: "short", startMinutes: 16 * 60, endMinutes: 16 * 60 + 30 }),
+        makeEvent({ id: "next", startMinutes: 16 * 60 + 30, endMinutes: 17 * 60 + 55 }),
+      ],
+      windowStart,
+      columnWidthPx,
+    );
+
+    for (const event of layouted) expect(event.visibleHeightPx).toBe(event.heightPx);
   });
 
   it("does not offset non-overlapping blocks", () => {

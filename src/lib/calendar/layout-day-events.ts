@@ -2,6 +2,9 @@ import type { CalendarEvent } from "@/lib/calendar/build-week-events";
 
 /** Minimum height so name, time, and location always fit on short events. */
 export const EVENT_BLOCK_MIN_HEIGHT_PX = 72;
+/** Smallest a block is ever trimmed to when the next event is close behind it; EventBlock drops detail lines to fit. */
+export const COMPACT_EVENT_MIN_HEIGHT_PX = 28;
+const EVENT_GAP_PX = 2;
 export const PIXELS_PER_MINUTE = 1.2;
 export const STACK_PEEK_PX = 10;
 const HORIZONTAL_INSET_PX = 4;
@@ -9,6 +12,8 @@ const HORIZONTAL_INSET_PX = 4;
 export interface LayoutedCalendarEvent extends CalendarEvent {
   topPx: number;
   heightPx: number;
+  /** Height not covered by the card layered on top of this one in its stack; equals `heightPx` for the top card. */
+  visibleHeightPx: number;
   leftPx: number;
   widthPx: number;
   stackIndex: number;
@@ -21,14 +26,18 @@ export function eventHeightPx(startMinutes: number, endMinutes: number): number 
   return Math.max(EVENT_BLOCK_MIN_HEIGHT_PX, durationMinutes * PIXELS_PER_MINUTE);
 }
 
-/** Minute the block's bottom edge reaches once the minimum height is applied — may be later than `endMinutes`. */
-function drawnEndMinutes(event: CalendarEvent): number {
-  return event.startMinutes + eventHeightPx(event.startMinutes, event.endMinutes) / PIXELS_PER_MINUTE;
+/**
+ * Minute the block's bottom edge reaches at its smallest drawn size (real duration,
+ * floored at the compact height plus a gap). Grouping on this instead of the raw end
+ * time means two events are only stacked when trimming cannot keep them apart.
+ */
+function compactDrawnEndMinutes(event: CalendarEvent): number {
+  const durationMinutes = Math.max(event.endMinutes - event.startMinutes, 0);
+  return event.startMinutes + Math.max(durationMinutes, (COMPACT_EVENT_MIN_HEIGHT_PX + EVENT_GAP_PX) / PIXELS_PER_MINUTE);
 }
 
-/** Compares drawn extents, not clock times, so a short event padded to the minimum height stacks instead of hiding under its neighbour. */
 function timesOverlap(a: CalendarEvent, b: CalendarEvent): boolean {
-  return a.startMinutes < drawnEndMinutes(b) && drawnEndMinutes(a) > b.startMinutes;
+  return a.startMinutes < compactDrawnEndMinutes(b) && compactDrawnEndMinutes(a) > b.startMinutes;
 }
 
 function buildOverlapClusters(events: CalendarEvent[]): CalendarEvent[][] {
@@ -64,14 +73,41 @@ function buildOverlapClusters(events: CalendarEvent[]): CalendarEvent[][] {
   return [...groups.values()];
 }
 
-/** Positions duration-scaled cards on a minute-based axis; overlapping ranges share a stack with peek offsets. */
+/** Earliest start among events in other clusters that begin after this one — the nearest thing it could be drawn over. */
+function nextStartAfter(event: CalendarEvent, clusters: CalendarEvent[][], ownClusterIndex: number): number | undefined {
+  let next: number | undefined;
+  clusters.forEach((cluster, index) => {
+    if (index === ownClusterIndex) return;
+    for (const other of cluster) {
+      if (other.startMinutes < event.startMinutes) continue;
+      if (next === undefined || other.startMinutes < next) next = other.startMinutes;
+    }
+  });
+  return next;
+}
+
+/** Trims a block so it ends before the next event's start, when the full minimum height would run into it. */
+function heightBeforeNextEventPx(event: CalendarEvent, nextStartMinutes: number | undefined): number {
+  const naturalPx = eventHeightPx(event.startMinutes, event.endMinutes);
+  if (nextStartMinutes === undefined) return naturalPx;
+  const roomPx = (nextStartMinutes - event.startMinutes) * PIXELS_PER_MINUTE - EVENT_GAP_PX;
+  return Math.min(naturalPx, Math.max(roomPx, COMPACT_EVENT_MIN_HEIGHT_PX));
+}
+
+/**
+ * Positions duration-scaled cards on a minute-based axis; ranges that overlap in real
+ * time share a stack with peek offsets. Blocks that merely touch (or are padded to the
+ * minimum height) are trimmed so they never draw over the event that follows.
+ */
 export function layoutDayEvents(events: CalendarEvent[], windowStart: number, columnWidthPx: number): LayoutedCalendarEvent[] {
   if (events.length === 0) return [];
 
   const contentWidthPx = Math.max(columnWidthPx - HORIZONTAL_INSET_PX * 2, 0);
   const layouted: LayoutedCalendarEvent[] = [];
 
-  for (const cluster of buildOverlapClusters(events)) {
+  const clusters = buildOverlapClusters(events);
+
+  clusters.forEach((cluster, clusterIndex) => {
     const sorted = [...cluster].sort((a, b) => {
       if (a.startMinutes !== b.startMinutes) return a.startMinutes - b.startMinutes;
       return b.endMinutes - a.endMinutes;
@@ -80,10 +116,14 @@ export function layoutDayEvents(events: CalendarEvent[], windowStart: number, co
     const stackSize = sorted.length;
 
     sorted.forEach((event, stackIndex) => {
+      const heightPx = heightBeforeNextEventPx(event, nextStartAfter(event, clusters, clusterIndex));
+      const cardOnTop = sorted[stackIndex + 1];
+      const uncoveredPx = cardOnTop ? (cardOnTop.startMinutes - event.startMinutes) * PIXELS_PER_MINUTE : heightPx;
       layouted.push({
         ...event,
         topPx: (event.startMinutes - windowStart) * PIXELS_PER_MINUTE,
-        heightPx: eventHeightPx(event.startMinutes, event.endMinutes),
+        heightPx,
+        visibleHeightPx: Math.min(heightPx, uncoveredPx),
         leftPx: HORIZONTAL_INSET_PX + stackIndex * STACK_PEEK_PX,
         widthPx: contentWidthPx - stackIndex * STACK_PEEK_PX,
         stackIndex,
@@ -91,7 +131,7 @@ export function layoutDayEvents(events: CalendarEvent[], windowStart: number, co
         clusterId,
       });
     });
-  }
+  });
 
   return layouted;
 }

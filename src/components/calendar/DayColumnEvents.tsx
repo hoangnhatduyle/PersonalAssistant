@@ -100,6 +100,7 @@ export function DayColumnEvents({ isToday, date, events, hourMarks, windowStart,
           subtitle={event.subtitle}
           topPx={event.topPx}
           heightPx={event.heightPx}
+          visibleHeightPx={event.visibleHeightPx}
           leftPx={event.leftPx}
           widthPx={event.widthPx}
           stackIndex={event.stackIndex}

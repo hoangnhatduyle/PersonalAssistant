@@ -30,6 +30,7 @@ const layoutedEvent: LayoutedCalendarEvent = {
   personLabel: "Me",
   topPx: 0,
   heightPx: 60,
+  visibleHeightPx: 60,
   leftPx: 4,
   widthPx: 100,
   stackIndex: 0,
