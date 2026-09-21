@@ -21,7 +21,7 @@ import type { CoursePayload } from "@/lib/api/schemas";
 
 export function CourseListContainer() {
   const [isCreateOpen, setCreateOpen] = useState(false);
-  // null = untouched, falls back to everyone overlaid — matches
+  // null = untouched, falls back to Mine only — matches
   // WeekGridContainer's default so switching between Calendar and Courses
   // doesn't reset expectations. Each person can be toggled independently.
   const [personFilter, setPersonFilter] = useState<PersonFilterSelection | null>(null);
@@ -31,7 +31,7 @@ export function CourseListContainer() {
   const createCourse = useCreateCourse();
   const { showToast } = useToast();
 
-  const selection = personFilter ?? defaultPersonFilterSelection(people?.rows ?? []);
+  const selection = personFilter ?? defaultPersonFilterSelection();
   const matchesFilter = (personId: string | null) => selection.has(personId ?? "me");
 
   // Falls back to the default accent so "Mine" always has a swatch that

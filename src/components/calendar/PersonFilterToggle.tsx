@@ -7,9 +7,9 @@ export function allPersonFilterKeys(people: PersonRow[]): PersonFilterKey[] {
   return ["me", ...people.map((person) => person.id)];
 }
 
-/** Default selection shows every person overlaid — matches the pre-filter behavior of showing all fetched rows. */
-export function defaultPersonFilterSelection(people: PersonRow[]): PersonFilterSelection {
-  return new Set(allPersonFilterKeys(people));
+/** Default selection is just "Mine": tracked people stay hidden until toggled on. */
+export function defaultPersonFilterSelection(): PersonFilterSelection {
+  return new Set<PersonFilterKey>(["me"]);
 }
 
 type Props = {

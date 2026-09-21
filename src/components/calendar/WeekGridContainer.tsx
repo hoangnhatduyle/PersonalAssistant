@@ -59,10 +59,8 @@ export function WeekGridContainer() {
   // Same filters object as AppointmentsTimeline's own fetch below, so
   // TanStack Query dedupes this into the one request/cache entry.
   const { data: appointments, isLoading: appointmentsLoading } = useAppointments({ limit: 100 });
-  // null = untouched, falls back to everyone overlaid (matches this
-  // component's pre-People behavior of showing every fetched row
-  // unfiltered, and the ride-planning use case this feature exists for).
-  // Once the user interacts, personFilter holds their exact selection —
+  // null = untouched, falls back to Mine only (tracked people are opt-in
+  // via the toggle). Once the user interacts, personFilter holds their exact selection —
   // including an intentionally empty set — so each person can be toggled
   // independently (e.g. Mine + Châu at the same time).
   const [personFilter, setPersonFilter] = useState<PersonFilterSelection | null>(null);
@@ -70,7 +68,7 @@ export function WeekGridContainer() {
   const [createRequest, setCreateRequest] = useState<CreateRequest | null>(null);
 
   const isLoading = coursesLoading || deadlinesLoading || tasksLoading || peopleLoading || appointmentsLoading;
-  const selection = personFilter ?? defaultPersonFilterSelection(people?.rows ?? []);
+  const selection = personFilter ?? defaultPersonFilterSelection();
 
   const matchesFilter = (personId: string | null) => selection.has(personId ?? "me");
 
