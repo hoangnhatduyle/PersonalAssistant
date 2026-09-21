@@ -172,12 +172,12 @@ body {
   background: #0e111a;
   transition: transform 200ms ease;
 }
-.library-layer[data-depth="1"] { transform: translate(6px, -5px) rotate(1.6deg); opacity: 0.85; }
-.library-layer[data-depth="2"] { transform: translate(12px, -9px) rotate(3.2deg); opacity: 0.6; }
+.library-layer[data-depth="1"] { transform: translate(3px, -3px) rotate(1.6deg); opacity: 0.85; }
+.library-layer[data-depth="2"] { transform: translate(6px, -5px) rotate(3.2deg); opacity: 0.6; }
 .library-card:hover .library-layer[data-depth="1"],
-.library-card:focus-within .library-layer[data-depth="1"] { transform: translate(10px, -7px) rotate(3deg); }
+.library-card:focus-within .library-layer[data-depth="1"] { transform: translate(5px, -4px) rotate(3deg); }
 .library-card:hover .library-layer[data-depth="2"],
-.library-card:focus-within .library-layer[data-depth="2"] { transform: translate(20px, -12px) rotate(6deg); }
+.library-card:focus-within .library-layer[data-depth="2"] { transform: translate(10px, -7px) rotate(6deg); }
 
 @media (prefers-reduced-motion: reduce) {
   .library-card,

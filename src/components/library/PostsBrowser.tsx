@@ -14,6 +14,8 @@ import { parseLibraryPostFilters, serializeLibraryPostFilters, type LibraryPostF
 
 export const SEARCH_DEBOUNCE_MS = 250;
 const PAGE_SIZE = 12;
+/** Compact cards: as many ~13rem columns as fit. */
+const POSTS_GRID = "grid grid-cols-[repeat(auto-fill,minmax(13rem,1fr))] gap-3";
 
 function hasActiveFilters(filters: LibraryPostFilters): boolean {
   return Boolean(filters.q || filters.platform || filters.favorite || filters.tags?.length || filters.personId || filters.courseId || filters.employerId || (filters.archived && filters.archived !== "exclude"));
@@ -100,9 +102,9 @@ export function PostsBrowser() {
       )}
 
       {isLoading ? (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3" aria-busy="true">
-          {[1, 2, 3].map((n) => (
-            <Skeleton key={n} className="h-72 w-full" />
+        <div className={POSTS_GRID} aria-busy="true">
+          {[1, 2, 3, 4, 5, 6].map((n) => (
+            <Skeleton key={n} className="h-56 w-full" />
           ))}
         </div>
       ) : isError ? (
@@ -126,7 +128,7 @@ export function PostsBrowser() {
           />
         )
       ) : (
-        <div className={`grid grid-flow-dense gap-4 sm:grid-cols-2 lg:grid-cols-3 ${isPlaceholderData ? "opacity-60 transition-opacity" : ""}`}>
+        <div className={`${POSTS_GRID} ${isPlaceholderData ? "opacity-60 transition-opacity" : ""}`}>
           {rows.map((post) => (
             <PostCard key={post.id} post={post} />
           ))}
