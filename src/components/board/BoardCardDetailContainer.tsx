@@ -90,7 +90,7 @@ export function BoardCardDetailContainer({
         <div className="flex flex-col gap-4">
           <div className="flex items-center justify-between gap-3">
             <p className="font-mono text-xs uppercase tracking-wide text-text-eyebrow">
-              {listName ?? "Unsorted"}
+              {listName ?? "Miscellaneous"}
             </p>
             <StatusPill
               status={task.status}
@@ -104,7 +104,7 @@ export function BoardCardDetailContainer({
           <div className="flex items-start justify-between gap-3">
             <div>
               <p className="font-mono text-xs uppercase tracking-wide text-text-eyebrow">
-                {listName ?? "Unsorted"}
+                {listName ?? "Miscellaneous"}
               </p>
               <h1 className="mt-1 font-display text-2xl font-semibold text-text-primary">
                 {task.title}

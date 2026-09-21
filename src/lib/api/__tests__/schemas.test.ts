@@ -143,7 +143,7 @@ describe("taskPayloadSchema", () => {
     expect(parsed.success).toBe(true);
   });
 
-  it("accepts a null list_id (Unsorted)", () => {
+  it("accepts a null list_id (Miscellaneous)", () => {
     expect(taskPayloadSchema.safeParse({ title: "Buy milk", list_id: null }).success).toBe(true);
   });
 
@@ -241,7 +241,19 @@ describe("userPreferencesPatchSchema", () => {
 
   it("rejects an out-of-range default_reminder_lead_minutes", () => {
     expect(userPreferencesPatchSchema.safeParse({ default_reminder_lead_minutes: -1 }).success).toBe(false);
-    expect(userPreferencesPatchSchema.safeParse({ default_reminder_lead_minutes: 1441 }).success).toBe(false);
+    expect(userPreferencesPatchSchema.safeParse({ default_reminder_lead_minutes: 43201 }).success).toBe(false);
+  });
+
+  it("accepts lead times up to 30 days (43200 minutes)", () => {
+    expect(userPreferencesPatchSchema.safeParse({ default_reminder_lead_minutes: 4320 }).success).toBe(true);
+    expect(userPreferencesPatchSchema.safeParse({ default_reminder_lead_minutes: 43200 }).success).toBe(true);
+  });
+
+  it("accepts a hex owner_color, or null to clear it, and rejects anything else", () => {
+    expect(userPreferencesPatchSchema.safeParse({ owner_color: "#22c55e" }).success).toBe(true);
+    expect(userPreferencesPatchSchema.safeParse({ owner_color: null }).success).toBe(true);
+    expect(userPreferencesPatchSchema.safeParse({ owner_color: "green" }).success).toBe(false);
+    expect(userPreferencesPatchSchema.safeParse({ owner_color: "#abc" }).success).toBe(false);
   });
 
   it("accepts both quiet_hours_start and quiet_hours_end set together", () => {

@@ -75,6 +75,37 @@ describe("layoutDayEvents", () => {
     expect(eventB.widthPx).toBe(contentWidthPx - STACK_PEEK_PX);
   });
 
+  it("stacks back-to-back events when the short one is drawn taller than its real duration", () => {
+    // 4:00–4:30 renders at the 60-minute minimum height, so it visually runs
+    // into the 4:30–5:55 block even though the clock times only touch.
+    const layouted = layoutDayEvents(
+      [
+        makeEvent({ id: "short", startMinutes: 16 * 60, endMinutes: 16 * 60 + 30 }),
+        makeEvent({ id: "next", startMinutes: 16 * 60 + 30, endMinutes: 17 * 60 + 55 }),
+      ],
+      windowStart,
+      columnWidthPx,
+    );
+
+    expect(layouted.every((event) => event.stackSize === 2)).toBe(true);
+    const short = layouted.find((event) => event.id === "short")!;
+    const next = layouted.find((event) => event.id === "next")!;
+    expect(next.leftPx).toBe(short.leftPx + STACK_PEEK_PX);
+  });
+
+  it("does not stack a short event with one that starts after its drawn height ends", () => {
+    const layouted = layoutDayEvents(
+      [
+        makeEvent({ id: "short", startMinutes: 16 * 60, endMinutes: 16 * 60 + 30 }),
+        makeEvent({ id: "later", startMinutes: 17 * 60, endMinutes: 18 * 60 }),
+      ],
+      windowStart,
+      columnWidthPx,
+    );
+
+    expect(layouted.every((event) => event.stackSize === 1)).toBe(true);
+  });
+
   it("does not offset non-overlapping blocks", () => {
     const layouted = layoutDayEvents(
       [makeEvent({ id: "a", startMinutes: 10 * 60 }), makeEvent({ id: "b", startMinutes: 12 * 60 })],

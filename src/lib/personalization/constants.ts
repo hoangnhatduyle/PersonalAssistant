@@ -1,3 +1,5 @@
+import { MAX_REMINDER_LEAD_MINUTES } from "@/lib/reminders/lead-time";
+
 /**
  * Tunables for the on-demand personalization suggestion engine (mirrors
  * src/lib/knowledge/constants.ts's pinned-constant convention rather than
@@ -21,7 +23,7 @@ export const DISMISSAL_COOLDOWN_DAYS = 14;
 // just applied, before there's been any time to see if it helped.
 export const APPLIED_COOLDOWN_DAYS = 14;
 
-// Matches courses.reminder_lead_minutes/tasks.reminder_lead_minutes' own
-// bounds (0001_init.sql) and the personalization_suggestions CHECK
-// constraints (0016_personalization_suggestions.sql).
-export const SUGGESTION_LEAD_MINUTES_BOUNDS = { min: 0, max: 1440 };
+// Matches the reminder-lead cap enforced by the API schemas and the
+// personalization_suggestions CHECK constraints (raised to 30 days by
+// 0044_reminder_lead_max_30_days.sql).
+export const SUGGESTION_LEAD_MINUTES_BOUNDS = { min: 0, max: MAX_REMINDER_LEAD_MINUTES };

@@ -6,6 +6,7 @@ import { useDeadlines } from "@/hooks/useDeadlines";
 import { useTasks } from "@/hooks/useTasks";
 import { usePeople } from "@/hooks/usePeople";
 import { useAppointments } from "@/hooks/useAppointments";
+import { useSettings } from "@/hooks/useSettings";
 import { buildWeekGridData } from "@/lib/calendar/build-week-events";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { WeekGrid } from "@/components/calendar/WeekGrid";
@@ -53,6 +54,8 @@ export function WeekGridContainer() {
   const { data: deadlines, isLoading: deadlinesLoading } = useDeadlines();
   const { data: tasks, isLoading: tasksLoading } = useTasks();
   const { data: people, isLoading: peopleLoading } = usePeople();
+  // Not part of isLoading: owner_color just falls back to the default course tone until it arrives.
+  const { data: settings } = useSettings();
   // Same filters object as AppointmentsTimeline's own fetch below, so
   // TanStack Query dedupes this into the one request/cache entry.
   const { data: appointments, isLoading: appointmentsLoading } = useAppointments({ limit: 100 });
@@ -90,6 +93,7 @@ export function WeekGridContainer() {
         referenceDate,
         matchesFilter(null) ? (appointments?.rows ?? []) : [],
         today,
+        settings?.owner_color,
       );
 
   // Day nav rolls into the adjacent week at the Sun/Sat edge so it reads as
@@ -162,7 +166,7 @@ export function WeekGridContainer() {
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          <CalendarLegend people={people?.rows ?? []} />
+          <CalendarLegend people={people?.rows ?? []} selection={selection} ownerColor={settings?.owner_color} />
           {(people?.rows.length ?? 0) > 0 && (
             <PersonFilterToggle people={people?.rows ?? []} value={selection} onChange={setPersonFilter} />
           )}

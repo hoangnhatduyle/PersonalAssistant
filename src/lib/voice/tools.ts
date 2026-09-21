@@ -206,7 +206,7 @@ const MUTATION_FIELD_PROPERTIES = {
   list_id: {
     type: ["string", "null"],
     description:
-      "A Board List id from the `todoLists` entity context, e.g. the account owner's grocery/reading list. Optional on a Task create/update to place/move the Task into that list; null leaves/puts it Unsorted. Not used for any other target_type.",
+      "A Board List id from the `todoLists` entity context, e.g. the account owner's grocery/reading list. Optional on a Task create/update to place/move the Task into that list; null leaves/puts it Miscellaneous. Not used for any other target_type.",
   },
   location: { type: ["string", "null"], description: "A general Event/Appointment's location, if the user gave one. Not used for any other target_type." },
   recurring: {

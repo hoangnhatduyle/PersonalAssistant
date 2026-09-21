@@ -3,14 +3,14 @@
 import { useState } from "react";
 import { GlassPanel } from "@/components/ui/GlassPanel";
 import { FormField } from "@/components/ui/FormField";
-import { Input } from "@/components/ui/Input";
+import { ReminderLeadInput } from "@/components/ui/ReminderLeadInput";
 import { Button } from "@/components/ui/Button";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { useSettings, useUpdateSettings } from "@/hooks/useSettings";
 import { useToast } from "@/components/ui/Toast";
+import { MAX_REMINDER_LEAD_MINUTES } from "@/lib/reminders/lead-time";
 
 const MIN_MINUTES = 0;
-const MAX_MINUTES = 1440;
 
 function ReminderCadenceForm({ initialMinutes }: { initialMinutes: number }) {
   const updateSettings = useUpdateSettings();
@@ -18,7 +18,12 @@ function ReminderCadenceForm({ initialMinutes }: { initialMinutes: number }) {
   const [minutes, setMinutes] = useState(initialMinutes);
 
   const handleSave = async () => {
-    const clamped = Math.min(MAX_MINUTES, Math.max(MIN_MINUTES, minutes));
+    // NaN = an emptied amount field; Math.min/max would propagate it to the API.
+    if (Number.isNaN(minutes)) {
+      showToast("Enter a lead time first", "error");
+      return;
+    }
+    const clamped = Math.min(MAX_REMINDER_LEAD_MINUTES, Math.max(MIN_MINUTES, Math.round(minutes)));
     try {
       await updateSettings.mutateAsync({ default_reminder_lead_minutes: clamped });
       showToast("Reminder cadence saved", "success");
@@ -29,19 +34,8 @@ function ReminderCadenceForm({ initialMinutes }: { initialMinutes: number }) {
 
   return (
     <div className="flex items-end gap-3">
-      <FormField label="Minutes before" htmlFor="reminder-lead-minutes">
-        <Input
-          id="reminder-lead-minutes"
-          type="number"
-          min={MIN_MINUTES}
-          max={MAX_MINUTES}
-          value={minutes}
-          onChange={(event) => {
-            const parsed = Number(event.target.value);
-            if (!Number.isNaN(parsed)) setMinutes(parsed);
-          }}
-          className="w-28"
-        />
+      <FormField label="Lead time before due" htmlFor="reminder-lead-minutes">
+        <ReminderLeadInput id="reminder-lead-minutes" value={minutes} onChange={setMinutes} />
       </FormField>
       <Button size="sm" onClick={handleSave} isLoading={updateSettings.isPending}>
         Save

@@ -25,7 +25,7 @@ test.describe("assistant: Board lists", () => {
 });
 
 test.describe("assistant: Board cards", () => {
-  test("add a card to a named list, and to Unsorted when no list is named", async ({ page }) => {
+  test("add a card to a named list, and to Miscellaneous when no list is named", async ({ page }) => {
     const user = await createUserAndSignIn(page);
     const listId = await createTodoList(admin, user.userId, { name: "Reading List" });
     await openAssistant(page);
@@ -38,7 +38,7 @@ test.describe("assistant: Board cards", () => {
     const chapter = tasks!.find((t) => t.title.toLowerCase().includes("chapter 3"))!;
     const bank = tasks!.find((t) => t.title.toLowerCase().includes("bank"))!;
     expect(chapter.list_id).toBe(listId);
-    expect(bank.list_id).toBeNull(); // Unsorted
+    expect(bank.list_id).toBeNull(); // Miscellaneous
     expect(bank.priority).toBe("Medium");
     expect(bank.due_at).toBeNull(); // Tasks keep no due date when none is given
   });

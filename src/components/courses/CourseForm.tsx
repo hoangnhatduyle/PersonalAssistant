@@ -1,6 +1,6 @@
 "use client";
 
-import { FormProvider, useForm } from "react-hook-form";
+import { Controller, FormProvider, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { coursePayloadSchema, type CoursePayload } from "@/lib/api/schemas";
 import type { CourseRow } from "@/lib/api/entity-types";
@@ -9,6 +9,7 @@ import { FormField } from "@/components/ui/FormField";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Checkbox } from "@/components/ui/Checkbox";
+import { ReminderLeadInput } from "@/components/ui/ReminderLeadInput";
 import { Button } from "@/components/ui/Button";
 import { RecurrencePicker } from "@/components/recurrence/RecurrencePicker";
 import { RecurrencePreview } from "@/components/recurrence/RecurrencePreview";
@@ -56,6 +57,7 @@ export function CourseForm({ course, defaultBlock, onSubmit, onCancel, submitLab
     register,
     handleSubmit,
     watch,
+    control,
     formState: { errors, isSubmitting },
   } = form;
   const remindersEnabled = watch("reminders_enabled");
@@ -108,13 +110,18 @@ export function CourseForm({ course, defaultBlock, onSubmit, onCancel, submitLab
         <Checkbox label="Reminders enabled" {...register("reminders_enabled")} />
 
         {remindersEnabled && (
-          <FormField label="Reminder lead (minutes)" htmlFor="reminder_lead_minutes" error={errors.reminder_lead_minutes?.message}>
-            <Input
-              id="reminder_lead_minutes"
-              type="number"
-              min={0}
-              invalid={Boolean(errors.reminder_lead_minutes)}
-              {...register("reminder_lead_minutes", { valueAsNumber: true })}
+          <FormField label="Reminder lead time" htmlFor="reminder_lead_minutes" error={errors.reminder_lead_minutes?.message}>
+            <Controller
+              control={control}
+              name="reminder_lead_minutes"
+              render={({ field }) => (
+                <ReminderLeadInput
+                  id="reminder_lead_minutes"
+                  value={field.value ?? 60}
+                  onChange={field.onChange}
+                  invalid={Boolean(errors.reminder_lead_minutes)}
+                />
+              )}
             />
           </FormField>
         )}

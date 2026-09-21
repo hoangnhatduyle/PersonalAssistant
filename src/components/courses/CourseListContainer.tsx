@@ -15,6 +15,7 @@ import {
   type PersonFilterSelection,
 } from "@/components/calendar/PersonFilterToggle";
 import { PersonLegend } from "@/components/calendar/PersonLegend";
+import { useSettings } from "@/hooks/useSettings";
 import type { CoursePayload } from "@/lib/api/schemas";
 
 export function CourseListContainer() {
@@ -25,11 +26,18 @@ export function CourseListContainer() {
   const [personFilter, setPersonFilter] = useState<PersonFilterSelection | null>(null);
   const { data, isLoading } = useCourses();
   const { data: people, isLoading: peopleLoading } = usePeople();
+  const { data: settings } = useSettings();
   const createCourse = useCreateCourse();
   const { showToast } = useToast();
 
   const selection = personFilter ?? defaultPersonFilterSelection(people?.rows ?? []);
   const matchesFilter = (personId: string | null) => selection.has(personId ?? "me");
+
+  // "Mine" only has a swatch to show once a color is chosen — until then the
+  // owner's course cards are unstyled, so there's nothing to key a legend to.
+  const ownerColor = settings?.owner_color ?? null;
+  const showMineLegend = Boolean(ownerColor) && selection.has("me");
+  const visibleLegendPeople = (people?.rows ?? []).some((person) => selection.has(person.id));
 
   const courses = (data?.rows ?? []).filter((course) => matchesFilter(course.person_id));
 
@@ -58,9 +66,15 @@ export function CourseListContainer() {
         </div>
       </div>
 
-      {(people?.rows.length ?? 0) > 0 && (
+      {(showMineLegend || visibleLegendPeople) && (
         <div className="flex flex-wrap items-center gap-4 font-mono text-xs text-text-secondary">
-          <PersonLegend people={people?.rows ?? []} />
+          {showMineLegend && (
+            <span className="flex items-center gap-1.5">
+              <span aria-hidden="true" className="h-2.5 w-2.5 rounded-full border border-white/20" style={{ backgroundColor: ownerColor ?? undefined }} />
+              Mine
+            </span>
+          )}
+          <PersonLegend people={people?.rows ?? []} selection={selection} />
         </div>
       )}
 
@@ -71,7 +85,7 @@ export function CourseListContainer() {
           ))}
         </div>
       ) : (
-        <CourseList courses={courses} people={people?.rows ?? []} />
+        <CourseList courses={courses} people={people?.rows ?? []} ownerColor={ownerColor} />
       )}
 
       <Dialog open={isCreateOpen} onClose={() => setCreateOpen(false)} title="New course" size="xl">

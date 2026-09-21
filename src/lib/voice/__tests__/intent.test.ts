@@ -329,7 +329,7 @@ describe("mutationSchema", () => {
     expect(result.success).toBe(true);
   });
 
-  it("accepts a task create with no list_id (Unsorted)", () => {
+  it("accepts a task create with no list_id (Miscellaneous)", () => {
     const result = mutationSchema.safeParse({
       target_type: "task",
       operation: "create",
@@ -369,14 +369,14 @@ describe("mutationSchema", () => {
     expect(result.success).toBe(true);
   });
 
-  it("rejects a task's reminder_lead_minutes outside the 0-1440 bound", () => {
+  it("rejects a task's reminder_lead_minutes outside the 0-43200 bound", () => {
     const result = mutationSchema.safeParse({
       target_type: "task",
       operation: "create",
       target_id: null,
       title: "Submit assignment",
       due_at: "2026-09-01T17:00:00.000Z",
-      reminder_lead_minutes: 1500,
+      reminder_lead_minutes: 43201,
       priority: null,
     });
     expect(result.success).toBe(false);

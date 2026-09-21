@@ -13,7 +13,7 @@ describe("user_preferences schema", () => {
     const { data, error } = await admin
       .from("user_preferences")
       .select(
-        "default_reminder_lead_minutes, quiet_hours_start, quiet_hours_end, timezone, voice_capture_enabled, email_reminders_enabled, hands_free_voice_enabled, speak_suggestions_aloud",
+        "default_reminder_lead_minutes, quiet_hours_start, quiet_hours_end, timezone, voice_capture_enabled, email_reminders_enabled, hands_free_voice_enabled, speak_suggestions_aloud, owner_color",
       )
       .eq("id", id)
       .single();
@@ -27,6 +27,7 @@ describe("user_preferences schema", () => {
       email_reminders_enabled: true,
       hands_free_voice_enabled: false,
       speak_suggestions_aloud: false,
+      owner_color: null,
     });
   });
 
@@ -41,7 +42,7 @@ describe("user_preferences schema", () => {
     const { data, error } = await admin
       .from("user_preferences")
       .select(
-        "default_reminder_lead_minutes, quiet_hours_start, quiet_hours_end, timezone, voice_capture_enabled, email_reminders_enabled, hands_free_voice_enabled, speak_suggestions_aloud",
+        "default_reminder_lead_minutes, quiet_hours_start, quiet_hours_end, timezone, voice_capture_enabled, email_reminders_enabled, hands_free_voice_enabled, speak_suggestions_aloud, owner_color",
       )
       .eq("id", id)
       .single();
@@ -55,6 +56,7 @@ describe("user_preferences schema", () => {
       email_reminders_enabled: DEFAULT_USER_PREFERENCES.email_reminders_enabled,
       hands_free_voice_enabled: DEFAULT_USER_PREFERENCES.hands_free_voice_enabled,
       speak_suggestions_aloud: DEFAULT_USER_PREFERENCES.speak_suggestions_aloud,
+      owner_color: DEFAULT_USER_PREFERENCES.owner_color,
     });
   });
 
@@ -142,5 +144,23 @@ describe("user_preferences schema", () => {
 
     const { data: after } = await admin.from("user_preferences").select("updated_at").eq("id", id).single();
     expect(new Date(after!.updated_at as string).getTime()).toBeGreaterThan(new Date(before!.updated_at as string).getTime());
+  });
+  it("default_reminder_lead_minutes accepts up to 30 days (43200) and rejects more", async () => {
+    const user = await createAuthenticatedUser();
+    const id = await createUserPreferences(admin, user.userId, { default_reminder_lead_minutes: 43200 });
+
+    const { error } = await admin.from("user_preferences").update({ default_reminder_lead_minutes: 43201 }).eq("id", id);
+    expect(error).not.toBeNull();
+  });
+
+  it("owner_color accepts a #RRGGBB hex, null, and rejects anything else", async () => {
+    const user = await createAuthenticatedUser();
+    const id = await createUserPreferences(admin, user.userId, { owner_color: "#22c55e" });
+
+    const cleared = await admin.from("user_preferences").update({ owner_color: null }).eq("id", id);
+    expect(cleared.error).toBeNull();
+
+    const bad = await admin.from("user_preferences").update({ owner_color: "green" }).eq("id", id);
+    expect(bad.error).not.toBeNull();
   });
 });

@@ -2,6 +2,7 @@ import { z } from "zod";
 import { KNOWLEDGE_MAX_PASTED_TEXT_CHARS, KNOWLEDGE_MAX_TITLE_CHARS } from "@/lib/knowledge/constants";
 import { MAX_SPEAK_TEXT_CHARS } from "@/lib/voice/constants";
 import { LABEL_COLOR_TOKENS } from "@/lib/label-colors";
+import { MAX_REMINDER_LEAD_MINUTES } from "@/lib/reminders/lead-time";
 
 // Shared payload shapes from SPEC-API-004's shared_schemas. `xPatchSchema` is
 // the same shape with every field optional — used by the id-addressed PATCH
@@ -68,7 +69,7 @@ const courseBaseSchema = z.object({
   location: z.string().trim().min(1).optional(),
   instructor: z.string().trim().min(1).optional(),
   reminders_enabled: z.boolean().optional(),
-  reminder_lead_minutes: z.number().int().nonnegative().optional(),
+  reminder_lead_minutes: z.number().int().nonnegative().max(MAX_REMINDER_LEAD_MINUTES).optional(),
   person_id: z.uuid().nullable().optional(),
 });
 
@@ -147,7 +148,7 @@ const appointmentBaseSchema = z.object({
   location: z.string().trim().min(1).nullable().optional(),
   notes: z.array(z.string()).optional(),
   reminders_enabled: z.boolean().optional(),
-  reminder_lead_minutes: z.number().int().nonnegative().optional(),
+  reminder_lead_minutes: z.number().int().nonnegative().max(MAX_REMINDER_LEAD_MINUTES).optional(),
   // Deadline Sessions (supabase/migrations/0025_deadline_sessions.sql):
   // deadline_id links this appointment to a Deadline as a planned work
   // session. Immutable after insert (NC-API-002-adjacent) — omitted from
@@ -176,11 +177,11 @@ export const taskPayloadSchema = z.object({
   due_at: z.iso.datetime({ offset: true }).nullable().optional(),
   tags: z.array(z.string().trim().min(1)).optional(),
   reminders_enabled: z.boolean().optional(),
-  reminder_lead_minutes: z.number().int().nonnegative().optional(),
+  reminder_lead_minutes: z.number().int().nonnegative().max(MAX_REMINDER_LEAD_MINUTES).optional(),
   person_id: z.uuid().nullable().optional(),
   priority: itemPrioritySchema,
   // Board merge (supabase/migrations/0029_board_merge.sql): a Task is now
-  // also a Board Card. list_id null means "Unsorted" (not a DB row) — see
+  // also a Board Card. list_id null means "Miscellaneous" (not a DB row) — see
   // guard_task_list_ownership for the DB-side enforcement this mirrors.
   list_id: z.uuid().nullable().optional(),
   position: z.number().int().optional(),
@@ -362,7 +363,7 @@ function isValidTimeZone(value: string): boolean {
 
 export const userPreferencesPatchSchema = z
   .object({
-    default_reminder_lead_minutes: z.number().int().min(0).max(1440),
+    default_reminder_lead_minutes: z.number().int().min(0).max(MAX_REMINDER_LEAD_MINUTES),
     quiet_hours_start: z.string().regex(QUIET_HOURS_TIME_REGEX, "Expected HH:MM (24-hour)").nullable(),
     quiet_hours_end: z.string().regex(QUIET_HOURS_TIME_REGEX, "Expected HH:MM (24-hour)").nullable(),
     timezone: z.string().refine(isValidTimeZone, "Not a recognized IANA time zone name"),
@@ -370,6 +371,8 @@ export const userPreferencesPatchSchema = z
     email_reminders_enabled: z.boolean(),
     hands_free_voice_enabled: z.boolean(),
     speak_suggestions_aloud: z.boolean(),
+    // null clears the owner's color back to the built-in per-type colors.
+    owner_color: z.string().regex(HEX_COLOR_REGEX, "Expected #RRGGBB hex color").nullable(),
   })
   .partial()
   .superRefine((value, ctx) => {

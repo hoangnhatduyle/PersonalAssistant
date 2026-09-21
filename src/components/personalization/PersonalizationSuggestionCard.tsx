@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
 import { useApplyPersonalizationSuggestion, useDismissPersonalizationSuggestion } from "@/hooks/usePersonalizationSuggestions";
 import type { PersonalizationSuggestionRow } from "@/lib/api/entity-types";
+import { formatLeadMinutes } from "@/lib/reminders/lead-time";
 
 type Props = {
   suggestion: PersonalizationSuggestionRow;
@@ -40,7 +41,7 @@ export function PersonalizationSuggestionCard({ suggestion, targetTitle }: Props
       <div>
         <p className="font-display text-base font-medium text-text-primary">{targetTitle}</p>
         <p className="mt-0.5 text-sm text-text-secondary">
-          Reminder lead time: {suggestion.from_value}m &rarr; {suggestion.to_value}m
+          Reminder lead time: {formatLeadMinutes(suggestion.from_value)} &rarr; {formatLeadMinutes(suggestion.to_value)}
         </p>
       </div>
       <p className="text-sm text-text-secondary">{suggestion.rationale}</p>

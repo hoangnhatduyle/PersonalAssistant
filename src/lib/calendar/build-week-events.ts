@@ -95,6 +95,7 @@ function parseTimeToMinutes(time: string | null): number | null {
  * excluded, regardless of any PersonFilterToggle selection a caller applies
  * to courses/tasks — matches Voice Assistant's get_person_schedule, which
  * never returns a tracked person's Deadlines either (Courses/Tasks only).
+ * The account owner's own Courses take `ownerColor` when one is chosen;
  * People (tracked schedules — see supabase/migrations/0013_people.sql)
  * supplies the personId -> name/color lookup used to color-code and label
  * events that belong to someone other than the account owner. No
@@ -111,6 +112,11 @@ export function buildWeekGridData(
   // Separate from referenceDate (which week to show) so isToday stays
   // correct when the caller navigates to a week other than the current one.
   today: Date = new Date(),
+  // The account owner's chosen color (user_preferences.owner_color). Applied
+  // to the owner's own Courses only — their Deadlines/Tasks/Appointments keep
+  // their per-type status tones. Null/omitted = never chosen: Courses keep
+  // their default "accent" tone.
+  ownerColor: string | null = null,
 ): WeekGridData {
   const weekStart = startOfWeek(referenceDate);
   const weekEnd = new Date(weekStart.getTime() + 7 * 24 * 60 * 60 * 1000);
@@ -248,6 +254,7 @@ export function buildWeekGridData(
         tone: "accent",
         href: `/courses/${occurrence.course.id}`,
         ...personInfo(occurrence.course.person_id),
+        ...(occurrence.course.person_id === null && ownerColor ? { color: ownerColor } : {}),
       });
     }
 

@@ -4,6 +4,7 @@ import type { Database } from "@/lib/supabase/types";
 import type { PendingMutation } from "@/lib/voice/mutations";
 import { getFirstOccurrenceEndOfDay } from "@/lib/deadlines/recurrence";
 import { localEndOfTodayUtc } from "@/lib/voice/schedule-time-window";
+import { MAX_REMINDER_LEAD_MINUTES } from "@/lib/reminders/lead-time";
 
 // Shared across the deadline/task mutation variants below — mirrors
 // supabase/migrations/0021_item_priority.sql's item_priority enum. A bare
@@ -75,11 +76,11 @@ const mutationSchemaBase = z.discriminatedUnion("target_type", [
     // "add a task to buy milk" with no "remind me" wording). 0 = an explicit
     // "remind me AT <time>" phrasing, meaning the reminder should fire
     // exactly at due_at rather than some minutes before it.
-    reminder_lead_minutes: z.number().int().min(0).max(1440).nullable(),
+    reminder_lead_minutes: z.number().int().min(0).max(MAX_REMINDER_LEAD_MINUTES).nullable(),
     priority: itemPriorityMutationSchema,
     event: taskTransitionEventSchema,
     // Board merge (0029_board_merge.sql): optional Board List placement.
-    // null on create = Unsorted; null on update = leave list_id unchanged
+    // null on create = Miscellaneous; null on update = leave list_id unchanged
     // (see toPendingMutation's due_at-style "!== null means explicit" rule).
     list_id: z.uuid().nullable().default(null),
   }),
@@ -489,7 +490,7 @@ export function toPendingMutation(raw: RawMutation, now: Date, timeZone: string)
           // also defaults to null when the model omits it) — a mentioned
           // list_id moves the Task into it; unmentioned leaves it
           // unchanged. Voice has no way to explicitly move a Task back to
-          // Unsorted via update; only the create path sets it to "none".
+          // Miscellaneous via update; only the create path sets it to "none".
           ...(raw.list_id ? { list_id: raw.list_id } : {}),
         },
       };

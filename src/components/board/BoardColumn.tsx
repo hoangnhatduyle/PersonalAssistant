@@ -26,7 +26,7 @@ type Props = {
   onOpenCard: (taskId: string) => void;
 };
 
-/** One Board List's column — a sortable+droppable region of BoardCards. "Unsorted" is a synthetic column (id "unsorted"), never a todo_lists row. */
+/** One Board List's column — a sortable+droppable region of BoardCards. "Miscellaneous" is a synthetic column (id "unsorted", kept for stability), never a todo_lists row. */
 export function BoardColumn({
   id,
   name,

@@ -99,6 +99,8 @@ export interface UserPreferences {
   hands_free_voice_enabled: boolean;
   /** The sole deliberate exception to "only speak back when the input was voice" — lets a button-tap on the Suggestions panel also trigger a spoken review-and-confirm loop. */
   speak_suggestions_aloud: boolean;
+  /** The account owner's own display color (#RRGGBB) for Calendar/Courses; null = never chosen, built-in colors apply. */
+  owner_color: string | null;
   updated_at: string | null;
 }
 
@@ -120,6 +122,7 @@ export const DEFAULT_USER_PREFERENCES: UserPreferences = {
   email_reminders_enabled: true,
   hands_free_voice_enabled: false,
   speak_suggestions_aloud: false,
+  owner_color: null,
   updated_at: null,
 };
 

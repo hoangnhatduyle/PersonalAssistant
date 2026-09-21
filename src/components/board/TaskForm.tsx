@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { DateTimeField } from "@/components/ui/DateTimeField";
 import { Checkbox } from "@/components/ui/Checkbox";
+import { ReminderLeadInput } from "@/components/ui/ReminderLeadInput";
 import { Button } from "@/components/ui/Button";
 import { LabelChip } from "@/components/ui/LabelChip";
 import { LabelsPopover } from "@/components/board/LabelsPopover";
@@ -33,7 +34,7 @@ type Props = {
 // sentinel actually omits the key.
 const emptyToUndefined = (value: string) => (value === "" ? undefined : value);
 // list_id, unlike person_id/priority above, must support being explicitly
-// cleared back to "Unsorted" on an edit (taskPatchSchema accepts a real
+// cleared back to "Miscellaneous" on an edit (taskPatchSchema accepts a real
 // null for it) — undefined would just omit the key and leave the existing
 // list_id untouched.
 const emptyToNull = (value: string) => (value === "" ? null : value);
@@ -106,7 +107,7 @@ export function TaskForm({
           invalid={Boolean(errors.list_id)}
           {...register("list_id", { setValueAs: emptyToNull })}
         >
-          <option value="">Unsorted</option>
+          <option value="">Miscellaneous</option>
           {(todoLists?.rows ?? []).map((list) => (
             <option key={list.id} value={list.id}>
               {list.name}
@@ -194,16 +195,21 @@ export function TaskForm({
 
       {remindersEnabled && (
         <FormField
-          label="Reminder lead (minutes)"
+          label="Reminder lead time"
           htmlFor="reminder_lead_minutes"
           error={errors.reminder_lead_minutes?.message}
         >
-          <Input
-            id="reminder_lead_minutes"
-            type="number"
-            min={0}
-            invalid={Boolean(errors.reminder_lead_minutes)}
-            {...register("reminder_lead_minutes", { valueAsNumber: true })}
+          <Controller
+            control={control}
+            name="reminder_lead_minutes"
+            render={({ field }) => (
+              <ReminderLeadInput
+                id="reminder_lead_minutes"
+                value={field.value ?? 30}
+                onChange={field.onChange}
+                invalid={Boolean(errors.reminder_lead_minutes)}
+              />
+            )}
           />
         </FormField>
       )}

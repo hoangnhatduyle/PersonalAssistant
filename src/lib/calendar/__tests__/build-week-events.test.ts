@@ -366,4 +366,45 @@ describe("buildWeekGridData", () => {
     const monday = data.days.find((day) => day.dayOfWeek === 1)!;
     expect(monday.events[0]).toMatchObject({ personId: "missing", personLabel: "Unknown" });
   });
+  describe("ownerColor", () => {
+    const monday = (data: ReturnType<typeof buildWeekGridData>) => data.days.find((day) => day.dayOfWeek === 1)!;
+    const buildWith = (ownerColor: string | null | undefined) =>
+      buildWeekGridData(
+        [
+          makeCourse({ id: "c-own", meeting_blocks: [makeMeetingBlock({ days: [1], startMinutes: 600, endMinutes: 650 })] }),
+          makeCourse({ id: "c-other", person_id: "p-1", meeting_blocks: [makeMeetingBlock({ days: [1], startMinutes: 720, endMinutes: 770 })] }),
+        ],
+        [makeDeadline({ id: "d-1", status: "Not Started", due_at: "2026-01-05T15:00:00" })],
+        [makeTask({ id: "t-1", status: "Open", due_at: "2026-01-05T16:00:00" })],
+        [makePerson({ id: "p-1", color: "#ec4899" })],
+        REFERENCE,
+        [makeAppointment({ id: "a-1", date: "2026-01-05", time: "17:00" })],
+        REFERENCE,
+        ownerColor,
+      );
+
+    it("colors only the owner's own Courses with the chosen color", () => {
+      const events = monday(buildWith("#22c55e")).events;
+      expect(events.find((event) => event.id.startsWith("course-c-own"))?.color).toBe("#22c55e");
+    });
+
+    it("leaves Deadlines, Tasks and Appointments on their own type tone", () => {
+      const events = monday(buildWith("#22c55e")).events;
+      for (const prefix of ["deadline-", "task-", "appointment-"]) {
+        expect(events.find((event) => event.id.startsWith(prefix))?.color).toBeUndefined();
+      }
+    });
+
+    it("does not override a tracked person's own color", () => {
+      const events = monday(buildWith("#22c55e")).events;
+      expect(events.find((event) => event.id.startsWith("course-c-other"))?.color).toBe("#ec4899");
+    });
+
+    it("keeps the default course tone when no owner color is chosen", () => {
+      for (const ownerColor of [null, undefined]) {
+        const events = monday(buildWith(ownerColor)).events;
+        expect(events.find((event) => event.id.startsWith("course-c-own"))?.color).toBeUndefined();
+      }
+    });
+  });
 });

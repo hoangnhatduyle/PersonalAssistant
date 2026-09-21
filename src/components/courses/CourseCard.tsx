@@ -2,11 +2,12 @@ import Link from "next/link";
 import { GlassPanel } from "@/components/ui/GlassPanel";
 import { Badge } from "@/components/ui/Badge";
 import { formatBlocksSummary } from "@/lib/calendar/recurrence";
+import { formatLeadMinutes } from "@/lib/reminders/lead-time";
 import type { CourseRow } from "@/lib/api/entity-types";
 
 type Props = {
   course: CourseRow;
-  /** A tracked Person's name/hex color (People feature) — set only when the course isn't the account owner's own. Mirrors EventBlock's `color` prop on the calendar. */
+  /** A tracked Person's name/hex color (People feature) — set for a tracked Person's course, or "Mine" plus the owner's chosen color for the account owner's own. Mirrors EventBlock's `color` prop on the calendar. */
   personName?: string;
   personColor?: string;
 };
@@ -33,7 +34,7 @@ export function CourseCard({ course, personName, personColor }: Props) {
       )}
       <p className="text-xs text-text-secondary">{formatBlocksSummary(course.meeting_blocks)}</p>
       <Badge tone={course.reminders_enabled ? "ok" : "neutral"}>
-        {course.reminders_enabled ? `Reminders ${course.reminder_lead_minutes}m lead` : "Reminders off"}
+        {course.reminders_enabled ? `Reminders ${formatLeadMinutes(course.reminder_lead_minutes)} lead` : "Reminders off"}
       </Badge>
     </GlassPanel>
   );

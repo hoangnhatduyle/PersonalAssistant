@@ -14,6 +14,7 @@ import { courseKeys, personalizationSuggestionKeys, reminderKeys, taskKeys } fro
 import { CONFIRM_MAX_DURATION_MS, CONFIRM_SILENCE_MS, SPEAK_TIMEOUT_MS } from "@/lib/voice/constants";
 import type { PersonalizationSuggestionRow } from "@/lib/api/entity-types";
 import type { VoiceTranscribeResponse } from "@/app/api/voice/transcribe/route";
+import { formatLeadMinutes } from "@/lib/reminders/lead-time";
 
 // Fallback beyond the recorder's own max duration, so listenOnce() below
 // always settles even if useAutoStopRecorder's onComplete never fires (its
@@ -84,7 +85,7 @@ export function useReviewSuggestionsAloud(): UseReviewSuggestionsAloudResult {
       try {
         for (const suggestion of suggestions) {
           const title = resolveTargetTitle(suggestion.scope, suggestion.target_id, courses?.rows ?? [], tasks?.rows ?? []);
-          const sentence = `For ${title}, move the reminder lead time from ${suggestion.from_value} to ${suggestion.to_value} minutes. ${suggestion.rationale} Say yes to apply, or no to skip.`;
+          const sentence = `For ${title}, move the reminder lead time from ${formatLeadMinutes(suggestion.from_value)} to ${formatLeadMinutes(suggestion.to_value)}. ${suggestion.rationale} Say yes to apply, or no to skip.`;
           const speakResult = await raceTimeout(
             speakResponse.mutateAsync(sentence).catch(() => null), // Toast already surfaced by useSpeakVoiceResponse's onError.
             SPEAK_TIMEOUT_MS,

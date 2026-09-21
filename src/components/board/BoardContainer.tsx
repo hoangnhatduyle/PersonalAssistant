@@ -324,7 +324,7 @@ export function BoardContainer() {
       ) : lists.length === 0 && (columns[UNSORTED_ID] ?? []).length === 0 ? (
         <EmptyState
           title="Board is empty"
-          description="Create a list, or add a card straight to Unsorted."
+          description="Create a list, or add a card straight to Miscellaneous."
         />
       ) : (
         <DndContext
@@ -363,7 +363,7 @@ export function BoardContainer() {
               ))}
               <BoardColumn
                 id={UNSORTED_ID}
-                name="Unsorted"
+                name="Miscellaneous"
                 tasks={columns[UNSORTED_ID] ?? []}
                 peopleById={peopleById}
                 isUnsorted
@@ -430,7 +430,7 @@ export function BoardContainer() {
         onClose={() => setDeleteListTarget(null)}
         onConfirm={handleConfirmDeleteList}
         title={`Delete "${deleteListTarget?.name}"?`}
-        description="Its cards will be deleted too, not moved to Unsorted."
+        description="Its cards will be deleted too, not moved to Miscellaneous."
         confirmLabel="Delete"
         isConfirming={deleteTodoList.isPending}
       />

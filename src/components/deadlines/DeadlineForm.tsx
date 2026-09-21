@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { DayOfWeekToggle } from "@/components/recurrence/DayOfWeekToggle";
+import { formatLeadMinutes } from "@/lib/reminders/lead-time";
 
 type Props = {
   deadline?: DeadlineRow;
@@ -115,7 +116,7 @@ export function DeadlineForm({ deadline, defaultDueAt, onSubmit, onCancel, submi
           <div className="flex items-center gap-2">
             <Badge tone={selectedCourse.reminders_enabled ? "ok" : "neutral"}>
               {selectedCourse.reminders_enabled
-                ? `${selectedCourse.reminder_lead_minutes}m before, via course`
+                ? `${formatLeadMinutes(selectedCourse.reminder_lead_minutes)} before, via course`
                 : "Reminders off, via course"}
             </Badge>
             <Link href={`/courses/${selectedCourse.id}`} className="text-xs text-text-secondary underline hover:text-text-primary">

@@ -21,8 +21,14 @@ export function eventHeightPx(startMinutes: number, endMinutes: number): number 
   return Math.max(EVENT_BLOCK_MIN_HEIGHT_PX, durationMinutes * PIXELS_PER_MINUTE);
 }
 
+/** Minute the block's bottom edge reaches once the minimum height is applied — may be later than `endMinutes`. */
+function drawnEndMinutes(event: CalendarEvent): number {
+  return event.startMinutes + eventHeightPx(event.startMinutes, event.endMinutes) / PIXELS_PER_MINUTE;
+}
+
+/** Compares drawn extents, not clock times, so a short event padded to the minimum height stacks instead of hiding under its neighbour. */
 function timesOverlap(a: CalendarEvent, b: CalendarEvent): boolean {
-  return a.startMinutes < b.endMinutes && a.endMinutes > b.startMinutes;
+  return a.startMinutes < drawnEndMinutes(b) && drawnEndMinutes(a) > b.startMinutes;
 }
 
 function buildOverlapClusters(events: CalendarEvent[]): CalendarEvent[][] {

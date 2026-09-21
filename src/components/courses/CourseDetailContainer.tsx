@@ -20,6 +20,7 @@ import { useToast } from "@/components/ui/Toast";
 import { formatBlocksSummary } from "@/lib/calendar/recurrence";
 import type { CoursePayload } from "@/lib/api/schemas";
 import type { TaskRow } from "@/lib/api/entity-types";
+import { formatLeadMinutes } from "@/lib/reminders/lead-time";
 
 type Props = {
   courseId: string;
@@ -74,7 +75,7 @@ export function CourseDetailContainer({ courseId }: Props) {
             {course.instructor && <p className="text-sm text-text-secondary">{course.instructor}</p>}
           </div>
           <Badge tone={course.reminders_enabled ? "ok" : "neutral"}>
-            {course.reminders_enabled ? `Reminders ${course.reminder_lead_minutes}m lead` : "Reminders off"}
+            {course.reminders_enabled ? `Reminders ${formatLeadMinutes(course.reminder_lead_minutes)} lead` : "Reminders off"}
           </Badge>
         </div>
 

@@ -1728,6 +1728,7 @@ export type Database = {
           hands_free_voice_enabled: boolean
           id: string
           quiet_hours_end: string | null
+          owner_color: string | null
           quiet_hours_start: string | null
           speak_suggestions_aloud: boolean
           timezone: string
@@ -1742,6 +1743,7 @@ export type Database = {
           hands_free_voice_enabled?: boolean
           id?: string
           quiet_hours_end?: string | null
+          owner_color?: string | null
           quiet_hours_start?: string | null
           speak_suggestions_aloud?: boolean
           timezone?: string
@@ -1756,6 +1758,7 @@ export type Database = {
           hands_free_voice_enabled?: boolean
           id?: string
           quiet_hours_end?: string | null
+          owner_color?: string | null
           quiet_hours_start?: string | null
           speak_suggestions_aloud?: boolean
           timezone?: string
