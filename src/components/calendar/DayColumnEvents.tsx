@@ -4,6 +4,7 @@ import { useState } from "react";
 import { EventBlock } from "@/components/calendar/EventBlock";
 import { OverlapEventPicker } from "@/components/calendar/OverlapEventPicker";
 import { EmptySlotCreatePicker, type CreateEntityType } from "@/components/calendar/EmptySlotCreatePicker";
+import { useCurrentMinuteOfDay } from "@/hooks/useCurrentMinuteOfDay";
 import { formatMinutesOfDay } from "@/lib/calendar/recurrence";
 import { pxToMinutes, PIXELS_PER_MINUTE, type LayoutedCalendarEvent } from "@/lib/calendar/layout-day-events";
 
@@ -37,6 +38,10 @@ export function DayColumnEvents({ isToday, date, events, hourMarks, windowStart,
   // "start time" preview line so the user knows what a click there will
   // create before they commit to it.
   const [hoverMinutes, setHoverMinutes] = useState<number | null>(null);
+
+  const currentMinutes = useCurrentMinuteOfDay();
+  const nowTopPx = currentMinutes === null ? null : (currentMinutes - windowStart) * PIXELS_PER_MINUTE;
+  const showNowLine = isToday && nowTopPx !== null && nowTopPx >= 0 && nowTopPx <= gridHeightPx;
 
   const pickerEvents = picker
     ? events.filter((event) => event.clusterId === picker.clusterId).sort((a, b) => a.stackIndex - b.stackIndex)
@@ -90,6 +95,16 @@ export function DayColumnEvents({ isToday, date, events, hourMarks, windowStart,
           <span className="absolute left-1 -translate-y-1/2 whitespace-nowrap rounded-full bg-accent-indigo px-1.5 py-0.5 font-mono text-[9px] font-medium text-white shadow-sm">
             {formatMinutesOfDay(hoverMinutes)}
           </span>
+        </div>
+      )}
+      {showNowLine && (
+        <div
+          data-testid="current-time-line"
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-x-0 z-30 border-t-2 border-dotted border-status-urgent"
+          style={{ top: nowTopPx }}
+        >
+          <span className="absolute -left-1 -top-[5px] h-2 w-2 rounded-full bg-status-urgent" />
         </div>
       )}
       {events.map((event) => (

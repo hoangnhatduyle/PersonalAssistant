@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, screen } from "@testing-library/react";
 import { renderWithProviders } from "@/test/render";
 import { DayColumnEvents, type CreateRequest } from "@/components/calendar/DayColumnEvents";
@@ -118,5 +118,41 @@ describe("DayColumnEvents hover preview", () => {
 
     fireEvent.click(column, { clientX: 40, clientY: 90 * PIXELS_PER_MINUTE });
     expect(screen.queryByText("9:30 AM")).not.toBeInTheDocument();
+  });
+});
+
+describe("DayColumnEvents current-time line", () => {
+  afterEach(() => vi.useRealTimers());
+
+  const renderAt = (isToday: boolean, now: Date) => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(now);
+    return renderWithProviders(
+      <DayColumnEvents
+        isToday={isToday}
+        date="2026-01-06"
+        events={[]}
+        hourMarks={[WINDOW_START]}
+        windowStart={WINDOW_START}
+        gridHeightPx={600}
+        onCreateRequest={vi.fn()}
+      />,
+    );
+  };
+
+  it("draws the line at the current time on today's column", () => {
+    renderAt(true, new Date(2026, 0, 6, 9, 30));
+    const line = screen.getByTestId("current-time-line");
+    expect(line.style.top).toBe(`${90 * PIXELS_PER_MINUTE}px`);
+  });
+
+  it("does not draw it on other days", () => {
+    renderAt(false, new Date(2026, 0, 6, 9, 30));
+    expect(screen.queryByTestId("current-time-line")).not.toBeInTheDocument();
+  });
+
+  it("does not draw it when the time is outside the visible window", () => {
+    renderAt(true, new Date(2026, 0, 6, 6, 0));
+    expect(screen.queryByTestId("current-time-line")).not.toBeInTheDocument();
   });
 });
