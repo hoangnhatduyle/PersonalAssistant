@@ -16,6 +16,7 @@ import {
 } from "@/components/calendar/PersonFilterToggle";
 import { PersonLegend } from "@/components/calendar/PersonLegend";
 import { useSettings } from "@/hooks/useSettings";
+import { DEFAULT_OWNER_COLOR } from "@/lib/owner-color";
 import type { CoursePayload } from "@/lib/api/schemas";
 
 export function CourseListContainer() {
@@ -33,10 +34,10 @@ export function CourseListContainer() {
   const selection = personFilter ?? defaultPersonFilterSelection(people?.rows ?? []);
   const matchesFilter = (personId: string | null) => selection.has(personId ?? "me");
 
-  // "Mine" only has a swatch to show once a color is chosen — until then the
-  // owner's course cards are unstyled, so there's nothing to key a legend to.
-  const ownerColor = settings?.owner_color ?? null;
-  const showMineLegend = Boolean(ownerColor) && selection.has("me");
+  // Falls back to the default accent so "Mine" always has a swatch that
+  // matches the owner's course cards, even before a color is chosen.
+  const ownerColor = settings?.owner_color ?? DEFAULT_OWNER_COLOR;
+  const showMineLegend = selection.has("me");
   const visibleLegendPeople = (people?.rows ?? []).some((person) => selection.has(person.id));
 
   const courses = (data?.rows ?? []).filter((course) => matchesFilter(course.person_id));
@@ -70,7 +71,7 @@ export function CourseListContainer() {
         <div className="flex flex-wrap items-center gap-4 font-mono text-xs text-text-secondary">
           {showMineLegend && (
             <span className="flex items-center gap-1.5">
-              <span aria-hidden="true" className="h-2.5 w-2.5 rounded-full border border-white/20" style={{ backgroundColor: ownerColor ?? undefined }} />
+              <span aria-hidden="true" className="h-2.5 w-2.5 rounded-full border border-white/20" style={{ backgroundColor: ownerColor }} />
               Mine
             </span>
           )}

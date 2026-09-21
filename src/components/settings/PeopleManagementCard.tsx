@@ -10,12 +10,10 @@ import { Button } from "@/components/ui/Button";
 import { Dialog } from "@/components/ui/Dialog";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { FormField } from "@/components/ui/FormField";
+import { DEFAULT_OWNER_COLOR } from "@/lib/owner-color";
 import { useToast } from "@/components/ui/Toast";
 import type { PersonRow } from "@/lib/api/entity-types";
 import type { PersonPayload } from "@/lib/api/schemas";
-
-// Matches the indigo accent the owner's Courses use until a color is chosen.
-const DEFAULT_OWNER_COLOR = "#6366f1";
 
 /**
  * People the account owner tracks alongside themself (e.g. a sibling or
