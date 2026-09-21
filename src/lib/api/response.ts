@@ -38,6 +38,11 @@ export function validationErrorResponse(message: string): NextResponse<ApiRespon
   return errorResponse(message, 400);
 }
 
+/** 409: the request is well-formed but collides with existing state (e.g. a duplicate Library post URL). */
+export function conflictResponse(message: string, data?: Record<string, unknown>): NextResponse<ApiResponseBody<Record<string, unknown> | null>> {
+  return NextResponse.json({ success: false, data: data ?? null, error: message }, { status: 409 });
+}
+
 /** SPEC-API-008 NC-API-018: the knowledge create route's per-user rate limit. */
 export function rateLimitedResponse(message = "Rate limit exceeded"): NextResponse<ApiResponseBody<null>> {
   return errorResponse(message, 429);

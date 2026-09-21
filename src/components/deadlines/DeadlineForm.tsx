@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { deadlinePayloadSchema, type DeadlinePayload } from "@/lib/api/schemas";
@@ -12,6 +13,8 @@ import { Select } from "@/components/ui/Select";
 import { DateTimeField } from "@/components/ui/DateTimeField";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
+import { Checkbox } from "@/components/ui/Checkbox";
+import { DayOfWeekToggle } from "@/components/recurrence/DayOfWeekToggle";
 
 type Props = {
   deadline?: DeadlineRow;
@@ -27,13 +30,27 @@ type Props = {
 // so leaving it on "Unset" actually omits the key.
 const emptyToUndefined = (value: string) => (value === "" ? undefined : value);
 
+// Blank -> null so the optional end date can be cleared (same pattern as RecurrencePicker's emptyToNull).
+const emptyToNull = (value: string) => (value === "" ? null : value);
+
+/** Browser-local weekday (0=Sunday..6=Saturday) of an ISO due_at, used to preselect the day when "Repeat weekly" is first checked. */
+function weekdayOf(dueAt: string): number | null {
+  const date = new Date(dueAt);
+  return Number.isNaN(date.getTime()) ? null : date.getDay();
+}
+
 export function DeadlineForm({ deadline, defaultDueAt, onSubmit, onCancel, submitLabel = "Save" }: Props) {
   const { data: courses } = useCourses({ personId: "me" });
+  const [isRecurring, setIsRecurring] = useState(() => (deadline?.recurrence_days?.length ?? 0) > 0);
   const {
     register,
     handleSubmit,
     control,
     watch,
+    getValues,
+    setValue,
+    setError,
+    clearErrors,
     formState: { errors, isSubmitting },
   } = useForm<DeadlinePayload>({
     resolver: zodResolver(deadlinePayloadSchema),
@@ -42,14 +59,39 @@ export function DeadlineForm({ deadline, defaultDueAt, onSubmit, onCancel, submi
       title: deadline?.title ?? "",
       due_at: deadline?.due_at ?? defaultDueAt ?? "",
       priority: deadline?.priority ?? undefined,
+      recurrence_days: deadline?.recurrence_days ?? [],
+      recurrence_end_date: deadline?.recurrence_end_date ?? null,
     },
   });
+
+  const handleRecurringChange = (checked: boolean) => {
+    setIsRecurring(checked);
+    clearErrors("recurrence_days");
+    if (checked && (getValues("recurrence_days") ?? []).length === 0) {
+      const weekday = weekdayOf(getValues("due_at"));
+      if (weekday !== null) setValue("recurrence_days", [weekday]);
+    }
+  };
+
+  // A one-off deadline always submits an empty rule (not an omitted one) so
+  // un-checking "Repeat weekly" while editing actually clears a stored series.
+  const submit = async (values: DeadlinePayload) => {
+    if (!isRecurring) {
+      await onSubmit({ ...values, recurrence_days: [], recurrence_end_date: null });
+      return;
+    }
+    if ((values.recurrence_days ?? []).length === 0) {
+      setError("recurrence_days", { message: "Pick at least one day" });
+      return;
+    }
+    await onSubmit(values);
+  };
 
   const courseId = watch("course_id");
   const selectedCourse = (courses?.rows ?? []).find((course) => course.id === courseId);
 
   return (
-    <form onSubmit={handleSubmit(async (values) => onSubmit(values))} className="flex flex-col gap-4" noValidate>
+    <form onSubmit={handleSubmit(submit)} className="flex flex-col gap-4" noValidate>
       <FormField label="Course" htmlFor="course_id" error={errors.course_id?.message}>
         <Select
           id="course_id"
@@ -101,6 +143,39 @@ export function DeadlineForm({ deadline, defaultDueAt, onSubmit, onCancel, submi
           )}
         />
       </FormField>
+
+      <Checkbox label="Repeat weekly" checked={isRecurring} onChange={(event) => handleRecurringChange(event.target.checked)} />
+
+      {isRecurring && (
+        <div className="flex flex-col gap-4 rounded-control border border-panel-border p-4">
+          <FormField label="Repeats on" error={errors.recurrence_days?.message}>
+            <Controller
+              control={control}
+              name="recurrence_days"
+              render={({ field }) => (
+                <DayOfWeekToggle
+                  value={field.value ?? []}
+                  onChange={(days) => {
+                    clearErrors("recurrence_days");
+                    field.onChange(days);
+                  }}
+                />
+              )}
+            />
+          </FormField>
+          <FormField label="Repeat until (optional)" htmlFor="recurrence_end_date" error={errors.recurrence_end_date?.message}>
+            <Input
+              id="recurrence_end_date"
+              type="date"
+              invalid={Boolean(errors.recurrence_end_date)}
+              {...register("recurrence_end_date", { setValueAs: emptyToNull })}
+            />
+          </FormField>
+          <p className="font-mono text-xs text-text-secondary">
+            Each occurrence is its own deadline. The next one, due at the same time on the next selected day, is created when this one is completed, cancelled, or comes due.
+          </p>
+        </div>
+      )}
 
       <FormField label="Priority" htmlFor="priority" error={errors.priority?.message}>
         <Select

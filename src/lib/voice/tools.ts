@@ -104,6 +104,14 @@ export interface ProposeMutationArgs {
   list_id: string | null;
   // General Event/Appointment (target_type "event") create/update field.
   location: string | null;
+  // Deadline weekly recurrence (0041_deadline_recurrence.sql). recurring:
+  // null = not said / not asked yet, false = one-off, true = repeats on
+  // recurrence_days (0=Sunday..6=Saturday) until recurrence_end_date (null = open-ended).
+  recurring: boolean | null;
+  recurrence_days: number[] | null;
+  recurrence_end_date: string | null;
+  // Cancelling a repeating Deadline: which occurrences (null = not chosen yet).
+  cancel_scope: "occurrence" | "series" | null;
 }
 
 /** get_personalization_suggestions and start_new_conversation both take no arguments. */
@@ -201,6 +209,27 @@ const MUTATION_FIELD_PROPERTIES = {
       "A Board List id from the `todoLists` entity context, e.g. the account owner's grocery/reading list. Optional on a Task create/update to place/move the Task into that list; null leaves/puts it Unsorted. Not used for any other target_type.",
   },
   location: { type: ["string", "null"], description: "A general Event/Appointment's location, if the user gave one. Not used for any other target_type." },
+  recurring: {
+    type: ["boolean", "null"],
+    description:
+      "Deadline create/update only. Whether the Deadline repeats weekly: true = repeats, false = the user said it does not repeat (one-off), null = the user has not said anything about repeating. Leave null unless the user actually spoke to it -- never guess; the app asks a new Deadline's repeat question itself when this is null. Not used for any other target_type.",
+  },
+  recurrence_days: {
+    anyOf: [{ type: "array", items: { type: "integer" } }, { type: "null" }],
+    description:
+      "Deadline only, when recurring is true: the weekdays it repeats on, 0=Sunday, 1=Monday ... 6=Saturday, resolved from the user's phrasing (\"every Monday and Wednesday\" -> [1,3], \"every weekday\" -> [1,2,3,4,5], \"every day\" -> [0,1,2,3,4,5,6], \"weekly\" with no day named -> the weekday of due_at). An empty array/null when recurring is true means the days are still unknown -- use save_mutation_draft to ask. Null otherwise.",
+  },
+  recurrence_end_date: {
+    type: ["string", "null"],
+    description:
+      "Deadline only, when recurring is true: the last date (YYYY-MM-DD, resolved in the user's timezone) the deadline may repeat on, if the user gave an end (\"until December 11th\", \"through the end of the month\"). Null when they gave none -- it then repeats indefinitely.",
+  },
+  cancel_scope: {
+    type: ["string", "null"],
+    enum: ["occurrence", "series", null],
+    description:
+      "Deadline transition with event user_cancels on a repeating deadline only: \"occurrence\" = cancel just this one (the series continues), \"series\" = cancel the whole series (every open occurrence, and no more are created). Null unless the user actually said which -- leave null and the app asks. Null for everything else.",
+  },
 } as const;
 
 const MUTATION_FIELD_NAMES = Object.keys(MUTATION_FIELD_PROPERTIES) as (keyof typeof MUTATION_FIELD_PROPERTIES)[];

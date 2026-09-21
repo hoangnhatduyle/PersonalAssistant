@@ -5,7 +5,7 @@ import { GlassPanel } from "@/components/ui/GlassPanel";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
 import { useVoiceCapture, type VoiceTurnOrigin } from "@/components/assistant/VoiceCaptureProvider";
-import { useConfirmVoiceTurn, useDeclineVoiceTurn, useExpireVoiceTurn } from "@/hooks/useVoiceTurn";
+import { useArmVoiceTurn, useConfirmVoiceTurn, useDeclineVoiceTurn, useExpireVoiceTurn } from "@/hooks/useVoiceTurn";
 import { useAutoStopRecorder } from "@/hooks/useAutoStopRecorder";
 import { apiFetch } from "@/lib/http/client";
 import { classifyYesNo } from "@/lib/voice/yes-no";
@@ -17,7 +17,6 @@ import type { VoiceTranscribeResponse } from "@/app/api/voice/transcribe/route";
 type Props = {
   sessionId: string;
   message: string;
-  receivedAt: number;
   origin: VoiceTurnOrigin;
   /**
    * Speaks the Confirm/Decline outcome's message when origin === "voice",
@@ -27,7 +26,9 @@ type Props = {
    * see that file).
    */
   onSpoken: (text: string) => Promise<void>;
-  /** True once CaptureChannel has finished speaking the confirmation prompt for a voice-originated turn — the earliest moment it's safe to start listening for a spoken yes/no without talking over itself. */
+  /**
+   * True once CaptureChannel has finished speaking the confirmation prompt for a voice-originated turn — the earliest moment it's safe to start listening for a spoken yes/no without talking over itself, and the moment the confirmation window's clock starts (a text-origin turn starts it on mount instead).
+   */
   readyToListen: boolean;
 };
 
@@ -50,23 +51,50 @@ function formatCountdown(remainingMs: number): string {
  * remains the actual authority. A confirm/decline call that fails because
  * the window already expired server-side surfaces that error via toast and
  * resets to idle, rather than the client unilaterally deciding it's expired.
+ *
+ * The window starts when the user can actually answer, not when the turn
+ * resolved: a voice prompt takes most of the window just to speak, so the
+ * clock (both this display and the server's expires_at, via POST
+ * /api/voice/[id]/arm) is held back until the prompt has finished. Until
+ * then the server keeps a longer pre-arm expiry as a backstop.
  */
-export function ConfirmationBar({ sessionId, message, receivedAt, origin, onSpoken, readyToListen }: Props) {
+export function ConfirmationBar({ sessionId, message, origin, onSpoken, readyToListen }: Props) {
   const { applyTurnResult, reset } = useVoiceCapture();
   const { showToast } = useToast();
   const confirmTurn = useConfirmVoiceTurn();
   const declineTurn = useDeclineVoiceTurn();
   const expireTurn = useExpireVoiceTurn();
-  const [remainingMs, setRemainingMs] = useState(() => WINDOW_MS - (Date.now() - receivedAt));
+  const armTurn = useArmVoiceTurn();
+  // Client clock for the countdown display; null until the prompt is done
+  // (voice) or immediately (text). Stamped when the arm request is sent, so
+  // this can only ever lag the server's own expires_at, never lead it.
+  const [windowStartedAt, setWindowStartedAt] = useState<number | null>(null);
+  const [remainingMs, setRemainingMs] = useState(WINDOW_MS);
+
+  const shouldStartWindow = origin === "text" || readyToListen;
+  useEffect(() => {
+    if (!shouldStartWindow) return;
+    // One-shot sync of local clock state to the prompt-finished signal (a prop flip), not derivable during render since it stamps Date.now().
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setWindowStartedAt(Date.now());
+    setRemainingMs(WINDOW_MS);
+    // Best-effort: if this fails the server's pre-arm expiry still bounds the
+    // session, and the local countdown below runs regardless.
+    void armTurn.mutateAsync(sessionId).catch(() => {});
+    // Runs once when the window should start; sessionId is stable for this component's lifetime (see the expiry effect below).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shouldStartWindow]);
 
   useEffect(() => {
-    const interval = setInterval(() => setRemainingMs(WINDOW_MS - (Date.now() - receivedAt)), 1000);
+    if (windowStartedAt === null) return;
+    const interval = setInterval(() => setRemainingMs(WINDOW_MS - (Date.now() - windowStartedAt)), 1000);
     return () => clearInterval(interval);
-  }, [receivedAt]);
+  }, [windowStartedAt]);
 
-  const hasExpired = remainingMs <= 0;
+  const hasExpired = windowStartedAt !== null && remainingMs <= 0;
 
-  // Voice-only: a text-mode session just keeps showing the "Confirmation
+  // Voice-only (and only once the window has started, so this never fires
+  // while the prompt is still being read out): a text-mode session just keeps showing the "Confirmation
   // window expired" label below and a still-clickable Decline button, which
   // is enough since the user is already looking at the screen. A
   // voice-origin session gets no such visual cue if the user has walked
@@ -168,6 +196,11 @@ export function ConfirmationBar({ sessionId, message, receivedAt, origin, onSpok
   return (
     <GlassPanel variant="glow-warn" className="flex flex-col gap-3 p-4">
       <p className="text-sm text-text-primary">{message}</p>
+      {origin === "voice" && windowStartedAt === null && (
+        <p className="text-xs text-text-secondary" role="status">
+          Reading that back…
+        </p>
+      )}
       {listenStatus === "listening" && (
         <p className="text-xs text-accent-teal" role="status">
           Listening for yes or no…
@@ -175,7 +208,7 @@ export function ConfirmationBar({ sessionId, message, receivedAt, origin, onSpok
       )}
       <div className="flex items-center justify-between gap-3">
         <span className="font-mono text-xs text-text-secondary">
-          {hasExpired ? "Confirmation window expired" : `Expires in ${formatCountdown(remainingMs)}`}
+          {windowStartedAt === null ? "\u00A0" : hasExpired ? "Confirmation window expired" : `Expires in ${formatCountdown(remainingMs)}`}
         </span>
         <div className="flex gap-2">
           <Button

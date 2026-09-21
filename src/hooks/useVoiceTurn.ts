@@ -86,6 +86,19 @@ export function useDeclineVoiceTurn() {
   });
 }
 
+export interface VoiceArmResult {
+  session_id: string;
+  armed: boolean;
+}
+
+/** POST /api/voice/[sessionId]/arm — starts the real confirmation window once the prompt has finished being spoken. Best-effort: never executes anything. */
+export function useArmVoiceTurn() {
+  return useMutation({
+    mutationFn: async (sessionId: string) =>
+      (await apiFetch<VoiceArmResult>(`/api/voice/${sessionId}/arm`, { method: "POST" })).data,
+  });
+}
+
 export interface VoiceExpireResult {
   session_id: string;
   expired: boolean;

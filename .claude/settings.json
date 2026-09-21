@@ -95,11 +95,23 @@
       "Bash(npx --no-install supabase migration list --local)",
       "Bash(timeout 180 npx --no-install supabase db reset)",
       "Bash(node -e \"console.log\\(JSON.stringify\\(JSON.parse\\(require\\('fs'\\).readFileSync\\('package.json'\\)\\).scripts,null,2\\)\\)\")",
-      "Bash(rm -f /tmp/pw-smoke.spec.ts; cd /home/hoang/projects/PersonalAssistant && mkdir -p e2e)"
+      "Bash(rm -f /tmp/pw-smoke.spec.ts; cd /home/hoang/projects/PersonalAssistant && mkdir -p e2e)",
+      "Bash(cp src/lib/supabase/types.ts /tmp/types.bak)",
+      "Bash(cp src/lib/supabase/types.ts /tmp/types.gen.ts)",
+      "Bash(cp /tmp/types.bak src/lib/supabase/types.ts)",
+      "Bash(grep -n \"^    Tables: {\\\\|^    Views: {\\\\|^    Functions: {\\\\|^      library_\\\\|^      active_labels\\\\|^      active_l\\\\|^      labels: {\\\\|^      sync_task_labels\\\\|^      soft_delete_label\\\\|^      [a-z_]*: {$\" /tmp/types.gen.ts)",
+      "Bash(git diff *)",
+      "Bash(grep -n \"^@@\\\\|^ .*: {$\\\\|^+      [a-z_]*: {\\\\|^+      [a-z_]*:\")",
+      "Bash(git checkout *)",
+      "Bash(sed -i '/^export const metadata/,+1d' \"src/app/\\(app\\)/library/\\(tabs\\)/page.tsx\" \"src/app/\\(app\\)/library/posts/[id]/page.tsx\")",
+      "Bash(sed -n 1,60p src/components/people/__tests__/*.tsx)",
+      "Bash(git -C /home/hoang/projects/PersonalAssistant log --oneline -3)",
+      "Bash(sed -n 1,140p supabase/migrations/0017*.sql | head -160; echo ------; ls supabase/migrations | sed -n 1,40p; echo -----; sed -n 1,80p supabase/tests/library-posts.test.ts; echo ----; sed -n 1,80p supabase/tests/helpers.ts)"
     ],
     "additionalDirectories": [
       "/home/hoang/projects/PersonalAssistant/src/app/api/tasks/[id]",
-      "/tmp"
+      "/tmp",
+      "/home/hoang/projects/PersonalAssistant/supabase/migrations"
     ]
   }
 }

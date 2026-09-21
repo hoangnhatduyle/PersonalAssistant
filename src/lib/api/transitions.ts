@@ -1,3 +1,4 @@
+import { isApplicationStatus, type ApplicationStatus } from "@/lib/library/application-status";
 import type { Database } from "@/lib/supabase/types";
 
 type DeadlineStatus = Database["public"]["Enums"]["deadline_status"];
@@ -11,6 +12,18 @@ export type TaskTransitionEvent = "user_marks_done" | "user_cancels";
 export type ReminderTransitionEvent = "user_acknowledges" | "user_dismisses" | "user_snoozes";
 export type SessionTransitionEvent = "user_marks_session_done" | "user_marks_session_skipped";
 export type EventTransitionEvent = "user_marks_event_done" | "user_marks_event_missed";
+
+/**
+ * What cancelling a RECURRING deadline applies to: just this occurrence (the
+ * series carries on with the next one) or the whole series (every open
+ * occurrence is cancelled and no more appear). Ignored for a one-off.
+ */
+export const DEADLINE_CANCEL_SCOPES = ["occurrence", "series"] as const;
+export type DeadlineCancelScope = (typeof DEADLINE_CANCEL_SCOPES)[number];
+
+export function isDeadlineCancelScope(value: unknown): value is DeadlineCancelScope {
+  return typeof value === "string" && (DEADLINE_CANCEL_SCOPES as readonly string[]).includes(value);
+}
 
 // Mirrors SPEC-CORE-005's deadline_assignment machine, restricted to the
 // user-initiated events (due_date_passed_incomplete is system-driven, fired
@@ -144,3 +157,17 @@ export function getValidEventEvents(status: EventStatus): EventTransitionEvent[]
     (event) => eventTransitions[event]?.[status] !== undefined,
   );
 }
+
+/**
+ * Library applications (job pipeline). Deliberately permissive — a job hunt
+ * is not linear (an offer can be withdrawn, a rejection can be reopened) —
+ * so any status may move to any other. NC-API-002 still holds: status only
+ * changes through POST /api/library/applications/[id]/transition, never a
+ * generic PATCH. Returns null when the move is a no-op (`to === current`);
+ * the caller answers 400.
+ */
+export function resolveApplicationTransition(to: ApplicationStatus, current: ApplicationStatus): ApplicationStatus | null {
+  return to === current ? null : to;
+}
+
+export { isApplicationStatus };

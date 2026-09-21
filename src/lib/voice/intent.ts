@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import type { Database } from "@/lib/supabase/types";
 import type { PendingMutation } from "@/lib/voice/mutations";
+import { getFirstOccurrenceEndOfDay } from "@/lib/deadlines/recurrence";
 import { localEndOfTodayUtc } from "@/lib/voice/schedule-time-window";
 
 // Shared across the deadline/task mutation variants below — mirrors
@@ -49,6 +50,20 @@ const mutationSchemaBase = z.discriminatedUnion("target_type", [
     due_at: z.iso.datetime({ offset: true }).nullable(),
     priority: itemPriorityMutationSchema,
     event: deadlineTransitionEventSchema,
+    // Weekly roll-forward recurrence (0041_deadline_recurrence.sql).
+    // `recurring`: null = the user hasn't answered/been asked yet (the
+    // conversational core asks a new Deadline create before proposing it --
+    // see deadline-recurrence-gate.ts), false = one-off, true = repeats on
+    // recurrence_days (0=Sunday..6=Saturday). All `.default(null)` for the
+    // same omission-tolerance reason as itemPriorityMutationSchema above;
+    // null is treated as one-off when mapped to a PendingMutation.
+    recurring: z.boolean().nullable().default(null),
+    recurrence_days: z.array(z.number().int().min(0).max(6)).max(7).nullable().default(null),
+    recurrence_end_date: z.iso.date().nullable().default(null),
+    // Cancelling a REPEATING deadline: null = not chosen yet (the core asks --
+    // deadline-recurrence-gate.ts), "occurrence" = just this one, "series" =
+    // every open occurrence + no more (cancel_deadline_series, 0042).
+    cancel_scope: z.enum(["occurrence", "series"]).nullable().default(null),
   }),
   z.object({
     target_type: z.literal("task"),
@@ -161,6 +176,9 @@ export const mutationSchema = mutationSchemaBase.superRefine((value, ctx) => {
       if (value.operation === "transition" && !value.event) {
         ctx.addIssue({ code: "custom", message: "event is required for a transition operation", path: ["event"] });
       }
+      if (value.recurring === true && (value.recurrence_days?.length ?? 0) === 0) {
+        ctx.addIssue({ code: "custom", message: "recurrence_days is required when recurring is true", path: ["recurrence_days"] });
+      }
       return;
     }
     case "task": {
@@ -237,8 +255,13 @@ export type RawMutation = z.infer<typeof mutationSchema>;
 export const mutationDraftSchema = mutationSchemaBase;
 
 export interface EntityContext {
-  courses: Array<{ id: string; name: string }>;
-  deadlines: Array<{ id: string; title: string; course_id: string }>;
+  // code is what a student says out loud ("PHYS 6540"); the name alone never
+  // matches a spoken code, which once made a deadline create unresolvable.
+  courses: Array<{ id: string; code: string | null; name: string }>;
+  // due_at/status/recurring: every occurrence of a repeating deadline is its
+  // own row with the SAME title, so due date (and status) is what tells them
+  // apart; `recurring` drives the cancel-scope question.
+  deadlines: Array<{ id: string; title: string; course_id: string; due_at: string; status: Database["public"]["Enums"]["deadline_status"]; recurring: boolean }>;
   // list_id (board merge, 0029_board_merge.sql) -- lets the model match "the
   // task in my grocery list" against the right Task when a title alone is
   // ambiguous, the same way a deadline's course_id disambiguates it.
@@ -295,8 +318,8 @@ export async function loadEntityContext(supabase: SupabaseClient<Database>, user
     { data: knowledgeSources },
     { data: people },
   ] = await Promise.all([
-    supabase.from("courses").select("id, name").eq("user_id", userId).is("person_id", null).is("deleted_at", null),
-    supabase.from("deadlines").select("id, title, course_id").eq("user_id", userId).is("person_id", null).is("deleted_at", null),
+    supabase.from("courses").select("id, code, name").eq("user_id", userId).is("person_id", null).is("deleted_at", null),
+    supabase.from("deadlines").select("id, title, course_id, due_at, status, recurrence_days").eq("user_id", userId).is("person_id", null).is("deleted_at", null),
     supabase.from("tasks").select("id, title, list_id").eq("user_id", userId).is("person_id", null).is("deleted_at", null),
     supabase.from("todo_lists").select("id, name, course_id").eq("user_id", userId).is("deleted_at", null),
     supabase.from("appointments").select("id, title, deadline_id").eq("user_id", userId).eq("category", "Session").is("deleted_at", null),
@@ -308,7 +331,13 @@ export async function loadEntityContext(supabase: SupabaseClient<Database>, user
   ]);
   return {
     courses: courses ?? [],
-    deadlines: deadlines ?? [],
+    // A repeating series adds one row per occurrence forever; its finished
+    // (Completed/Cancelled) occurrences can never be acted on again, so they
+    // stay out of every prompt. One-off deadlines are listed in every status,
+    // exactly as before.
+    deadlines: (deadlines ?? [])
+      .filter((deadline) => deadline.recurrence_days.length === 0 || (deadline.status !== "Completed" && deadline.status !== "Cancelled"))
+      .map(({ recurrence_days, ...deadline }) => ({ ...deadline, recurring: recurrence_days.length > 0 })),
     tasks: tasks ?? [],
     todoLists: todoLists ?? [],
     sessions: sessions ?? [],
@@ -328,6 +357,23 @@ export async function loadEntityContext(supabase: SupabaseClient<Database>, user
 export async function loadUserTimezone(supabase: SupabaseClient<Database>, userId: string): Promise<string> {
   const { data } = await supabase.from("user_preferences").select("timezone").eq("user_id", userId).maybeSingle();
   return data?.timezone ?? "UTC";
+}
+
+type RawDeadlineMutation = Extract<RawMutation, { target_type: "deadline" }>;
+
+/** The stored repeat rule for a deadline mutation, or nothing when it isn't (confirmed) recurring -- null/false both mean one-off. */
+function recurrenceFields(raw: RawDeadlineMutation): { recurrence_days?: number[]; recurrence_end_date?: string | null } {
+  if (raw.recurring !== true || !raw.recurrence_days?.length) return {};
+  return {
+    recurrence_days: [...new Set(raw.recurrence_days)].sort((a, b) => a - b),
+    recurrence_end_date: raw.recurrence_end_date,
+  };
+}
+
+/** A Deadline create with no due_at: end of today, or -- for a recurring one -- end of its first selected weekday on/after today. */
+function defaultDeadlineDueAt(raw: RawDeadlineMutation, now: Date, timeZone: string): string {
+  const days = raw.recurring === true ? raw.recurrence_days ?? [] : [];
+  return getFirstOccurrenceEndOfDay(days, timeZone, now) ?? localEndOfTodayUtc(now, timeZone).toISOString();
 }
 
 /**
@@ -376,8 +422,9 @@ export function toPendingMutation(raw: RawMutation, now: Date, timeZone: string)
             // Default to end-of-today (user's own timezone) when the user
             // gave no date, rather than failing — a Deadline always needs a
             // due-by instant, unlike a Task.
-            due_at: raw.due_at ?? localEndOfTodayUtc(now, timeZone).toISOString(),
+            due_at: raw.due_at ?? defaultDeadlineDueAt(raw, now, timeZone),
             priority: raw.priority ?? "Medium",
+            ...recurrenceFields(raw),
           },
         };
       }
@@ -385,7 +432,13 @@ export function toPendingMutation(raw: RawMutation, now: Date, timeZone: string)
         return { targetType: "deadline", operation: "delete", targetId: raw.target_id! };
       }
       if (raw.operation === "transition") {
-        return { targetType: "deadline", operation: "transition", targetId: raw.target_id!, event: raw.event! };
+        return {
+          targetType: "deadline",
+          operation: "transition",
+          targetId: raw.target_id!,
+          event: raw.event!,
+          ...(raw.event === "user_cancels" && raw.cancel_scope ? { cancelScope: raw.cancel_scope } : {}),
+        };
       }
       return {
         targetType: "deadline",
@@ -395,6 +448,8 @@ export function toPendingMutation(raw: RawMutation, now: Date, timeZone: string)
           ...(raw.title ? { title: raw.title } : {}),
           ...(raw.due_at ? { due_at: raw.due_at } : {}),
           ...(raw.priority ? { priority: raw.priority } : {}),
+          // recurring null = leave the rule alone; true sets it; false clears it.
+          ...(raw.recurring === false ? { recurrence_days: [], recurrence_end_date: null } : recurrenceFields(raw)),
         },
       };
     }

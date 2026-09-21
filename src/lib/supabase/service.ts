@@ -8,9 +8,12 @@ import type { Database } from "./types";
  * client-bundled. Only src/lib/knowledge/ingestion.ts and the two routes
  * that invoke it (create, retry) — to call the service_role-only
  * knowledge-import RPCs (start_knowledge_import, complete_knowledge_import,
- * fail_knowledge_import) — and src/app/api/cron/send-reminder-emails/route.ts
+ * fail_knowledge_import) — src/app/api/cron/send-reminder-emails/route.ts
  * — to read/claim every user's Delivered reminders on a scheduled,
- * non-user-session invocation — may import this. Mirrors
+ * non-user-session invocation — and src/app/api/voice/[sessionId]/arm/route.ts
+ * — to write voice_sessions.expires_at, which guard_voice_session_state
+ * (0005) forbids for end-user clients outside a state transition — may
+ * import this. Mirrors
  * supabase/tests/helpers.ts's adminClient(), production-side.
  */
 export function createServiceRoleClient(): SupabaseClient<Database> {

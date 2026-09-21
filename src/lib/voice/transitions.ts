@@ -70,11 +70,32 @@ export function meetsConfidenceBar(confidence: number): boolean {
   return confidence >= VOICE_CONFIDENCE_BAR;
 }
 
-/** SPEC-VOICE-005 AC-2/AC-7, NC-VOICE-005: the confirmation window's fixed width. */
-export const CONFIRMATION_WINDOW_SECONDS = 10;
+/**
+ * SPEC-VOICE-005 AC-2/AC-7, NC-VOICE-005: the confirmation window's fixed
+ * width — the time the user actually has to answer. It is measured from
+ * when the prompt has finished being spoken (POST /api/voice/[id]/arm), not
+ * from when the session was persisted: the spoken prompt itself can take
+ * most of the window to synthesize and play, so a clock started at persist time
+ * expired before the user was even asked (production incident, 2026-09-21).
+ */
+export const CONFIRMATION_WINDOW_SECONDS = 30;
+
+/**
+ * Extra time on top of the window, granted only until the client arms it,
+ * to cover synthesizing + playing the prompt (SPEAK_TIMEOUT_MS is the 20s
+ * ceiling on that round trip). Arming can only shorten expires_at back to
+ * the window, never extend past this, so a client that never arms simply
+ * gets this longer-but-still-bounded pre-arm expiry.
+ */
+export const CONFIRMATION_PRE_ARM_GRACE_SECONDS = 30;
 
 export function computeConfirmationExpiry(from: Date = new Date()): string {
   return new Date(from.getTime() + CONFIRMATION_WINDOW_SECONDS * 1_000).toISOString();
+}
+
+/** expires_at as first persisted with AwaitingConfirmation, before the client arms the window. */
+export function computeConfirmationPreArmExpiry(from: Date = new Date()): string {
+  return new Date(from.getTime() + (CONFIRMATION_WINDOW_SECONDS + CONFIRMATION_PRE_ARM_GRACE_SECONDS) * 1_000).toISOString();
 }
 
 export function isConfirmationExpired(expiresAt: string, now: Date = new Date()): boolean {

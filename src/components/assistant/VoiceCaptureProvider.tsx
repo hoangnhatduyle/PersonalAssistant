@@ -16,7 +16,7 @@ export type VoiceTurnOrigin = "voice" | "text";
 
 export type VoiceCaptureState =
   | { status: "idle" }
-  | { status: "awaiting-confirmation"; sessionId: string; message: string; receivedAt: number; origin: VoiceTurnOrigin }
+  | { status: "awaiting-confirmation"; sessionId: string; message: string; origin: VoiceTurnOrigin }
   | {
       status: "responded";
       message: string;
@@ -45,7 +45,6 @@ function voiceCaptureReducer(_state: VoiceCaptureState, action: VoiceCaptureActi
         status: "awaiting-confirmation",
         sessionId: action.sessionId,
         message: action.message,
-        receivedAt: Date.now(),
         origin: action.origin,
       };
     case "turn-responded":

@@ -8,6 +8,7 @@ import {
   type TestUser,
 } from "../../../../supabase/tests/helpers";
 import {
+  armVoiceConfirmation,
   confirmVoiceSession,
   declineVoiceSession,
   expireVoiceSession,
@@ -18,6 +19,7 @@ import {
 } from "../session";
 import type { PendingMutation } from "../mutations";
 import type { ConversationAnswer } from "../conversation-core";
+import { CONFIRMATION_PRE_ARM_GRACE_SECONDS, CONFIRMATION_WINDOW_SECONDS } from "../transitions";
 import { endConversation, resolveActiveConversation } from "../conversation-memory";
 
 // Echoes back whatever conversationId it was called with (the real one
@@ -90,7 +92,7 @@ describe("intakeVoiceTurn / confirmVoiceSession / declineVoiceSession", () => {
   });
 
   // AC-2
-  it("AC-2: a mutating intent persists pending_mutation, sets a 10-second expires_at, and enters AwaitingConfirmation", async () => {
+  it("AC-2: a mutating intent persists pending_mutation, sets a pre-arm expires_at (window + speech grace), and enters AwaitingConfirmation", async () => {
     const mutation: PendingMutation = { targetType: "task", operation: "create", payload: { title: "Buy textbook" } };
     const runConversationTurn = fakeMutationProposal({ confidence: 0.98, summary: "create a task to buy textbook", mutation });
     const before = Date.now();
@@ -109,8 +111,9 @@ describe("intakeVoiceTurn / confirmVoiceSession / declineVoiceSession", () => {
     expect(row.pending_mutation).toEqual(mutation);
     expect(row.expires_at).not.toBeNull();
     const deltaMs = new Date(row.expires_at as string).getTime() - before;
-    expect(deltaMs).toBeGreaterThan(8_000);
-    expect(deltaMs).toBeLessThanOrEqual(10_000 + 5_000);
+    const preArmMs = (CONFIRMATION_WINDOW_SECONDS + CONFIRMATION_PRE_ARM_GRACE_SECONDS) * 1_000;
+    expect(deltaMs).toBeGreaterThan(preArmMs - 2_000);
+    expect(deltaMs).toBeLessThanOrEqual(preArmMs + 5_000);
   });
 
   // AC-3
@@ -166,6 +169,40 @@ describe("intakeVoiceTurn / confirmVoiceSession / declineVoiceSession", () => {
 
     expect(runConversationTurn).not.toHaveBeenCalled();
     expect(result.message).toBe("I didn't catch that — could you try again?");
+  });
+
+  // Natural speech carries hesitation sounds and pauses -- "um... hmm" is
+  // silence for our purposes, and "ummm, add a task" is a completely valid
+  // command that must reach the model without the noise.
+  it("a transcript that is only hesitation sounds asks the user to repeat, without ever calling runConversationTurn", async () => {
+    const runConversationTurn = vi.fn();
+
+    const result = await intakeVoiceTurn(user.client, userId, { transcript: "Ummm... hmm. Uh." }, { transcribe: vi.fn(), runConversationTurn });
+
+    expect(runConversationTurn).not.toHaveBeenCalled();
+    expect(result.state).toBe("Responding");
+    expect(result.needsFollowUp).toBe(true);
+    expect(result.message).toBe("I didn't catch that — could you try again?");
+
+    const row = await sessionRow(result.sessionId);
+    expect(row.transcript).toBe("Ummm... hmm. Uh.");
+    expect(row.error_message).toBeNull();
+  });
+
+  it("hands the model the transcript with hesitation sounds removed, while persisting exactly what was heard", async () => {
+    const runConversationTurn = fakeConversationTurn();
+
+    const result = await intakeVoiceTurn(
+      user.client,
+      userId,
+      { transcript: "Ummm, I want to, uh, add a task to call the bank" },
+      { transcribe: vi.fn(), runConversationTurn },
+    );
+
+    expect(runConversationTurn).toHaveBeenCalledTimes(1);
+    expect(runConversationTurn.mock.calls[0][2]).toBe("I want to, add a task to call the bank");
+    const row = await sessionRow(result.sessionId);
+    expect(row.transcript).toBe("Ummm, I want to, uh, add a task to call the bank");
   });
 
   // Previously a bare `catch {}` discarded the actual error entirely -- a
@@ -311,6 +348,74 @@ describe("intakeVoiceTurn / confirmVoiceSession / declineVoiceSession", () => {
     const row = await sessionRow(intake.sessionId);
     expect(row.state).toBe("Responding");
     expect(row.pending_mutation).toBeNull();
+  });
+
+  describe("armVoiceConfirmation", () => {
+    async function intakeCreateTask(title: string) {
+      const mutation: PendingMutation = { targetType: "task", operation: "create", payload: { title } };
+      const runConversationTurn = fakeMutationProposal({ confidence: 0.98, summary: "create a task", mutation });
+      return intakeVoiceTurn(user.client, userId, { transcript: "add a task" }, { transcribe: vi.fn(), runConversationTurn });
+    }
+
+    it("shortens the pre-arm expiry to a fresh confirmation window starting now", async () => {
+      const intake = await intakeCreateTask("Armed task");
+      const before = Date.now();
+
+      const outcome = await armVoiceConfirmation(admin, userId, intake.sessionId);
+      expect(outcome.armed).toBe(true);
+
+      const row = await sessionRow(intake.sessionId);
+      expect(row.state).toBe("AwaitingConfirmation");
+      const deltaMs = new Date(row.expires_at as string).getTime() - before;
+      expect(deltaMs).toBeGreaterThan(CONFIRMATION_WINDOW_SECONDS * 1_000 - 2_000);
+      expect(deltaMs).toBeLessThanOrEqual(CONFIRMATION_WINDOW_SECONDS * 1_000 + 2_000);
+    });
+
+    it("never extends an expiry that is already inside the window, however many times it is called", async () => {
+      const intake = await intakeCreateTask("Never extended");
+      const soon = new Date(Date.now() + 3_000).toISOString();
+      await admin.from("voice_sessions").update({ expires_at: soon }).eq("id", intake.sessionId);
+
+      await armVoiceConfirmation(admin, userId, intake.sessionId);
+      await armVoiceConfirmation(admin, userId, intake.sessionId);
+
+      const row = await sessionRow(intake.sessionId);
+      expect(new Date(row.expires_at as string).toISOString()).toBe(soon);
+    });
+
+    it("lets the confirm still execute after arming, within the fresh window", async () => {
+      const intake = await intakeCreateTask("Armed then confirmed");
+      await armVoiceConfirmation(admin, userId, intake.sessionId);
+
+      const outcome = await confirmVoiceSession(user.client, userId, intake.sessionId);
+      expect(outcome.executed).toBe(true);
+    });
+
+    it("reports armed: false for a window that already lapsed, without reviving it", async () => {
+      const intake = await intakeCreateTask("Lapsed before arm");
+      const past = new Date(Date.now() - 1_000).toISOString();
+      await admin.from("voice_sessions").update({ expires_at: past }).eq("id", intake.sessionId);
+
+      const outcome = await armVoiceConfirmation(admin, userId, intake.sessionId);
+      expect(outcome.armed).toBe(false);
+
+      const row = await sessionRow(intake.sessionId);
+      expect(new Date(row.expires_at as string).toISOString()).toBe(past);
+    });
+
+    it("reports armed: false for a session no longer awaiting confirmation", async () => {
+      const intake = await intakeCreateTask("Already declined");
+      await declineVoiceSession(user.client, userId, intake.sessionId);
+
+      const outcome = await armVoiceConfirmation(admin, userId, intake.sessionId);
+      expect(outcome.armed).toBe(false);
+    });
+
+    it("throws VoiceSessionNotFoundError for a session that doesn't belong to the caller", async () => {
+      const intake = await intakeCreateTask("Someone else's");
+      const other = await createAuthenticatedUser();
+      await expect(armVoiceConfirmation(admin, other.userId, intake.sessionId)).rejects.toBeInstanceOf(VoiceSessionNotFoundError);
+    });
   });
 
   describe("expireVoiceSession", () => {

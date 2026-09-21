@@ -44,7 +44,7 @@ async function submitText(page: Page, text: string): Promise<void> {
 
 /**
  * Sends a command that should propose a mutation, waits for the confirmation
- * prompt (the model's summary), clicks Confirm within the 10s window, and
+ * prompt (the model's summary), clicks Confirm within the confirmation window, and
  * returns the confirmation prompt text and the executed-result text.
  */
 export async function runMutation(page: Page, text: string): Promise<{ prompt: string; result: string }> {

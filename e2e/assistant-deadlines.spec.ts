@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { admin, createUserAndSignIn, openAssistant, runMutation, seedCourse } from "./fixtures";
+import { admin, askAssistant, createUserAndSignIn, openAssistant, runMutation, seedCourse } from "./fixtures";
 
 test.describe("assistant: Deadlines", () => {
   test("create with no date/priority defaults to end-of-today + Medium", async ({ page }) => {
@@ -7,7 +7,9 @@ test.describe("assistant: Deadlines", () => {
     await seedCourse(user.userId, "CS 101");
     await openAssistant(page);
 
-    await runMutation(page, "Add a deadline called Essay Draft for my CS 101 course");
+    // A new deadline always gets asked whether it repeats; "no" is the default.
+    expect(await askAssistant(page, "Add a deadline called Essay Draft for my CS 101 course")).toMatch(/repeat/i);
+    await runMutation(page, "No, it doesn't repeat");
 
     const { data } = await admin.from("deadlines").select("title, priority, due_at").eq("user_id", user.userId).is("deleted_at", null);
     expect(data).toHaveLength(1);
@@ -23,7 +25,8 @@ test.describe("assistant: Deadlines", () => {
     await seedCourse(user.userId, "CS 101");
     await openAssistant(page);
 
-    await runMutation(page, "Add a high priority deadline called Lab Report for my CS 101 course due 2030-03-15 at 5pm");
+    expect(await askAssistant(page, "Add a high priority deadline called Lab Report for my CS 101 course due 2030-03-15 at 5pm")).toMatch(/repeat/i);
+    await runMutation(page, "No");
     const { data: created } = await admin.from("deadlines").select("id, title, priority, due_at").eq("user_id", user.userId).is("deleted_at", null);
     expect(created).toHaveLength(1);
     expect(created![0].priority).toBe("High");

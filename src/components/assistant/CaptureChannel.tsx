@@ -369,7 +369,6 @@ export function CaptureChannel({ compact = false, large = false }: Props) {
         <ConfirmationBar
           sessionId={state.sessionId}
           message={state.message}
-          receivedAt={state.receivedAt}
           origin={state.origin}
           onSpoken={speakAndMaybeResume}
           readyToListen={confirmationReady && state.origin === "voice"}

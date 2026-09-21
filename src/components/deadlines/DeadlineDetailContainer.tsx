@@ -14,6 +14,7 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
 import { DEADLINE_STATUS_TONE } from "@/lib/status-colors";
+import { formatDeadlineRecurrence } from "@/lib/deadlines/recurrence";
 import type { DeadlinePayload } from "@/lib/api/schemas";
 
 type Props = {
@@ -40,6 +41,8 @@ export function DeadlineDetailContainer({ deadlineId }: Props) {
     }
   };
 
+  const recurrenceLabel = formatDeadlineRecurrence(deadline.recurrence_days, deadline.recurrence_end_date);
+
   return (
     <div className="flex flex-col gap-6">
       <GlassPanel className="flex flex-col gap-4 p-6">
@@ -48,12 +51,13 @@ export function DeadlineDetailContainer({ deadlineId }: Props) {
             <p className="font-mono text-xs uppercase tracking-wide text-text-eyebrow">{course?.name ?? "Deadline"}</p>
             <h1 className="mt-1 font-display text-2xl font-semibold text-text-primary">{deadline.title}</h1>
             <p className="mt-1 font-mono text-xs text-text-secondary">Due {new Date(deadline.due_at).toLocaleString()}</p>
+            {recurrenceLabel && <p className="mt-1 font-mono text-xs text-accent-indigo">{recurrenceLabel}</p>}
           </div>
           <StatusPill status={deadline.status} tone={DEADLINE_STATUS_TONE[deadline.status]} />
         </div>
 
         <div className="flex flex-wrap gap-2">
-          <DeadlineTransitionMenu deadlineId={deadline.id} status={deadline.status} />
+          <DeadlineTransitionMenu deadlineId={deadline.id} status={deadline.status} isRecurring={deadline.recurrence_days.length > 0} />
           <Button variant="secondary" size="sm" onClick={() => setIsEditing((value) => !value)}>
             {isEditing ? "Cancel edit" : "Edit"}
           </Button>

@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  CONFIRMATION_PRE_ARM_GRACE_SECONDS,
   CONFIRMATION_WINDOW_SECONDS,
   VOICE_CONFIDENCE_BAR,
   VOICE_FORBIDDEN_TRANSITIONS,
   computeConfirmationExpiry,
+  computeConfirmationPreArmExpiry,
   isConfirmationExpired,
   isVoiceTransitionEvent,
   meetsConfidenceBar,
@@ -67,6 +69,12 @@ describe("confirmation window", () => {
     const now = new Date("2026-01-01T00:00:00.000Z");
     const expiry = computeConfirmationExpiry(now);
     expect(new Date(expiry).getTime() - now.getTime()).toBe(CONFIRMATION_WINDOW_SECONDS * 1_000);
+  });
+
+  it("holds a longer pre-arm expiry (window + speech grace) until the client arms the window after the prompt is spoken", () => {
+    const now = new Date("2026-01-01T00:00:00.000Z");
+    const expiry = computeConfirmationPreArmExpiry(now);
+    expect(new Date(expiry).getTime() - now.getTime()).toBe((CONFIRMATION_WINDOW_SECONDS + CONFIRMATION_PRE_ARM_GRACE_SECONDS) * 1_000);
   });
 
   it("treats an expires_at at or before now as expired", () => {

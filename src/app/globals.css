@@ -120,3 +120,161 @@ body {
 .board-card[data-priority="High"] { --board-card-stripe: var(--status-warn); }
 .board-card[data-priority="Medium"] { --board-card-stripe: var(--accent-indigo); }
 .board-card[data-priority="Low"] { --board-card-stripe: var(--status-neutral); }
+
+/* Library — "contact sheet" material. Solid dark cards over a faint grain,
+   a platform-tinted top edge (semantic colour: Instagram violet, Facebook
+   blue, other neutral) and stacked cover layers that fan out on hover.
+   Scoped classes (like .board-*), deliberately not a GlassPanel variant and
+   no backdrop-blur. Only transform/opacity animate. */
+.library-atmosphere {
+  --library-ig: var(--accent-violet);
+  --library-fb: #3b82f6;
+  --library-other: var(--status-neutral);
+  background:
+    radial-gradient(ellipse 720px 420px at 0% -8%, rgb(168 85 247 / 0.09), transparent 60%),
+    radial-gradient(ellipse 640px 460px at 100% 108%, rgb(59 130 246 / 0.08), transparent 62%),
+    var(--board-grain),
+    transparent;
+  background-blend-mode: normal, normal, overlay, normal;
+}
+
+.library-card {
+  position: relative;
+  background: var(--board-card-bg);
+  border-color: var(--board-card-border);
+  box-shadow: var(--board-card-shadow);
+  transition: border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
+  --library-edge: var(--library-other);
+}
+.library-card[data-platform="instagram"] { --library-edge: var(--library-ig); }
+.library-card[data-platform="facebook"] { --library-edge: var(--library-fb); }
+.library-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 3px;
+  border-radius: calc(var(--radius-panel) - 1px) calc(var(--radius-panel) - 1px) 0 0;
+  background: var(--library-edge);
+}
+.library-card:hover,
+.library-card:focus-within {
+  border-color: var(--library-edge);
+  box-shadow: 0 0 0 1px var(--library-edge), var(--board-card-shadow-hover);
+  transform: translateY(-2px);
+}
+.library-card:active { transform: translateY(0); }
+
+.library-layer {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-control);
+  border: 1px solid var(--board-card-border);
+  background: #0e111a;
+  transition: transform 200ms ease;
+}
+.library-layer[data-depth="1"] { transform: translate(6px, -5px) rotate(1.6deg); opacity: 0.85; }
+.library-layer[data-depth="2"] { transform: translate(12px, -9px) rotate(3.2deg); opacity: 0.6; }
+.library-card:hover .library-layer[data-depth="1"],
+.library-card:focus-within .library-layer[data-depth="1"] { transform: translate(10px, -7px) rotate(3deg); }
+.library-card:hover .library-layer[data-depth="2"],
+.library-card:focus-within .library-layer[data-depth="2"] { transform: translate(20px, -12px) rotate(6deg); }
+
+@media (prefers-reduced-motion: reduce) {
+  .library-card,
+  .library-layer { transition: none; }
+  .library-card:hover,
+  .library-card:focus-within,
+  .library-card:active { transform: none; }
+  .library-card:hover .library-layer,
+  .library-card:focus-within .library-layer { transform: revert-layer; }
+}
+
+/* Library — Employers "dossier". Reuses .library-atmosphere. A status-tinted
+   edge (semantic colour, set once via data-dossier-status: interested neutral,
+   applied indigo, interviewing amber, offer teal, rejected red, withdrawn
+   neutral) runs down employer cards and across the top of pipeline lanes and
+   cards. Only transform/opacity animate; rejected/withdrawn are muted. */
+[data-dossier-status] { --dossier-tone: var(--status-neutral); }
+[data-dossier-status="applied"] { --dossier-tone: var(--accent-indigo); }
+[data-dossier-status="interviewing"] { --dossier-tone: var(--status-warn); }
+[data-dossier-status="offer"] { --dossier-tone: var(--status-ok); }
+[data-dossier-status="rejected"] { --dossier-tone: var(--status-urgent); }
+
+.employer-card,
+.pipeline-card {
+  position: relative;
+  background: var(--board-card-bg);
+  border-color: var(--board-card-border);
+  box-shadow: var(--board-card-shadow);
+  transition: border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
+}
+.employer-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  border-radius: calc(var(--radius-panel) - 1px) 0 0 calc(var(--radius-panel) - 1px);
+  background: var(--dossier-tone, var(--status-neutral));
+}
+.pipeline-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 2px;
+  border-radius: calc(var(--radius-panel) - 1px) calc(var(--radius-panel) - 1px) 0 0;
+  background: var(--dossier-tone, var(--status-neutral));
+}
+.employer-card:hover,
+.employer-card:focus-within,
+.pipeline-card:hover,
+.pipeline-card:focus-within {
+  border-color: var(--dossier-tone, var(--board-card-border-hover));
+  box-shadow: 0 0 0 1px var(--dossier-tone, var(--board-card-border-hover)), var(--board-card-shadow-hover);
+  transform: translateY(-2px);
+}
+.employer-card:active,
+.pipeline-card:active { transform: translateY(0); }
+.employer-card[data-muted="true"],
+.pipeline-card[data-muted="true"] { opacity: 0.68; }
+
+.pipeline-lane {
+  position: relative;
+  background: var(--board-column-bg);
+  border-color: var(--board-column-border);
+  transition: box-shadow 150ms ease;
+}
+.pipeline-lane::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 3px;
+  border-radius: calc(var(--radius-panel) - 1px) calc(var(--radius-panel) - 1px) 0 0;
+  background: var(--dossier-tone, var(--status-neutral));
+}
+.pipeline-lane[data-over="true"] { box-shadow: inset 0 0 0 2px var(--dossier-tone, var(--accent-indigo)); }
+.pipeline-card[data-dragging="true"] { opacity: 0.4; }
+
+/* Timeline rail: a hairline with a status-tinted node per entry. */
+.dossier-rail { position: relative; border-left: 1px solid var(--board-card-border); }
+.dossier-node {
+  position: absolute;
+  left: -5px;
+  top: 0.4rem;
+  width: 9px;
+  height: 9px;
+  border-radius: 9999px;
+  background: var(--dossier-tone, var(--status-neutral));
+  box-shadow: 0 0 0 3px var(--board-card-bg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .employer-card,
+  .pipeline-card,
+  .pipeline-lane { transition: none; }
+  .employer-card:hover,
+  .employer-card:focus-within,
+  .employer-card:active,
+  .pipeline-card:hover,
+  .pipeline-card:focus-within,
+  .pipeline-card:active { transform: none; }
+}

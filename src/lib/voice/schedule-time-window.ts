@@ -33,7 +33,7 @@ export interface ScheduleWindowBounds {
   endUtcIsoExclusive: string;
 }
 
-interface ZonedParts {
+export interface ZonedParts {
   year: number;
   month: number;
   day: number;
@@ -42,7 +42,7 @@ interface ZonedParts {
   second: number;
 }
 
-function partsInZone(date: Date, timeZone: string): ZonedParts {
+export function partsInZone(date: Date, timeZone: string): ZonedParts {
   const formatter = new Intl.DateTimeFormat("en-US", {
     timeZone,
     year: "numeric",

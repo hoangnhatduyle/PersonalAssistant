@@ -46,7 +46,7 @@ function cardBadgeAndActions(item: DrivingQueueItem, row: DrivingCardRow): { bad
             {deadline.status}
           </Badge>
         ),
-        actions: <DeadlineTransitionMenu deadlineId={deadline.id} status={deadline.status} size="lg" />,
+        actions: <DeadlineTransitionMenu deadlineId={deadline.id} status={deadline.status} isRecurring={deadline.recurrence_days.length > 0} size="lg" />,
       };
     }
     case "task": {

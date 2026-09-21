@@ -54,9 +54,11 @@ vi.mock("@/lib/voice/intent", async (importOriginal) => {
   };
 });
 
+import { loadDraftMutation } from "@/lib/voice/conversation-memory";
+import { CANCEL_SCOPE_QUESTION, RECURRENCE_DAYS_QUESTION, RECURRENCE_QUESTION } from "@/lib/voice/deadline-recurrence-gate";
 import { runSuggestionsLookup } from "@/lib/voice/suggestions-lookup";
 import { runDeadlineProgressLookup } from "@/lib/voice/deadline-progress-lookup";
-import { loadEntityContext } from "@/lib/voice/intent";
+import { loadEntityContext, loadUserTimezone, mutationDraftSchema } from "@/lib/voice/intent";
 import { runConversationTurn } from "../conversation-core";
 
 const VALID_TARGET_ID = "11111111-1111-4111-8111-111111111111";
@@ -161,13 +163,80 @@ describe("runConversationTurn", () => {
     expect(loadSchedule).toHaveBeenCalledTimes(2);
   });
 
-  it("throws when propose_mutation's arguments fail mutationSchema validation (never invents an id past a bad one)", async () => {
+  it("throws when propose_mutation's arguments keep failing mutationSchema validation (never invents an id past a bad one)", async () => {
     mocks.chatCompletionsCreate.mockReset();
-    mocks.chatCompletionsCreate.mockResolvedValueOnce(
+    mocks.chatCompletionsCreate.mockResolvedValue(
       toolCallResponse([{ id: "call_1", name: "propose_mutation", arguments: { ...validProposeMutationArgs, target_id: "not-a-uuid" } }]),
     );
 
     await expect(runConversationTurn(fakeSupabase, "user-1", "delete my task", "conv-1")).rejects.toThrow();
+    // One recovery attempt (see the test below), then the original error surfaces.
+    expect(mocks.chatCompletionsCreate).toHaveBeenCalledTimes(2);
+  });
+
+  // Production incident (2026-09-21): "add a deadline for PHYS 6540 tomorrow at 8" -- the model
+  // proposed a deadline create it couldn't fully fill in (no title), the schema rejected it, and the
+  // whole turn collapsed into the generic "Sorry, I had trouble processing that" with nothing kept, so
+  // the user had to start over. A proposal missing required fields must instead go back to the model as
+  // a recoverable tool error, so it can save what it knows as a draft and ask for exactly what's missing.
+  describe("a propose_mutation missing required fields", () => {
+    const incompleteDeadlineArgs = {
+      ...validProposeMutationArgs,
+      summary: "Create a deadline",
+      target_type: "deadline",
+      operation: "create",
+      target_id: null,
+      course_id: VALID_TARGET_ID,
+      title: null,
+      due_at: "2026-09-22T20:00:00-04:00",
+    };
+
+    it("is fed back to the model as a tool error and the turn continues, rather than failing the whole turn", async () => {
+      mocks.chatCompletionsCreate.mockReset();
+      mocks.chatCompletionsCreate
+        .mockResolvedValueOnce(toolCallResponse([{ id: "call_1", name: "propose_mutation", arguments: incompleteDeadlineArgs }]))
+        .mockResolvedValueOnce(
+          toolCallResponse([
+            {
+              id: "call_2",
+              name: "save_mutation_draft",
+              arguments: { ...incompleteDeadlineArgs, question: "What should I call the deadline?" },
+            },
+          ]),
+        );
+
+      const result = await runConversationTurn(fakeSupabase, "user-1", "add a deadline for physics tomorrow at 8", "conv-1");
+
+      expect(result).toMatchObject({
+        kind: "answer",
+        message: "What should I call the deadline?",
+        needsFollowUp: true,
+        conversationId: "conv-1",
+        draftMutation: { question: "What should I call the deadline?" },
+      });
+      expect(mocks.chatCompletionsCreate).toHaveBeenCalledTimes(2);
+
+      const secondCallMessages = mocks.chatCompletionsCreate.mock.calls[1][0].messages as Array<{ role: string; tool_call_id?: string; content: string }>;
+      const toolError = secondCallMessages.find((message) => message.role === "tool" && message.tool_call_id === "call_1");
+      expect(toolError).toBeDefined();
+      expect(toolError!.content).toMatch(/save_mutation_draft/);
+      expect(toolError!.content).toMatch(/title/);
+    });
+
+    it("can still be completed on the recovery turn by a propose_mutation that now has every field", async () => {
+      mocks.chatCompletionsCreate.mockReset();
+      mocks.chatCompletionsCreate
+        .mockResolvedValueOnce(toolCallResponse([{ id: "call_1", name: "propose_mutation", arguments: incompleteDeadlineArgs }]))
+        .mockResolvedValueOnce(
+          toolCallResponse([
+            { id: "call_2", name: "propose_mutation", arguments: { ...incompleteDeadlineArgs, title: "Homework six", recurring: false } },
+          ]),
+        );
+
+      const result = await runConversationTurn(fakeSupabase, "user-1", "add a deadline for physics tomorrow at 8", "conv-1");
+
+      expect(result.kind).toBe("mutation_proposal");
+    });
   });
 
   it("prefetches today's schedule unconditionally and answers a 'today' question in a single model call", async () => {
@@ -229,6 +298,83 @@ describe("runConversationTurn", () => {
     for (const [callArgs] of mocks.chatCompletionsCreate.mock.calls) {
       expect(callArgs.reasoning_effort).toBe("low");
     }
+  });
+
+  describe("spoken-input handling", () => {
+    async function systemPromptFor(courses: Array<{ id: string; code: string | null; name: string }>): Promise<string> {
+      vi.mocked(loadEntityContext).mockResolvedValueOnce({
+        courses,
+        deadlines: [],
+        tasks: [],
+        todoLists: [],
+        sessions: [],
+        appointments: [],
+        knowledgeSources: [],
+        people: [],
+      });
+      mocks.chatCompletionsCreate.mockReset();
+      mocks.chatCompletionsCreate.mockResolvedValueOnce(
+        toolCallResponse([{ id: "call_1", name: "respond_to_user", arguments: { message: "ok", needs_follow_up: false } }]),
+      );
+      await runConversationTurn(fakeSupabase, "user-1", "hello", "conv-1");
+      return mocks.chatCompletionsCreate.mock.calls[0][0].messages[0].content as string;
+    }
+
+    // The live model once resolved "Friday" to Thursday the 24th from a bare ISO timestamp -- weekday
+    // arithmetic is not something to leave to it, so the prompt carries an explicit local calendar.
+    it("spells out today's weekday and the next two weeks of weekday-to-date pairs in the user's timezone", async () => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date("2026-09-22T02:37:00Z")); // 10:37 PM Monday in New York
+      try {
+        vi.mocked(loadUserTimezone).mockResolvedValueOnce("America/New_York");
+        const prompt = await systemPromptFor([]);
+        expect(prompt).toContain("Monday, September 21, 2026");
+        expect(prompt).toContain("Friday 2026-09-25");
+        expect(prompt).toContain("Wednesday 2026-09-23");
+        expect(prompt).toContain("Sunday 2026-10-04");
+        expect(prompt).not.toContain("2026-10-05");
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    // A live check saw a bare "Okay" fire get_personalization_suggestions (a paid call that also starts the
+    // client's review-aloud flow) -- withheld deterministically, since the prompt nudge alone wasn't reliable.
+    it.each([
+      ["Okay", false],
+      ["Yeah, okay", false],
+      ["Okay, what do my suggestions say?", true],
+      ["What's due tomorrow?", true],
+    ])("offers the suggestions tool for %j only when it isn't a bare acknowledgement (%s)", async (transcript, offered) => {
+      mocks.chatCompletionsCreate.mockReset();
+      mocks.chatCompletionsCreate.mockResolvedValueOnce(
+        toolCallResponse([{ id: "call_1", name: "respond_to_user", arguments: { message: "ok", needs_follow_up: false } }]),
+      );
+      await runConversationTurn(fakeSupabase, "user-1", transcript, "conv-1");
+      const tools = mocks.chatCompletionsCreate.mock.calls[0][0].tools as Array<{ function: { name: string } }>;
+      const names = tools.map((tool) => tool.function.name);
+      expect(names.includes("get_personalization_suggestions")).toBe(offered);
+      expect(names).toContain("respond_to_user");
+      expect(names).toContain("propose_mutation");
+    });
+
+    it("gives the model each course's code, so a spoken 'P H Y S six five four zero' can be matched to a real course id", async () => {
+      const prompt = await systemPromptFor([{ id: VALID_TARGET_ID, code: "PHYS 6540", name: "Structure, Defects and Diffusion" }]);
+      expect(prompt).toContain('"code":"PHYS 6540"');
+    });
+
+    it("tells the model how to treat hesitations, pauses, self-corrections, and spelled-out codes in speech", async () => {
+      const prompt = await systemPromptFor([]);
+      expect(prompt).toMatch(/Spoken input/i);
+      expect(prompt).toMatch(/um|uh|hmm/i);
+      expect(prompt).toMatch(/self-correct|changes? (?:their|his|her) mind|corrects? themselves/i);
+      expect(prompt).toMatch(/spelled|letter by letter/i);
+      // Noise or a bare acknowledgement must never fire a data tool (a live check saw "Okay" trigger
+      // get_personalization_suggestions, which also kicks off the client's review-aloud flow).
+      expect(prompt).toMatch(/never a reason to call any (?:data )?tool/i);
+      // A Deadline create's required fields route through a draft, never a silent failure.
+      expect(prompt).toMatch(/Deadline create[^.]*course[^.]*title[^.]*save_mutation_draft/i);
+    });
   });
 
   describe("get_person_schedule", () => {
@@ -339,7 +485,7 @@ describe("runConversationTurn", () => {
     it("resolves a deadline_id present in the entity context and relays the lookup's message", async () => {
       vi.mocked(loadEntityContext).mockResolvedValueOnce({
         courses: [],
-        deadlines: [{ id: DEADLINE_ID, title: "Homework 1", course_id: "course-1" }],
+        deadlines: [{ id: DEADLINE_ID, title: "Homework 1", course_id: "course-1", due_at: "2026-09-25T22:00:00.000Z", status: "Not Started" as const, recurring: false }],
         tasks: [],
         todoLists: [],
         sessions: [],
@@ -372,7 +518,7 @@ describe("runConversationTurn", () => {
     it("feeds a malformed (non-UUID) deadline_id back to the model as a tool error instead of crashing the turn", async () => {
       vi.mocked(loadEntityContext).mockResolvedValueOnce({
         courses: [],
-        deadlines: [{ id: DEADLINE_ID, title: "Homework 1", course_id: "course-1" }],
+        deadlines: [{ id: DEADLINE_ID, title: "Homework 1", course_id: "course-1", due_at: "2026-09-25T22:00:00.000Z", status: "Not Started" as const, recurring: false }],
         tasks: [],
         todoLists: [],
         sessions: [],
@@ -397,7 +543,7 @@ describe("runConversationTurn", () => {
     it("rejects a deadline_id that is not in the entity context, without calling the lookup for it", async () => {
       vi.mocked(loadEntityContext).mockResolvedValueOnce({
         courses: [],
-        deadlines: [{ id: DEADLINE_ID, title: "Homework 1", course_id: "course-1" }],
+        deadlines: [{ id: DEADLINE_ID, title: "Homework 1", course_id: "course-1", due_at: "2026-09-25T22:00:00.000Z", status: "Not Started" as const, recurring: false }],
         tasks: [],
         todoLists: [],
         sessions: [],
@@ -419,6 +565,161 @@ describe("runConversationTurn", () => {
       expect(result).toEqual({ kind: "answer", message: "I don't have a matching deadline.", needsFollowUp: false, conversationId: "conv-1" });
       expect(runDeadlineProgressLookup).not.toHaveBeenCalled();
       expect(mocks.chatCompletionsCreate.mock.calls[1][0].messages.at(-2).content).toContain("Unknown deadline_id");
+    });
+  });
+
+  describe("recurring deadlines (voice)", () => {
+    const COURSE_ID = "55555555-5555-4555-8555-555555555555";
+    const deadlineCreateArgs = {
+      confidence: 0.97,
+      summary: "Create a deadline 'Weekly quiz'",
+      target_type: "deadline",
+      operation: "create",
+      target_id: null,
+      course_id: COURSE_ID,
+      title: "Weekly quiz",
+      due_at: "2026-09-25T22:00:00.000Z",
+      priority: null,
+      reminder_lead_minutes: null,
+      event: null,
+      snooze_until: null,
+    };
+
+    beforeEach(() => {
+      mocks.chatCompletionsCreate.mockReset();
+      vi.mocked(loadDraftMutation).mockReset();
+      vi.mocked(loadDraftMutation).mockResolvedValue(null);
+    });
+
+    it("asks whether a new deadline should repeat instead of proposing it when the user said nothing about it", async () => {
+      mocks.chatCompletionsCreate.mockResolvedValueOnce(toolCallResponse([{ id: "c1", name: "propose_mutation", arguments: deadlineCreateArgs }]));
+
+      const result = await runConversationTurn(fakeSupabase, "user-1", "add a weekly quiz for CS 101 friday at 5", "conv-1");
+
+      expect(result).toMatchObject({
+        kind: "answer",
+        message: RECURRENCE_QUESTION,
+        needsFollowUp: true,
+        draftMutation: { question: RECURRENCE_QUESTION, mutation: { target_type: "deadline", title: "Weekly quiz", recurring: null } },
+      });
+    });
+
+    it("proposes a one-off deadline once the repeat question has been asked and the answer was no", async () => {
+      vi.mocked(loadDraftMutation).mockResolvedValue({ question: RECURRENCE_QUESTION, mutation: mutationDraftSchema.parse(deadlineCreateArgs) });
+      mocks.chatCompletionsCreate.mockResolvedValueOnce(
+        toolCallResponse([{ id: "c1", name: "propose_mutation", arguments: { ...deadlineCreateArgs, recurring: false } }]),
+      );
+
+      const result = await runConversationTurn(fakeSupabase, "user-1", "no", "conv-1");
+
+      expect(result).toMatchObject({ kind: "mutation_proposal", mutation: { targetType: "deadline", operation: "create" } });
+      expect((result as { mutation: { payload: object } }).mutation.payload).not.toHaveProperty("recurrence_days");
+    });
+
+    it("defaults to one-off when the answer to the repeat question still doesn't say (no by default)", async () => {
+      vi.mocked(loadDraftMutation).mockResolvedValue({ question: RECURRENCE_QUESTION, mutation: mutationDraftSchema.parse(deadlineCreateArgs) });
+      mocks.chatCompletionsCreate.mockResolvedValueOnce(toolCallResponse([{ id: "c1", name: "propose_mutation", arguments: deadlineCreateArgs }]));
+
+      const result = await runConversationTurn(fakeSupabase, "user-1", "hmm", "conv-1");
+
+      expect(result.kind).toBe("mutation_proposal");
+    });
+
+    it("proposes straight away, with the resolved schedule, when the user already said it repeats", async () => {
+      mocks.chatCompletionsCreate.mockResolvedValueOnce(
+        toolCallResponse([
+          {
+            id: "c1",
+            name: "propose_mutation",
+            arguments: { ...deadlineCreateArgs, recurring: true, recurrence_days: [3, 1], recurrence_end_date: "2026-12-11" },
+          },
+        ]),
+      );
+
+      const result = await runConversationTurn(fakeSupabase, "user-1", "add a quiz every monday and wednesday until dec 11", "conv-1");
+
+      expect(result).toMatchObject({
+        kind: "mutation_proposal",
+        mutation: {
+          targetType: "deadline",
+          operation: "create",
+          payload: { recurrence_days: [1, 3], recurrence_end_date: "2026-12-11" },
+        },
+      });
+    });
+
+    it("asks which days when the user says it repeats but names none", async () => {
+      mocks.chatCompletionsCreate.mockResolvedValueOnce(
+        toolCallResponse([{ id: "c1", name: "propose_mutation", arguments: { ...deadlineCreateArgs, recurring: true, recurrence_days: [] } }]),
+      );
+
+      const result = await runConversationTurn(fakeSupabase, "user-1", "yes", "conv-1");
+
+      expect(result).toMatchObject({ kind: "answer", message: RECURRENCE_DAYS_QUESTION, needsFollowUp: true });
+    });
+  });
+
+  describe("cancelling a repeating deadline (voice)", () => {
+    const REPEATING_ID = "66666666-6666-4666-8666-666666666666";
+    const cancelArgs = {
+      confidence: 0.97,
+      summary: "Cancel the weekly quiz",
+      target_type: "deadline",
+      operation: "transition",
+      target_id: REPEATING_ID,
+      course_id: null,
+      title: null,
+      due_at: null,
+      priority: null,
+      reminder_lead_minutes: null,
+      event: "user_cancels",
+      snooze_until: null,
+    };
+
+    beforeEach(() => {
+      mocks.chatCompletionsCreate.mockReset();
+      vi.mocked(loadDraftMutation).mockReset();
+      vi.mocked(loadDraftMutation).mockResolvedValue(null);
+      vi.mocked(loadEntityContext).mockResolvedValue({
+        courses: [],
+        deadlines: [{ id: REPEATING_ID, title: "Weekly quiz", course_id: "course-1", due_at: "2026-09-21T22:00:00.000Z", status: "Not Started", recurring: true }],
+        tasks: [],
+        todoLists: [],
+        sessions: [],
+        appointments: [],
+        knowledgeSources: [],
+        people: [],
+      });
+    });
+
+    it("asks whether to cancel this occurrence or the whole series instead of proposing", async () => {
+      mocks.chatCompletionsCreate.mockResolvedValueOnce(toolCallResponse([{ id: "c1", name: "propose_mutation", arguments: cancelArgs }]));
+
+      const result = await runConversationTurn(fakeSupabase, "user-1", "cancel my weekly quiz", "conv-1");
+
+      expect(result).toMatchObject({ kind: "answer", message: CANCEL_SCOPE_QUESTION, needsFollowUp: true, draftMutation: { question: CANCEL_SCOPE_QUESTION } });
+    });
+
+    it("proposes a whole-series cancel once the user chose it", async () => {
+      mocks.chatCompletionsCreate.mockResolvedValueOnce(
+        toolCallResponse([{ id: "c1", name: "propose_mutation", arguments: { ...cancelArgs, cancel_scope: "series" } }]),
+      );
+
+      const result = await runConversationTurn(fakeSupabase, "user-1", "the whole series", "conv-1");
+
+      expect(result).toMatchObject({
+        kind: "mutation_proposal",
+        mutation: { targetType: "deadline", operation: "transition", targetId: REPEATING_ID, event: "user_cancels", cancelScope: "series" },
+      });
+    });
+
+    it("falls back to just this occurrence when the question was asked and the answer stays unclear", async () => {
+      vi.mocked(loadDraftMutation).mockResolvedValue({ question: CANCEL_SCOPE_QUESTION, mutation: mutationDraftSchema.parse(cancelArgs) });
+      mocks.chatCompletionsCreate.mockResolvedValueOnce(toolCallResponse([{ id: "c1", name: "propose_mutation", arguments: cancelArgs }]));
+
+      const result = await runConversationTurn(fakeSupabase, "user-1", "uh", "conv-1");
+
+      expect(result).toMatchObject({ kind: "mutation_proposal", mutation: { cancelScope: "occurrence" } });
     });
   });
 });

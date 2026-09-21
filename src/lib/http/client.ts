@@ -2,11 +2,14 @@ import type { ApiResponseBody, ApiResponseMeta } from "@/lib/api/response";
 
 export class ApiError extends Error {
   status: number;
+  /** The envelope's `data` on a failed response — e.g. Library's 409 carries `{ existing_id }`. */
+  data: unknown;
 
-  constructor(message: string, status: number) {
+  constructor(message: string, status: number, data: unknown = null) {
     super(message);
     this.name = "ApiError";
     this.status = status;
+    this.data = data;
   }
 }
 
@@ -49,7 +52,7 @@ export async function apiFetch<T>(path: string, init: ApiFetchInit = {}): Promis
     throw new ApiError("Unexpected response from server", response.status);
   }
 
-  if (!payload.success) throw new ApiError(payload.error ?? "Request failed", response.status);
+  if (!payload.success) throw new ApiError(payload.error ?? "Request failed", response.status, payload.data);
   return { data: payload.data as T, meta: payload.meta };
 }
 

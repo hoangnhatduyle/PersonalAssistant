@@ -330,3 +330,47 @@ export async function walkTransitions(
     }
   }
 }
+
+export async function createLibraryPost(
+  admin: SupabaseClient,
+  userId: string,
+  overrides: Record<string, unknown> = {},
+): Promise<string> {
+  const { data, error } = await admin
+    .from("library_posts")
+    .insert({ user_id: userId, title: "Test Library Post", ...overrides })
+    .select("id")
+    .single();
+  if (error) throw new Error(`failed to create library_post: ${error.message}`, { cause: error });
+  return data.id as string;
+}
+
+export async function createLibraryEmployer(
+  admin: SupabaseClient,
+  userId: string,
+  overrides: Record<string, unknown> = {},
+): Promise<string> {
+  const { data, error } = await admin
+    .from("library_employers")
+    // Unique by default: (user_id, lower(name)) is a live-row unique index.
+    .insert({ user_id: userId, name: `Test Employer ${randomUUID()}`, ...overrides })
+    .select("id")
+    .single();
+  if (error) throw new Error(`failed to create library_employer: ${error.message}`, { cause: error });
+  return data.id as string;
+}
+
+export async function createLibraryApplication(
+  admin: SupabaseClient,
+  userId: string,
+  employerId: string,
+  overrides: Record<string, unknown> = {},
+): Promise<string> {
+  const { data, error } = await admin
+    .from("library_applications")
+    .insert({ user_id: userId, employer_id: employerId, title: "Test Role", ...overrides })
+    .select("id")
+    .single();
+  if (error) throw new Error(`failed to create library_application: ${error.message}`, { cause: error });
+  return data.id as string;
+}

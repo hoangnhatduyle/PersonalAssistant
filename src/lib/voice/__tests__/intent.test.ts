@@ -454,6 +454,115 @@ describe("toPendingMutation", () => {
     });
   });
 
+  it("maps a recurring deadline create, sorting/deduping days and carrying the end date", () => {
+    const raw = mutationSchema.parse({
+      target_type: "deadline",
+      operation: "create",
+      target_id: null,
+      course_id: VALID_COURSE_ID,
+      title: "Weekly quiz",
+      due_at: "2026-09-02T22:00:00.000Z",
+      priority: null,
+      recurring: true,
+      recurrence_days: [3, 1, 3],
+      recurrence_end_date: "2026-12-11",
+    });
+    expect(toPendingMutation(raw, NOW, TIMEZONE)).toEqual({
+      targetType: "deadline",
+      operation: "create",
+      payload: {
+        course_id: VALID_COURSE_ID,
+        title: "Weekly quiz",
+        due_at: "2026-09-02T22:00:00.000Z",
+        priority: "Medium",
+        recurrence_days: [1, 3],
+        recurrence_end_date: "2026-12-11",
+      },
+    });
+  });
+
+  it("a recurring deadline create with no due_at defaults to the end of its first selected day", () => {
+    const raw = mutationSchema.parse({
+      target_type: "deadline",
+      operation: "create",
+      target_id: null,
+      course_id: VALID_COURSE_ID,
+      title: "Weekly quiz",
+      due_at: null,
+      priority: null,
+      recurring: true,
+      recurrence_days: [5],
+    });
+    const mapped = toPendingMutation(raw, NOW, TIMEZONE);
+    if (mapped.targetType !== "deadline" || mapped.operation !== "create") throw new Error("unexpected mapping");
+    // Whatever day that resolves to, it must be a Friday in the user's timezone, not today's end-of-day.
+    const dueParts = new Intl.DateTimeFormat("en-US", { timeZone: TIMEZONE, weekday: "short" }).format(new Date(mapped.payload.due_at));
+    expect(dueParts).toBe("Fri");
+    expect(mapped.payload.recurrence_days).toEqual([5]);
+  });
+
+  it("treats recurring null/false as one-off on create (no recurrence fields in the payload)", () => {
+    for (const recurring of [null, false]) {
+      const raw = mutationSchema.parse({
+        target_type: "deadline",
+        operation: "create",
+        target_id: null,
+        course_id: VALID_COURSE_ID,
+        title: "Essay",
+        due_at: "2026-09-01T00:00:00.000Z",
+        priority: null,
+        recurring,
+        recurrence_days: [1],
+      });
+      const mapped = toPendingMutation(raw, NOW, TIMEZONE);
+      expect(mapped).toMatchObject({ targetType: "deadline", operation: "create" });
+      expect((mapped as { payload: object }).payload).not.toHaveProperty("recurrence_days");
+    }
+  });
+
+  it("clears the repeat rule on a deadline update with recurring false, sets it with true, leaves it alone with null", () => {
+    const base = { target_type: "deadline", operation: "update", target_id: VALID_TARGET_ID, course_id: null, title: null, due_at: null, priority: null };
+    expect(toPendingMutation(mutationSchema.parse({ ...base, recurring: false }), NOW, TIMEZONE)).toEqual({
+      targetType: "deadline",
+      operation: "update",
+      targetId: VALID_TARGET_ID,
+      payload: { recurrence_days: [], recurrence_end_date: null },
+    });
+    expect(toPendingMutation(mutationSchema.parse({ ...base, recurring: true, recurrence_days: [2] }), NOW, TIMEZONE)).toMatchObject({
+      payload: { recurrence_days: [2], recurrence_end_date: null },
+    });
+    expect(toPendingMutation(mutationSchema.parse({ ...base }), NOW, TIMEZONE)).toMatchObject({ payload: {} });
+  });
+
+  it("rejects recurring true with no days", () => {
+    const result = mutationSchema.safeParse({
+      target_type: "deadline",
+      operation: "create",
+      target_id: null,
+      course_id: VALID_COURSE_ID,
+      title: "Essay",
+      due_at: null,
+      priority: null,
+      recurring: true,
+      recurrence_days: [],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("carries a cancel scope on a deadline cancel, and omits it otherwise", () => {
+    const base = { target_type: "deadline", operation: "transition", target_id: VALID_TARGET_ID, course_id: null, title: null, due_at: null, priority: null };
+    expect(toPendingMutation(mutationSchema.parse({ ...base, event: "user_cancels", cancel_scope: "series" }), NOW, TIMEZONE)).toEqual({
+      targetType: "deadline",
+      operation: "transition",
+      targetId: VALID_TARGET_ID,
+      event: "user_cancels",
+      cancelScope: "series",
+    });
+    expect(toPendingMutation(mutationSchema.parse({ ...base, event: "user_cancels" }), NOW, TIMEZONE)).not.toHaveProperty("cancelScope");
+    // A scope on any other event is ignored.
+    expect(toPendingMutation(mutationSchema.parse({ ...base, event: "user_marks_in_progress", cancel_scope: "series" }), NOW, TIMEZONE)).not.toHaveProperty("cancelScope");
+  });
+
   it("maps a task update, including only the fields actually provided", () => {
     const raw = mutationSchema.parse({
       target_type: "task",
@@ -861,6 +970,40 @@ describe("loadEntityContext", () => {
     expect(context.courses.map((c) => c.name)).toEqual(["My own course"]);
     expect(context.deadlines.map((d) => d.title)).toEqual(["My own deadline"]);
     expect(context.tasks.map((t) => t.title)).toEqual(["My own task"]);
+  });
+
+  // Production incident (2026-09-21): a spoken "PHYS 6540" could never match the model-facing course
+  // list, which carried only id + name ("Structure, Defects and Diffusion"), so a deadline create had
+  // no course_id to fill in and the whole turn failed.
+  it("includes each course's code, so a spoken course code can be matched to its id", async () => {
+    const { userId, client } = await createAuthenticatedUser();
+    const withCode = await createCourse(admin, userId, { name: "Structure, Defects and Diffusion", code: "PHYS 6540" });
+    const withoutCode = await createCourse(admin, userId, { name: "TA Duty - Meeting", code: null });
+
+    const context = await loadEntityContext(client, userId);
+
+    expect(context.courses).toContainEqual({ id: withCode, code: "PHYS 6540", name: "Structure, Defects and Diffusion" });
+    expect(context.courses).toContainEqual({ id: withoutCode, code: null, name: "TA Duty - Meeting" });
+  });
+
+  it("lists each open occurrence of a repeating deadline with its due date and status, but drops finished ones (one-offs keep every status)", async () => {
+    const { userId, client } = await createAuthenticatedUser();
+    const courseId = await createCourse(admin, userId, { name: "CS 101" });
+    const due = (days: number) => new Date(Date.now() + days * 86_400_000).toISOString();
+
+    const finishedId = await createDeadline(admin, userId, courseId, { title: "Weekly quiz", due_at: due(-14), recurrence_days: [1] });
+    await admin.from("deadlines").update({ status: "Cancelled" }).eq("id", finishedId);
+    const openId = await createDeadline(admin, userId, courseId, { title: "Weekly quiz", due_at: due(2), recurrence_days: [1] });
+    const oneOffId = await createDeadline(admin, userId, courseId, { title: "Essay", due_at: due(5) });
+    await admin.from("deadlines").update({ status: "Cancelled" }).eq("id", oneOffId);
+
+    const context = await loadEntityContext(client, userId);
+
+    const byId = new Map(context.deadlines.map((d) => [d.id, d]));
+    expect(byId.has(finishedId)).toBe(false);
+    expect(byId.get(openId)).toMatchObject({ title: "Weekly quiz", status: "Not Started", recurring: true });
+    expect(new Date(byId.get(openId)!.due_at).getTime()).toBeGreaterThan(Date.now());
+    expect(byId.get(oneOffId)).toMatchObject({ status: "Cancelled", recurring: false });
   });
 
   // Regression for the relationship-aware get_person_schedule feature: the

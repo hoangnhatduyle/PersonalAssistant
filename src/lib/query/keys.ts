@@ -83,3 +83,17 @@ export const personalizationSuggestionKeys = {
   all: ["personalization-suggestions"] as const,
   list: (filters?: object) => [...personalizationSuggestionKeys.all, "list", filters ?? {}] as const,
 };
+
+export const libraryKeys = {
+  all: ["library"] as const,
+  posts: (filters?: object) => [...libraryKeys.all, "posts", filters ?? {}] as const,
+  post: (id: string) => [...libraryKeys.all, "post", id] as const,
+  tags: () => [...libraryKeys.all, "tags"] as const,
+  employers: (filters?: object) => [...libraryKeys.all, "employers", filters ?? {}] as const,
+  employer: (id: string) => [...libraryKeys.all, "employer", id] as const,
+  applications: (filters?: object) => [...libraryKeys.all, "applications", filters ?? {}] as const,
+  /** Prefix matching every applications list (the pipeline board's optimistic update patches all of them). */
+  applicationsAll: () => [...libraryKeys.all, "applications"] as const,
+  interviews: (applicationId: string) => [...libraryKeys.all, "interviews", applicationId] as const,
+  timeline: (applicationId: string) => [...libraryKeys.all, "timeline", applicationId] as const,
+};

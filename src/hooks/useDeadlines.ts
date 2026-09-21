@@ -3,7 +3,7 @@ import { apiFetch, toQueryString } from "@/lib/http/client";
 import { appointmentKeys, deadlineKeys, reminderKeys } from "@/lib/query/keys";
 import type { DeadlinePatch, DeadlinePayload } from "@/lib/api/schemas";
 import type { DeadlineRow } from "@/lib/api/entity-types";
-import type { DeadlineTransitionEvent } from "@/lib/api/transitions";
+import type { DeadlineCancelScope, DeadlineTransitionEvent } from "@/lib/api/transitions";
 
 export interface DeadlineDeleteResult {
   id: string;
@@ -61,11 +61,17 @@ export function useUpdateDeadline(id: string) {
   });
 }
 
+export interface DeadlineTransitionInput {
+  event: DeadlineTransitionEvent;
+  /** Only for user_cancels on a recurring deadline: this occurrence (default) or the whole series. */
+  scope?: DeadlineCancelScope;
+}
+
 export function useTransitionDeadline(id: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (event: DeadlineTransitionEvent) =>
-      (await apiFetch<DeadlineRow>(`/api/deadlines/${id}/transition`, { method: "POST", body: { event } })).data,
+    mutationFn: async ({ event, scope }: DeadlineTransitionInput) =>
+      (await apiFetch<DeadlineRow>(`/api/deadlines/${id}/transition`, { method: "POST", body: { event, scope } })).data,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: deadlineKeys.all });
       queryClient.invalidateQueries({ queryKey: reminderKeys.all });

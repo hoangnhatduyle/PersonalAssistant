@@ -6,10 +6,12 @@ import {
   getValidSessionEvents,
   getValidTaskEvents,
   isDeadlineTransitionEvent,
+  isApplicationStatus,
   isEventTransitionEvent,
   isReminderTransitionEvent,
   isSessionTransitionEvent,
   isTaskTransitionEvent,
+  resolveApplicationTransition,
   resolveDeadlineTransition,
   resolveEventTransition,
   resolveReminderTransition,
@@ -196,5 +198,27 @@ describe("getValidReminderEvents", () => {
     for (const status of ["Scheduled", "Acknowledged", "Dismissed", "Snoozed", "Expired"] as const) {
       expect(getValidReminderEvents(status)).toEqual([]);
     }
+  });
+});
+
+// Library applications: permissive by design (a job hunt is not linear — an
+// offer can be withdrawn, a rejection can be reopened), but NC-API-002 still
+// holds: status only changes through the /transition route, never a PATCH.
+describe("resolveApplicationTransition", () => {
+  it("allows any status to any other status", () => {
+    expect(resolveApplicationTransition("applied", "interested")).toBe("applied");
+    expect(resolveApplicationTransition("interested", "rejected")).toBe("interested");
+    expect(resolveApplicationTransition("interviewing", "withdrawn")).toBe("interviewing");
+  });
+
+  it("returns null when the status would not change", () => {
+    expect(resolveApplicationTransition("offer", "offer")).toBeNull();
+  });
+});
+
+describe("isApplicationStatus (re-export)", () => {
+  it("narrows known statuses only", () => {
+    expect(isApplicationStatus("offer")).toBe(true);
+    expect(isApplicationStatus("hired")).toBe(false);
   });
 });

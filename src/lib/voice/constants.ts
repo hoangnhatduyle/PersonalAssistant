@@ -20,7 +20,11 @@ export const SPEAK_TIMEOUT_MS = 20_000;
 // profiles: a full command (longer grace, longer max) and a short yes/no
 // confirmation answer (shorter grace, shorter max) — first-guess defaults,
 // meant to be tuned against a real phone/microphone/car-Bluetooth setup.
-export const CAPTURE_SILENCE_MS = 1400;
+// A full command's grace must outlast a thinking pause: at 1400ms, a person
+// pausing mid-command ("add a deadline for... hmm, what's it called")
+// was cut off and submitted as a fragment, which then had to be pieced
+// together across several turns (production, 2026-09-21).
+export const CAPTURE_SILENCE_MS = 2500;
 export const CAPTURE_MAX_DURATION_MS = 30_000;
 export const CAPTURE_MIN_SPEECH_MS = 300;
 export const CONFIRM_SILENCE_MS = 900;

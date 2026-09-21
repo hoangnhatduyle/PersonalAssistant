@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/types";
 import {
   computeConfirmationExpiry,
+  computeConfirmationPreArmExpiry,
   isConfirmationExpired,
   meetsConfidenceBar,
   resolveVoiceTransition,
@@ -13,6 +14,7 @@ import { executePendingMutation, type MutationExecutionResult, type PendingMutat
 import type { KnowledgeCitation } from "@/lib/knowledge/retrieval";
 import { resolveActiveConversation, setDraftMutation } from "@/lib/voice/conversation-memory";
 import { runConversationTurn, type ConversationTurnOutcome, type RunConversationTurnFn } from "@/lib/voice/conversation-core";
+import { stripSpokenFillers } from "@/lib/voice/spoken-input";
 import { timed } from "@/lib/voice/_perf-temp";
 
 export class VoiceSessionNotFoundError extends Error {}
@@ -189,6 +191,7 @@ async function intakeVoiceTurnInner(
   // machine semantics; the real error is still logged server-side below
   // either way.)
   let transcript: string;
+  let spoken: string;
   let outcome: ConversationTurnOutcome;
   try {
     transcript =
@@ -204,8 +207,12 @@ async function intakeVoiceTurnInner(
     // judgment of an empty/blank string — that's what previously let a
     // silent capture get misclassified as a real query (e.g.
     // "upcoming_schedule") and read back a full answer instead of asking
-    // the user to repeat themselves.
-    if (transcript.trim().length === 0) {
+    // the user to repeat themselves. Hesitation sounds ("um... hmm") count
+    // as silence here too, and are stripped from a real command so the
+    // model only ever sees the words (the raw transcript above is what gets
+    // persisted, for diagnostics).
+    spoken = stripSpokenFillers(transcript);
+    if (spoken.length === 0) {
       return respondWithClarification(supabase, userId, sessionId, "I didn't catch that — could you try again?", {
         resolved_intent: null,
         confidence_score: null,
@@ -223,7 +230,7 @@ async function intakeVoiceTurnInner(
     // history lookup.
     const { conversationId } = await timed("resolveActiveConversation", () => resolveActiveConversation(supabase, userId));
     outcome = await timed("runConversationTurn (merged LLM call)", () =>
-      (deps.runConversationTurn ?? runConversationTurn)(supabase, userId, transcript, conversationId),
+      (deps.runConversationTurn ?? runConversationTurn)(supabase, userId, spoken, conversationId),
     );
   } catch (error) {
     // Previously discarded entirely -- a failed turn left resolved_intent/
@@ -306,7 +313,7 @@ async function intakeVoiceTurnInner(
   // merge). outcome.confidence is still persisted to confidence_score
   // below either way, for diagnostics.
   if (!meetsConfidenceBar(outcome.confidence)) {
-    return respondWithClarification(supabase, userId, sessionId, `I'm not sure I understood — could you rephrase that? (heard: "${transcript}")`, {
+    return respondWithClarification(supabase, userId, sessionId, `I'm not sure I understood — could you rephrase that? (heard: "${spoken}")`, {
       resolved_intent: outcome.summary,
       confidence_score: outcome.confidence,
       query_kind: null,
@@ -332,7 +339,7 @@ async function intakeVoiceTurnInner(
 
   await transition(supabase, userId, sessionId, "IntentResolved", "mutating_action_resolved", {
     pending_mutation: mutation,
-    expires_at: computeConfirmationExpiry(),
+    expires_at: computeConfirmationPreArmExpiry(),
   });
   return { sessionId, state: "AwaitingConfirmation", message };
 }
@@ -427,6 +434,59 @@ export async function declineVoiceSession(
     ended_at: new Date().toISOString(),
   });
   return { message: "Okay, I won't do that." };
+}
+
+/**
+ * Starts the real confirmation window: called by ConfirmationBar once the
+ * prompt has finished being spoken (or immediately for a text-mode turn),
+ * so the user's confirmation window isn't spent while the assistant is still
+ * talking. Takes a service-role client because
+ * guard_voice_session_state (0005) rejects an end-user write to expires_at
+ * that doesn't come with a state change; ownership is instead enforced by
+ * the user_id predicate on every read and write here, with `userId` from
+ * the authenticated route context.
+ *
+ * Only ever shortens expires_at (pre-arm expiry -> now + CONFIRMATION_WINDOW_SECONDS), so
+ * calling it repeatedly can't stretch a confirmation past its first armed
+ * deadline, and it never revives a window that already lapsed. Resolves
+ * { armed: false } for a session that already moved on or lapsed -- an
+ * expected race, same as expireVoiceSession -- and { armed: true } when
+ * the session is awaiting an answer inside a live window.
+ */
+export async function armVoiceConfirmation(
+  serviceSupabase: SupabaseClient<Database>,
+  userId: string,
+  sessionId: string,
+): Promise<{ armed: boolean }> {
+  const { data: session, error } = await serviceSupabase
+    .from("voice_sessions")
+    .select("id, state, expires_at")
+    .eq("id", sessionId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!session) throw new VoiceSessionNotFoundError();
+  if (session.state !== "AwaitingConfirmation" || !session.expires_at || isConfirmationExpired(session.expires_at)) {
+    return { armed: false };
+  }
+
+  const armedExpiry = computeConfirmationExpiry();
+  if (new Date(armedExpiry).getTime() >= new Date(session.expires_at).getTime()) return { armed: true };
+
+  // CAS on the exact expires_at just read: a concurrent arm/confirm/expire
+  // that moved the session on makes this match 0 rows rather than
+  // overwriting it.
+  const { data: updated, error: updateError } = await serviceSupabase
+    .from("voice_sessions")
+    .update({ expires_at: armedExpiry })
+    .eq("id", sessionId)
+    .eq("user_id", userId)
+    .eq("state", "AwaitingConfirmation")
+    .eq("expires_at", session.expires_at)
+    .select("id")
+    .maybeSingle();
+  if (updateError) throw updateError;
+  return { armed: updated !== null };
 }
 
 /**

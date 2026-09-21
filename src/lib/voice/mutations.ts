@@ -15,6 +15,7 @@ import type {
   TodoListPayload,
 } from "@/lib/api/schemas";
 import { syncReminderForTarget } from "@/lib/api/reminders";
+import { cancelDeadlineSeries } from "@/lib/api/deadline-recurrence";
 import { cascadeDeleteCourse, cascadeDeleteTask, cascadeDeleteTodoList } from "@/lib/api/cascade";
 import {
   resolveDeadlineTransition,
@@ -27,6 +28,7 @@ import {
   type ReminderTransitionEvent,
   type SessionTransitionEvent,
   type TaskTransitionEvent,
+  type DeadlineCancelScope,
 } from "@/lib/api/transitions";
 
 /** A Deadline Session create's fields — deadline_id is always required and non-null here, unlike AppointmentPayload's own optional/nullable field (a session always links to the deadline it was created for). */
@@ -52,7 +54,8 @@ export type PendingMutation =
   | { targetType: "deadline"; operation: "create"; payload: DeadlinePayload }
   | { targetType: "deadline"; operation: "update"; targetId: string; payload: DeadlinePatch }
   | { targetType: "deadline"; operation: "delete"; targetId: string }
-  | { targetType: "deadline"; operation: "transition"; targetId: string; event: DeadlineTransitionEvent }
+  // cancelScope only matters for user_cancels on a recurring deadline (default: just this occurrence) -- see cancel_deadline_series, 0042_deadline_series.sql.
+  | { targetType: "deadline"; operation: "transition"; targetId: string; event: DeadlineTransitionEvent; cancelScope?: DeadlineCancelScope }
   | { targetType: "task"; operation: "create"; payload: TaskPayload }
   | { targetType: "task"; operation: "update"; targetId: string; payload: TaskPatch }
   | { targetType: "task"; operation: "delete"; targetId: string }
@@ -214,7 +217,7 @@ async function executeDeadlineMutation(
     // NC-API-002: mirrors POST /api/deadlines/[id]/transition exactly.
     const { data: existing, error: fetchError } = await supabase
       .from("deadlines")
-      .select("id, status")
+      .select("id, status, recurrence_series_id")
       .eq("id", mutation.targetId)
       .eq("user_id", userId)
       .is("deleted_at", null)
@@ -224,6 +227,11 @@ async function executeDeadlineMutation(
 
     const nextStatus = resolveDeadlineTransition(mutation.event, existing.status);
     if (!nextStatus) throw new Error(`Cannot apply "${mutation.event}" from status "${existing.status}"`);
+
+    if (mutation.event === "user_cancels" && mutation.cancelScope === "series" && existing.recurrence_series_id) {
+      const cancelled = await cancelDeadlineSeries(supabase, mutation.targetId);
+      return { summary: "Cancelled the whole series.", data: cancelled };
+    }
 
     const { data: updated, error } = await supabase
       .from("deadlines")

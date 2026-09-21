@@ -278,6 +278,10 @@ export type Database = {
           id: string
           person_id: string | null
           priority: Database["public"]["Enums"]["item_priority"] | null
+          recurrence_days: number[]
+          recurrence_end_date: string | null
+          recurrence_series_id: string | null
+          recurrence_spawned_at: string | null
           status: Database["public"]["Enums"]["deadline_status"]
           title: string
           updated_at: string
@@ -293,6 +297,10 @@ export type Database = {
           id?: string
           person_id?: string | null
           priority?: Database["public"]["Enums"]["item_priority"] | null
+          recurrence_days?: number[]
+          recurrence_end_date?: string | null
+          recurrence_series_id?: string | null
+          recurrence_spawned_at?: string | null
           status?: Database["public"]["Enums"]["deadline_status"]
           title: string
           updated_at?: string
@@ -308,6 +316,10 @@ export type Database = {
           id?: string
           person_id?: string | null
           priority?: Database["public"]["Enums"]["item_priority"] | null
+          recurrence_days?: number[]
+          recurrence_end_date?: string | null
+          recurrence_series_id?: string | null
+          recurrence_spawned_at?: string | null
           status?: Database["public"]["Enums"]["deadline_status"]
           title?: string
           updated_at?: string
@@ -552,6 +564,640 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "labels_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      library_application_events: {
+        Row: {
+          application_id: string
+          created_at: string
+          from_status: string | null
+          id: string
+          to_status: string
+          user_id: string
+        }
+        Insert: {
+          application_id: string
+          created_at?: string
+          from_status?: string | null
+          id?: string
+          to_status: string
+          user_id: string
+        }
+        Update: {
+          application_id?: string
+          created_at?: string
+          from_status?: string | null
+          id?: string
+          to_status?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "library_application_events_application_id_fkey"
+            columns: ["application_id"]
+            isOneToOne: false
+            referencedRelation: "active_library_applications"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "library_application_events_application_id_fkey"
+            columns: ["application_id"]
+            isOneToOne: false
+            referencedRelation: "library_applications"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "library_application_events_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      library_applications: {
+        Row: {
+          created_at: string
+          date_found: string
+          deleted_at: string | null
+          employer_id: string
+          id: string
+          job_url: string | null
+          location: string | null
+          normalized_job_url: string | null
+          notes: string
+          salary_currency: string | null
+          salary_max: number | null
+          salary_min: number | null
+          salary_period: string | null
+          status: string
+          status_changed_at: string
+          tech_stack: string[]
+          title: string
+          updated_at: string
+          user_id: string
+          work_mode: string | null
+        }
+        Insert: {
+          created_at?: string
+          date_found?: string
+          deleted_at?: string | null
+          employer_id: string
+          id?: string
+          job_url?: string | null
+          location?: string | null
+          normalized_job_url?: string | null
+          notes?: string
+          salary_currency?: string | null
+          salary_max?: number | null
+          salary_min?: number | null
+          salary_period?: string | null
+          status?: string
+          status_changed_at?: string
+          tech_stack?: string[]
+          title: string
+          updated_at?: string
+          user_id: string
+          work_mode?: string | null
+        }
+        Update: {
+          created_at?: string
+          date_found?: string
+          deleted_at?: string | null
+          employer_id?: string
+          id?: string
+          job_url?: string | null
+          location?: string | null
+          normalized_job_url?: string | null
+          notes?: string
+          salary_currency?: string | null
+          salary_max?: number | null
+          salary_min?: number | null
+          salary_period?: string | null
+          status?: string
+          status_changed_at?: string
+          tech_stack?: string[]
+          title?: string
+          updated_at?: string
+          user_id?: string
+          work_mode?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "library_applications_employer_id_fkey"
+            columns: ["employer_id"]
+            isOneToOne: false
+            referencedRelation: "active_library_employers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "library_applications_employer_id_fkey"
+            columns: ["employer_id"]
+            isOneToOne: false
+            referencedRelation: "library_employers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "library_applications_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      library_employer_contacts: {
+        Row: {
+          created_at: string
+          employer_id: string
+          kind: string
+          note: string
+          person_id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          employer_id: string
+          kind?: string
+          note?: string
+          person_id: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          employer_id?: string
+          kind?: string
+          note?: string
+          person_id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "library_employer_contacts_employer_id_fkey"
+            columns: ["employer_id"]
+            isOneToOne: false
+            referencedRelation: "active_library_employers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "library_employer_contacts_employer_id_fkey"
+            columns: ["employer_id"]
+            isOneToOne: false
+            referencedRelation: "library_employers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "library_employer_contacts_person_id_fkey"
+            columns: ["person_id"]
+            isOneToOne: false
+            referencedRelation: "active_people"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "library_employer_contacts_person_id_fkey"
+            columns: ["person_id"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "library_employer_contacts_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      library_employers: {
+        Row: {
+          archived_at: string | null
+          careers_url: string | null
+          created_at: string
+          deleted_at: string | null
+          id: string
+          name: string
+          notes: string
+          updated_at: string
+          user_id: string
+          website: string | null
+        }
+        Insert: {
+          archived_at?: string | null
+          careers_url?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          name: string
+          notes?: string
+          updated_at?: string
+          user_id: string
+          website?: string | null
+        }
+        Update: {
+          archived_at?: string | null
+          careers_url?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          name?: string
+          notes?: string
+          updated_at?: string
+          user_id?: string
+          website?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "library_employers_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      library_interviews: {
+        Row: {
+          application_id: string
+          created_at: string
+          deleted_at: string | null
+          id: string
+          interviewer_person_id: string | null
+          kind: string
+          notes: string
+          outcome: string
+          round_label: string
+          scheduled_at: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          application_id: string
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          interviewer_person_id?: string | null
+          kind?: string
+          notes?: string
+          outcome?: string
+          round_label: string
+          scheduled_at?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          application_id?: string
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          interviewer_person_id?: string | null
+          kind?: string
+          notes?: string
+          outcome?: string
+          round_label?: string
+          scheduled_at?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "library_interviews_application_id_fkey"
+            columns: ["application_id"]
+            isOneToOne: false
+            referencedRelation: "active_library_applications"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "library_interviews_application_id_fkey"
+            columns: ["application_id"]
+            isOneToOne: false
+            referencedRelation: "library_applications"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "library_interviews_interviewer_person_id_fkey"
+            columns: ["interviewer_person_id"]
+            isOneToOne: false
+            referencedRelation: "active_people"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "library_interviews_interviewer_person_id_fkey"
+            columns: ["interviewer_person_id"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "library_interviews_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      library_post_courses: {
+        Row: {
+          course_id: string
+          created_at: string
+          post_id: string
+          user_id: string
+        }
+        Insert: {
+          course_id: string
+          created_at?: string
+          post_id: string
+          user_id: string
+        }
+        Update: {
+          course_id?: string
+          created_at?: string
+          post_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "library_post_courses_course_id_fkey"
+            columns: ["course_id"]
+            isOneToOne: false
+            referencedRelation: "active_courses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "library_post_courses_course_id_fkey"
+            columns: ["course_id"]
+            isOneToOne: false
+            referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "library_post_courses_post_id_fkey"
+            columns: ["post_id"]
+            isOneToOne: false
+            referencedRelation: "active_library_posts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "library_post_courses_post_id_fkey"
+            columns: ["post_id"]
+            isOneToOne: false
+            referencedRelation: "library_posts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "library_post_courses_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      library_post_employers: {
+        Row: {
+          created_at: string
+          employer_id: string
+          post_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          employer_id: string
+          post_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          employer_id?: string
+          post_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "library_post_employers_employer_id_fkey"
+            columns: ["employer_id"]
+            isOneToOne: false
+            referencedRelation: "active_library_employers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "library_post_employers_employer_id_fkey"
+            columns: ["employer_id"]
+            isOneToOne: false
+            referencedRelation: "library_employers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "library_post_employers_post_id_fkey"
+            columns: ["post_id"]
+            isOneToOne: false
+            referencedRelation: "active_library_posts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "library_post_employers_post_id_fkey"
+            columns: ["post_id"]
+            isOneToOne: false
+            referencedRelation: "library_posts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "library_post_employers_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      library_post_images: {
+        Row: {
+          created_at: string
+          deleted_at: string | null
+          height: number
+          id: string
+          mime_type: string
+          position: number
+          post_id: string
+          size_bytes: number
+          storage_path: string
+          thumb_path: string
+          updated_at: string
+          user_id: string
+          width: number
+        }
+        Insert: {
+          created_at?: string
+          deleted_at?: string | null
+          height: number
+          id?: string
+          mime_type: string
+          position?: number
+          post_id: string
+          size_bytes: number
+          storage_path: string
+          thumb_path: string
+          updated_at?: string
+          user_id: string
+          width: number
+        }
+        Update: {
+          created_at?: string
+          deleted_at?: string | null
+          height?: number
+          id?: string
+          mime_type?: string
+          position?: number
+          post_id?: string
+          size_bytes?: number
+          storage_path?: string
+          thumb_path?: string
+          updated_at?: string
+          user_id?: string
+          width?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "library_post_images_post_id_fkey"
+            columns: ["post_id"]
+            isOneToOne: false
+            referencedRelation: "active_library_posts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "library_post_images_post_id_fkey"
+            columns: ["post_id"]
+            isOneToOne: false
+            referencedRelation: "library_posts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "library_post_images_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      library_post_people: {
+        Row: {
+          created_at: string
+          person_id: string
+          post_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          person_id: string
+          post_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          person_id?: string
+          post_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "library_post_people_person_id_fkey"
+            columns: ["person_id"]
+            isOneToOne: false
+            referencedRelation: "active_people"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "library_post_people_person_id_fkey"
+            columns: ["person_id"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "library_post_people_post_id_fkey"
+            columns: ["post_id"]
+            isOneToOne: false
+            referencedRelation: "active_library_posts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "library_post_people_post_id_fkey"
+            columns: ["post_id"]
+            isOneToOne: false
+            referencedRelation: "library_posts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "library_post_people_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      library_posts: {
+        Row: {
+          archived_at: string | null
+          author_name: string | null
+          created_at: string
+          deleted_at: string | null
+          id: string
+          is_favorite: boolean
+          normalized_url: string | null
+          notes: string
+          platform: string
+          tags: string[]
+          title: string
+          updated_at: string
+          url: string | null
+          user_id: string
+        }
+        Insert: {
+          archived_at?: string | null
+          author_name?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          is_favorite?: boolean
+          normalized_url?: string | null
+          notes?: string
+          platform?: string
+          tags?: string[]
+          title: string
+          updated_at?: string
+          url?: string | null
+          user_id: string
+        }
+        Update: {
+          archived_at?: string | null
+          author_name?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          is_favorite?: boolean
+          normalized_url?: string | null
+          notes?: string
+          platform?: string
+          tags?: string[]
+          title?: string
+          updated_at?: string
+          url?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "library_posts_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "profiles"
@@ -1416,6 +2062,10 @@ export type Database = {
           id: string | null
           person_id: string | null
           priority: Database["public"]["Enums"]["item_priority"] | null
+          recurrence_days: number[] | null
+          recurrence_end_date: string | null
+          recurrence_series_id: string | null
+          recurrence_spawned_at: string | null
           status: Database["public"]["Enums"]["deadline_status"] | null
           title: string | null
           updated_at: string | null
@@ -1431,6 +2081,10 @@ export type Database = {
           id?: string | null
           person_id?: string | null
           priority?: Database["public"]["Enums"]["item_priority"] | null
+          recurrence_days?: number[] | null
+          recurrence_end_date?: string | null
+          recurrence_series_id?: string | null
+          recurrence_spawned_at?: string | null
           status?: Database["public"]["Enums"]["deadline_status"] | null
           title?: string | null
           updated_at?: string | null
@@ -1446,6 +2100,10 @@ export type Database = {
           id?: string | null
           person_id?: string | null
           priority?: Database["public"]["Enums"]["item_priority"] | null
+          recurrence_days?: number[] | null
+          recurrence_end_date?: string | null
+          recurrence_series_id?: string | null
+          recurrence_spawned_at?: string | null
           status?: Database["public"]["Enums"]["deadline_status"] | null
           title?: string | null
           updated_at?: string | null
@@ -1520,6 +2178,354 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "labels_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      active_library_applications: {
+        Row: {
+          created_at: string | null
+          date_found: string | null
+          deleted_at: string | null
+          employer_id: string | null
+          id: string | null
+          job_url: string | null
+          location: string | null
+          normalized_job_url: string | null
+          notes: string | null
+          salary_currency: string | null
+          salary_max: number | null
+          salary_min: number | null
+          salary_period: string | null
+          status: string | null
+          status_changed_at: string | null
+          tech_stack: string[] | null
+          title: string | null
+          updated_at: string | null
+          user_id: string | null
+          work_mode: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          date_found?: string | null
+          deleted_at?: string | null
+          employer_id?: string | null
+          id?: string | null
+          job_url?: string | null
+          location?: string | null
+          normalized_job_url?: string | null
+          notes?: string | null
+          salary_currency?: string | null
+          salary_max?: number | null
+          salary_min?: number | null
+          salary_period?: string | null
+          status?: string | null
+          status_changed_at?: string | null
+          tech_stack?: string[] | null
+          title?: string | null
+          updated_at?: string | null
+          user_id?: string | null
+          work_mode?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          date_found?: string | null
+          deleted_at?: string | null
+          employer_id?: string | null
+          id?: string | null
+          job_url?: string | null
+          location?: string | null
+          normalized_job_url?: string | null
+          notes?: string | null
+          salary_currency?: string | null
+          salary_max?: number | null
+          salary_min?: number | null
+          salary_period?: string | null
+          status?: string | null
+          status_changed_at?: string | null
+          tech_stack?: string[] | null
+          title?: string | null
+          updated_at?: string | null
+          user_id?: string | null
+          work_mode?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "library_applications_employer_id_fkey"
+            columns: ["employer_id"]
+            isOneToOne: false
+            referencedRelation: "active_library_employers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "library_applications_employer_id_fkey"
+            columns: ["employer_id"]
+            isOneToOne: false
+            referencedRelation: "library_employers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "library_applications_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      active_library_employers: {
+        Row: {
+          archived_at: string | null
+          careers_url: string | null
+          created_at: string | null
+          deleted_at: string | null
+          id: string | null
+          name: string | null
+          notes: string | null
+          updated_at: string | null
+          user_id: string | null
+          website: string | null
+        }
+        Insert: {
+          archived_at?: string | null
+          careers_url?: string | null
+          created_at?: string | null
+          deleted_at?: string | null
+          id?: string | null
+          name?: string | null
+          notes?: string | null
+          updated_at?: string | null
+          user_id?: string | null
+          website?: string | null
+        }
+        Update: {
+          archived_at?: string | null
+          careers_url?: string | null
+          created_at?: string | null
+          deleted_at?: string | null
+          id?: string | null
+          name?: string | null
+          notes?: string | null
+          updated_at?: string | null
+          user_id?: string | null
+          website?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "library_employers_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      active_library_interviews: {
+        Row: {
+          application_id: string | null
+          created_at: string | null
+          deleted_at: string | null
+          id: string | null
+          interviewer_person_id: string | null
+          kind: string | null
+          notes: string | null
+          outcome: string | null
+          round_label: string | null
+          scheduled_at: string | null
+          updated_at: string | null
+          user_id: string | null
+        }
+        Insert: {
+          application_id?: string | null
+          created_at?: string | null
+          deleted_at?: string | null
+          id?: string | null
+          interviewer_person_id?: string | null
+          kind?: string | null
+          notes?: string | null
+          outcome?: string | null
+          round_label?: string | null
+          scheduled_at?: string | null
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          application_id?: string | null
+          created_at?: string | null
+          deleted_at?: string | null
+          id?: string | null
+          interviewer_person_id?: string | null
+          kind?: string | null
+          notes?: string | null
+          outcome?: string | null
+          round_label?: string | null
+          scheduled_at?: string | null
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "library_interviews_application_id_fkey"
+            columns: ["application_id"]
+            isOneToOne: false
+            referencedRelation: "active_library_applications"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "library_interviews_application_id_fkey"
+            columns: ["application_id"]
+            isOneToOne: false
+            referencedRelation: "library_applications"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "library_interviews_interviewer_person_id_fkey"
+            columns: ["interviewer_person_id"]
+            isOneToOne: false
+            referencedRelation: "active_people"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "library_interviews_interviewer_person_id_fkey"
+            columns: ["interviewer_person_id"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "library_interviews_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      active_library_post_images: {
+        Row: {
+          created_at: string | null
+          deleted_at: string | null
+          height: number | null
+          id: string | null
+          mime_type: string | null
+          position: number | null
+          post_id: string | null
+          size_bytes: number | null
+          storage_path: string | null
+          thumb_path: string | null
+          updated_at: string | null
+          user_id: string | null
+          width: number | null
+        }
+        Insert: {
+          created_at?: string | null
+          deleted_at?: string | null
+          height?: number | null
+          id?: string | null
+          mime_type?: string | null
+          position?: number | null
+          post_id?: string | null
+          size_bytes?: number | null
+          storage_path?: string | null
+          thumb_path?: string | null
+          updated_at?: string | null
+          user_id?: string | null
+          width?: number | null
+        }
+        Update: {
+          created_at?: string | null
+          deleted_at?: string | null
+          height?: number | null
+          id?: string | null
+          mime_type?: string | null
+          position?: number | null
+          post_id?: string | null
+          size_bytes?: number | null
+          storage_path?: string | null
+          thumb_path?: string | null
+          updated_at?: string | null
+          user_id?: string | null
+          width?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "library_post_images_post_id_fkey"
+            columns: ["post_id"]
+            isOneToOne: false
+            referencedRelation: "active_library_posts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "library_post_images_post_id_fkey"
+            columns: ["post_id"]
+            isOneToOne: false
+            referencedRelation: "library_posts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "library_post_images_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      active_library_posts: {
+        Row: {
+          archived_at: string | null
+          author_name: string | null
+          created_at: string | null
+          deleted_at: string | null
+          id: string | null
+          is_favorite: boolean | null
+          normalized_url: string | null
+          notes: string | null
+          platform: string | null
+          tags: string[] | null
+          title: string | null
+          updated_at: string | null
+          url: string | null
+          user_id: string | null
+        }
+        Insert: {
+          archived_at?: string | null
+          author_name?: string | null
+          created_at?: string | null
+          deleted_at?: string | null
+          id?: string | null
+          is_favorite?: boolean | null
+          normalized_url?: string | null
+          notes?: string | null
+          platform?: string | null
+          tags?: string[] | null
+          title?: string | null
+          updated_at?: string | null
+          url?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          archived_at?: string | null
+          author_name?: string | null
+          created_at?: string | null
+          deleted_at?: string | null
+          id?: string | null
+          is_favorite?: boolean | null
+          normalized_url?: string | null
+          notes?: string | null
+          platform?: string | null
+          tags?: string[] | null
+          title?: string | null
+          updated_at?: string | null
+          url?: string | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "library_posts_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "profiles"
@@ -1857,6 +2863,7 @@ export type Database = {
       }
     }
     Functions: {
+      cancel_deadline_series: { Args: { p_deadline_id: string }; Returns: number }
       complete_knowledge_import: {
         Args: { p_chunks: Json; p_raw_content: string; p_source_id: string }
         Returns: boolean
@@ -1947,6 +2954,13 @@ export type Database = {
         Args: { p_error_message: string; p_source_id: string }
         Returns: boolean
       }
+      library_post_tag_counts: {
+        Args: never
+        Returns: {
+          n: number
+          tag: string
+        }[]
+      }
       match_knowledge_chunks: {
         Args: {
           p_match_count: number
@@ -1984,6 +2998,7 @@ export type Database = {
           suggestions_dismissed: number
         }[]
       }
+      spawn_due_deadline_occurrences: { Args: never; Returns: number }
       soft_delete_deadline_cascade: {
         Args: { p_deadline_id: string }
         Returns: {
@@ -1995,6 +3010,15 @@ export type Database = {
         Args: { p_label_id: string }
         Returns: {
           tasks_unlinked: number
+        }[]
+      }
+      soft_delete_library_employer_cascade: {
+        Args: { p_employer_id: string }
+        Returns: {
+          applications_affected: number
+          contacts_removed: number
+          interviews_affected: number
+          post_links_removed: number
         }[]
       }
       soft_delete_person_cascade: {
@@ -2028,6 +3052,18 @@ export type Database = {
         Returns: boolean
       }
       sweep_expired_feedback: { Args: never; Returns: number }
+      sync_library_post_courses: {
+        Args: { p_course_ids: string[]; p_post_id: string }
+        Returns: undefined
+      }
+      sync_library_post_employers: {
+        Args: { p_employer_ids: string[]; p_post_id: string }
+        Returns: undefined
+      }
+      sync_library_post_people: {
+        Args: { p_person_ids: string[]; p_post_id: string }
+        Returns: undefined
+      }
       sync_task_labels: {
         Args: { p_label_ids: string[]; p_task_id: string }
         Returns: undefined
@@ -2232,3 +3268,4 @@ export const Constants = {
     },
   },
 } as const
+

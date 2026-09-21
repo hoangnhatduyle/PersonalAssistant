@@ -2,6 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { renderWithProviders } from "@/test/render";
 import { ConfirmationBar } from "@/components/assistant/ConfirmationBar";
+import { CONFIRMATION_WINDOW_SECONDS } from "@/lib/voice/transitions";
+
+const WINDOW_MS = CONFIRMATION_WINDOW_SECONDS * 1_000;
+const countdownLabel = (secondsLeft: number) => `Expires in 0:${String(secondsLeft).padStart(2, "0")}`;
 
 const applyTurnResult = vi.fn();
 const reset = vi.fn();
@@ -13,7 +17,9 @@ vi.mock("@/components/assistant/VoiceCaptureProvider", async (importOriginal) =>
 const confirmMutateAsync = vi.fn();
 const declineMutateAsync = vi.fn();
 const expireMutateAsync = vi.fn();
+const armMutateAsync = vi.fn();
 vi.mock("@/hooks/useVoiceTurn", () => ({
+  useArmVoiceTurn: () => ({ mutateAsync: armMutateAsync, isPending: false }),
   useConfirmVoiceTurn: () => ({ mutateAsync: confirmMutateAsync, isPending: false }),
   useDeclineVoiceTurn: () => ({ mutateAsync: declineMutateAsync, isPending: false }),
   useExpireVoiceTurn: () => ({ mutateAsync: expireMutateAsync, isPending: false }),
@@ -24,16 +30,9 @@ vi.mock("@/lib/voice/play-audio", () => ({ playStaticAudio }));
 
 const onSpoken = vi.fn().mockResolvedValue(undefined);
 
-function renderBar(origin: "voice" | "text" = "text") {
+function renderBar(origin: "voice" | "text" = "text", readyToListen = origin === "voice") {
   return renderWithProviders(
-    <ConfirmationBar
-      sessionId="session-1"
-      message="Delete Calc 101?"
-      receivedAt={Date.now()}
-      origin={origin}
-      onSpoken={onSpoken}
-      readyToListen={false}
-    />,
+    <ConfirmationBar sessionId="session-1" message="Delete Calc 101?" origin={origin} onSpoken={onSpoken} readyToListen={readyToListen} />,
   );
 }
 
@@ -44,6 +43,7 @@ describe("ConfirmationBar", () => {
     confirmMutateAsync.mockReset();
     declineMutateAsync.mockReset();
     expireMutateAsync.mockReset().mockResolvedValue({ session_id: "session-1", expired: true });
+    armMutateAsync.mockReset().mockResolvedValue({ session_id: "session-1", armed: true });
     playStaticAudio.mockClear();
     onSpoken.mockClear();
   });
@@ -55,11 +55,11 @@ describe("ConfirmationBar", () => {
   it("counts down from the full confirmation window", () => {
     vi.useFakeTimers();
     renderBar();
-    expect(screen.getByText("Expires in 0:10")).toBeInTheDocument();
+    expect(screen.getByText(countdownLabel(CONFIRMATION_WINDOW_SECONDS))).toBeInTheDocument();
     act(() => {
       vi.advanceTimersByTime(4_000);
     });
-    expect(screen.getByText("Expires in 0:06")).toBeInTheDocument();
+    expect(screen.getByText(countdownLabel(CONFIRMATION_WINDOW_SECONDS - 4))).toBeInTheDocument();
   });
 
   it("applies the confirm result, appending cascade counts the same way the REST delete flow does", async () => {
@@ -125,12 +125,57 @@ describe("ConfirmationBar", () => {
     expect(screen.getByRole("button", { name: "Decline" })).toBeEnabled();
   });
 
+  describe("confirmation window start", () => {
+    it("arms the window immediately for a text-origin session", () => {
+      renderBar("text");
+      expect(armMutateAsync).toHaveBeenCalledWith("session-1");
+    });
+
+    it("does not arm, count down, or expire a voice-origin session while its prompt is still being spoken", async () => {
+      vi.useFakeTimers();
+      renderBar("voice", false);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(30_000);
+      });
+      expect(armMutateAsync).not.toHaveBeenCalled();
+      expect(expireMutateAsync).not.toHaveBeenCalled();
+      expect(playStaticAudio).not.toHaveBeenCalled();
+      expect(screen.queryByText(/Expires in/)).not.toBeInTheDocument();
+      expect(screen.getByText("Reading that back…")).toBeInTheDocument();
+    });
+
+    it("arms and starts the full countdown only once the prompt has finished being spoken", async () => {
+      vi.useFakeTimers();
+      const { rerender } = renderBar("voice", false);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(12_000);
+      });
+      expect(screen.queryByText(/Expires in/)).not.toBeInTheDocument();
+
+      rerender(<ConfirmationBar sessionId="session-1" message="Delete Calc 101?" origin="voice" onSpoken={onSpoken} readyToListen />);
+      expect(armMutateAsync).toHaveBeenCalledTimes(1);
+      expect(screen.getByText(countdownLabel(CONFIRMATION_WINDOW_SECONDS))).toBeInTheDocument();
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(4_000);
+      });
+      expect(screen.getByText(countdownLabel(CONFIRMATION_WINDOW_SECONDS - 4))).toBeInTheDocument();
+      expect(expireMutateAsync).not.toHaveBeenCalled();
+    });
+
+    it("still starts the countdown when the arm call fails (the longer pre-arm expiry still bounds it server-side)", async () => {
+      armMutateAsync.mockRejectedValue(new Error("network"));
+      renderBar("text");
+      expect(await screen.findByText(countdownLabel(CONFIRMATION_WINDOW_SECONDS))).toBeInTheDocument();
+    });
+  });
+
   describe("expiry with no reply", () => {
     it("plays the expiry audio and speaks a message for a voice-origin session that lapses unanswered", async () => {
       vi.useFakeTimers();
       renderBar("voice");
       await act(async () => {
-        await vi.advanceTimersByTimeAsync(10_050);
+        await vi.advanceTimersByTimeAsync(WINDOW_MS + 50);
       });
       expect(expireMutateAsync).toHaveBeenCalledWith("session-1");
       expect(playStaticAudio).toHaveBeenCalledWith("/sounds/confirmation-expired.mp3");
@@ -148,7 +193,7 @@ describe("ConfirmationBar", () => {
       vi.useFakeTimers();
       renderBar("text");
       await act(async () => {
-        await vi.advanceTimersByTimeAsync(10_050);
+        await vi.advanceTimersByTimeAsync(WINDOW_MS + 50);
       });
       expect(expireMutateAsync).not.toHaveBeenCalled();
       expect(playStaticAudio).not.toHaveBeenCalled();
@@ -159,7 +204,7 @@ describe("ConfirmationBar", () => {
       vi.useFakeTimers();
       renderBar("voice");
       await act(async () => {
-        await vi.advanceTimersByTimeAsync(10_050);
+        await vi.advanceTimersByTimeAsync(WINDOW_MS + 50);
       });
       expect(expireMutateAsync).toHaveBeenCalledWith("session-1");
       expect(playStaticAudio).not.toHaveBeenCalled();

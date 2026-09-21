@@ -16,7 +16,7 @@ type Props = {
   email: string;
 };
 
-// Small hand-rolled stroke icons (no icon library dependency for 7 glyphs).
+// Small hand-rolled stroke icons (no icon library dependency for a handful of glyphs).
 const icons = {
   today: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} className="h-5 w-5">
@@ -53,6 +53,13 @@ const icons = {
       <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.04 1.56V21a2 2 0 1 1-4 0v-.09A1.7 1.7 0 0 0 9 19.36a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.64 15a1.7 1.7 0 0 0-1.56-1.04H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.64 9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.64a1.7 1.7 0 0 0 1.04-1.56V3a2 2 0 1 1 4 0v.09A1.7 1.7 0 0 0 15 4.64a1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.36 9a1.7 1.7 0 0 0 1.56 1.04H21a2 2 0 1 1 0 4h-.09A1.7 1.7 0 0 0 19.4 15z" />
     </svg>
   ),
+  library: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} className="h-5 w-5">
+      <rect x="3" y="4" width="6" height="16" rx="1" />
+      <rect x="11" y="4" width="4" height="16" rx="1" />
+      <path d="m17.5 5.2 3.4 14.2" strokeLinecap="round" />
+    </svg>
+  ),
   driving: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} className="h-5 w-5">
       <circle cx="12" cy="12" r="8" />
@@ -66,6 +73,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/", label: "Today", icon: icons.today },
   { href: "/courses", label: "Courses", icon: icons.courses },
   { href: "/board", label: "Board", icon: icons.tasks },
+  { href: "/library", label: "Library", icon: icons.library },
   { href: "/calendar", label: "Calendar", icon: icons.calendar },
   { href: "/assistant", label: "Assistant", icon: icons.assistant },
   { href: "/settings", label: "Settings", icon: icons.settings },

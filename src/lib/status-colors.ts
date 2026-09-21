@@ -1,4 +1,5 @@
 import type { Database } from "@/lib/supabase/types";
+import type { ApplicationStatus } from "@/lib/library/application-status";
 
 export type StatusTone = "ok" | "warn" | "urgent" | "neutral" | "accent" | "purple";
 
@@ -87,4 +88,22 @@ export const ITEM_PRIORITY_TONE: Record<ItemPriority, StatusTone> = {
   Medium: "accent",
   High: "warn",
   Urgent: "urgent",
+};
+
+// Library (saved posts): Instagram violet, Facebook indigo-blue, anything else neutral.
+export const PLATFORM_TONE: Record<"facebook" | "instagram" | "other", StatusTone> = {
+  facebook: "accent",
+  instagram: "purple",
+  other: "neutral",
+};
+
+// Library (employers): the application pipeline. Rejected and withdrawn are
+// rendered visually muted by the components (opacity), not by a different tone.
+export const APPLICATION_STATUS_TONE: Record<ApplicationStatus, StatusTone> = {
+  interested: "neutral",
+  applied: "accent",
+  interviewing: "warn",
+  offer: "ok",
+  rejected: "urgent",
+  withdrawn: "neutral",
 };

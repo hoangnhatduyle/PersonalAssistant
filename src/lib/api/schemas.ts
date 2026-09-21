@@ -94,14 +94,27 @@ export type CoursePayload = z.infer<typeof coursePayloadSchema>;
 export const coursePatchSchema = courseBaseSchema.partial().refine(isRecurrenceDateOrderValid, RECURRENCE_DATE_ORDER_CHECK);
 export type CoursePatch = z.infer<typeof coursePatchSchema>;
 
-export const deadlinePayloadSchema = z.object({
+// recurrence_days/recurrence_end_date (supabase/migrations/0041_deadline_recurrence.sql,
+// 0042_deadline_series.sql): weekly recurrence where every occurrence is its own
+// deadline and the database creates the next when one is completed, cancelled,
+// or comes due. Empty/omitted days = one-off.
+// Time of day comes from due_at itself, so there are no time fields here.
+const deadlineBaseSchema = z.object({
   course_id: z.uuid(),
   title: z.string().trim().min(1),
   due_at: z.iso.datetime({ offset: true }),
   priority: itemPrioritySchema,
+  recurrence_days: z
+    .array(z.number().int().min(0).max(6))
+    .max(7)
+    .refine((days) => new Set(days).size === days.length, "Duplicate days")
+    .optional(),
+  recurrence_end_date: z.string().regex(RECURRENCE_DATE_REGEX, "Expected YYYY-MM-DD").nullable().optional(),
 });
+
+export const deadlinePayloadSchema = deadlineBaseSchema;
 export type DeadlinePayload = z.infer<typeof deadlinePayloadSchema>;
-export const deadlinePatchSchema = deadlinePayloadSchema.omit({ course_id: true }).partial();
+export const deadlinePatchSchema = deadlineBaseSchema.omit({ course_id: true }).partial();
 export type DeadlinePatch = z.infer<typeof deadlinePatchSchema>;
 
 // Board List: a per-course or freestanding grouping of Task rows ("Board

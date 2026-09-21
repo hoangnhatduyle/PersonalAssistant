@@ -8,6 +8,7 @@ import { DeadlineTransitionMenu } from "@/components/deadlines/DeadlineTransitio
 import { FeedbackControl } from "@/components/feedback/FeedbackControl";
 import type { DeadlineRow } from "@/lib/api/entity-types";
 import type { SessionProgress } from "@/lib/deadlines/session-progress";
+import { formatDeadlineRecurrence } from "@/lib/deadlines/recurrence";
 
 type Props = {
   deadline: DeadlineRow;
@@ -17,6 +18,7 @@ type Props = {
 };
 
 export function DeadlineCard({ deadline, courseName, sessionProgress }: Props) {
+  const recurrenceLabel = formatDeadlineRecurrence(deadline.recurrence_days, deadline.recurrence_end_date);
   return (
     <GlassPanel className="flex flex-col gap-3 p-4">
       <div className="flex items-start justify-between gap-3">
@@ -26,6 +28,7 @@ export function DeadlineCard({ deadline, courseName, sessionProgress }: Props) {
           </Link>
           <p className="mt-0.5 font-mono text-xs text-text-secondary">Due {new Date(deadline.due_at).toLocaleString()}</p>
           {courseName && <p className="mt-0.5 text-xs text-text-secondary">{courseName}</p>}
+          {recurrenceLabel && <p className="mt-0.5 font-mono text-xs text-accent-indigo">{recurrenceLabel}</p>}
         </div>
         <StatusPill status={deadline.status} tone={DEADLINE_STATUS_TONE[deadline.status]} />
       </div>
@@ -41,7 +44,7 @@ export function DeadlineCard({ deadline, courseName, sessionProgress }: Props) {
           <ProgressBar value={sessionProgress.ratio} label="Session progress" />
         </div>
       )}
-      <DeadlineTransitionMenu deadlineId={deadline.id} status={deadline.status} />
+      <DeadlineTransitionMenu deadlineId={deadline.id} status={deadline.status} isRecurring={deadline.recurrence_days.length > 0} />
       {deadline.status === "Completed" && <FeedbackControl targetType="deadline" targetId={deadline.id} />}
     </GlassPanel>
   );

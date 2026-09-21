@@ -1,6 +1,9 @@
 import type { Database } from "@/lib/supabase/types";
 import type { MeetingBlock } from "@/lib/calendar/recurrence";
 import type { LabelColorToken } from "@/lib/label-colors";
+import type { ApplicationStatus } from "@/lib/library/application-status";
+import type { ContactKind, InterviewKind, InterviewOutcome, WorkMode } from "@/lib/library/constants";
+import type { SalaryPeriod } from "@/lib/library/salary";
 
 // Row types for every entity a hook fetches/mutates. Kept separate from
 // src/lib/knowledge/extraction.ts's own KnowledgeSourceRow (which pulls in
@@ -127,3 +130,85 @@ export type ItemPriority = Database["public"]["Enums"]["item_priority"];
 
 export type PersonalizationSuggestionRow = Database["public"]["Tables"]["personalization_suggestions"]["Row"];
 export type PersonalizationSuggestionStatus = Database["public"]["Enums"]["personalization_suggestion_status"];
+
+// Library (saved posts): platform is typed as generic string by the Supabase
+// generator (a CHECK constraint, not a Postgres enum) — overridden with the
+// precise union, same pattern as LabelRow's color override above.
+export type LibraryPost = Omit<Database["public"]["Tables"]["library_posts"]["Row"], "platform"> & {
+  platform: "facebook" | "instagram" | "other";
+};
+export type LibraryPostImage = Database["public"]["Tables"]["library_post_images"]["Row"];
+
+/** A post as the API returns it: links flattened to live people/courses, live images ordered. */
+export interface LibraryPostWithRelations extends LibraryPost {
+  images: LibraryPostImage[];
+  people: Pick<PersonRow, "id" | "name">[];
+  courses: Pick<CourseRow, "id" | "name" | "code">[];
+  employers: Pick<LibraryEmployer, "id" | "name">[];
+}
+
+export interface LibraryTagCount {
+  tag: string;
+  n: number;
+}
+
+// ---- Library: employers (Phase 2) ----
+// Same generator gap as LibraryPost above: CHECK-constrained columns come back
+// as plain strings, so they are narrowed to their unions here.
+
+type LibraryApplicationRowRaw = Database["public"]["Tables"]["library_applications"]["Row"];
+
+export type LibraryEmployer = Database["public"]["Tables"]["library_employers"]["Row"];
+export type LibraryApplication = Omit<LibraryApplicationRowRaw, "status" | "work_mode" | "salary_period"> & {
+  status: ApplicationStatus;
+  work_mode: WorkMode | null;
+  salary_period: SalaryPeriod | null;
+};
+export type LibraryInterview = Omit<Database["public"]["Tables"]["library_interviews"]["Row"], "kind" | "outcome"> & {
+  kind: InterviewKind;
+  outcome: InterviewOutcome;
+};
+export type LibraryEmployerContactRow = Omit<Database["public"]["Tables"]["library_employer_contacts"]["Row"], "kind"> & {
+  kind: ContactKind;
+};
+export type LibraryApplicationEvent = Omit<
+  Database["public"]["Tables"]["library_application_events"]["Row"],
+  "from_status" | "to_status"
+> & {
+  from_status: ApplicationStatus | null;
+  to_status: ApplicationStatus;
+};
+
+/** What an employer list row / board card needs from each application. */
+export type LibraryApplicationSummary = Pick<LibraryApplication, "id" | "title" | "status" | "status_changed_at">;
+
+export interface LibraryEmployerContact {
+  person: Pick<PersonRow, "id" | "name">;
+  kind: ContactKind;
+  note: string;
+}
+
+export interface LibraryEmployerListItem extends LibraryEmployer {
+  applications: LibraryApplicationSummary[];
+  contacts: LibraryEmployerContact[];
+}
+
+export interface LibraryEmployerDetail extends LibraryEmployer {
+  applications: LibraryApplication[];
+  contacts: LibraryEmployerContact[];
+  posts: Pick<LibraryPost, "id" | "title" | "platform">[];
+}
+
+/** An application with its employer's name, for board cards. */
+export interface LibraryApplicationWithEmployer extends LibraryApplication {
+  employer: Pick<LibraryEmployer, "id" | "name">;
+}
+
+export interface LibraryInterviewWithPerson extends LibraryInterview {
+  /** Null when no interviewer was set, or the person has since been deleted. */
+  interviewer: Pick<PersonRow, "id" | "name"> | null;
+}
+
+export type LibraryTimelineEntry =
+  | { type: "status"; id: string; at: string; from_status: ApplicationStatus | null; to_status: ApplicationStatus }
+  | { type: "interview"; id: string; at: string; interview: LibraryInterviewWithPerson };
