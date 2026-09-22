@@ -32,3 +32,20 @@ export const CONFIRM_MAX_DURATION_MS = 8_000;
 // RMS volume (0-1 scale off AnalyserNode byte time-domain data) above which
 // the stream is considered "speech", not ambient noise/silence.
 export const SILENCE_RMS_THRESHOLD = 0.02;
+
+// Grace period between "TTS playback reported ended" and actually arming
+// the mic (CaptureChannel's own speak-then-listen effect, and hands-free
+// resume after any spoken response). audio.onended (play-audio.ts) is a
+// purely digital completion signal -- it fires the instant the <audio>
+// element finishes feeding samples, which is not the same moment as the
+// sound has actually finished being audible in the room. Real speaker/mic
+// setups (and Bluetooth output in particular, which commonly buffers
+// several hundred ms past when the source stops feeding it -- see this
+// file's own CAPTURE_SILENCE_MS comment on tuning against a real
+// phone/car-Bluetooth setup) can leave an audible tail after onended.
+// Without this gap, that tail alone can satisfy CONFIRM_SILENCE_MS's
+// speech-then-silence pattern before the user gets a word in, producing a
+// "Didn't catch a yes or no" (or a burned few seconds of the capture
+// window) that has nothing to do with anything the user actually said
+// (production, 2026-09-22).
+export const MIC_ARM_SETTLE_MS = 350;

@@ -16,6 +16,7 @@ import { useResetVoiceConversation } from "@/hooks/useResetVoiceConversation";
 import { useAutoStopRecorder } from "@/hooks/useAutoStopRecorder";
 import { onPlaybackStart, unlockAudioPlayback, stopPlayback } from "@/lib/voice/play-audio";
 import { startThinkingSound, stopThinkingSound } from "@/lib/voice/thinking-sound";
+import { MIC_ARM_SETTLE_MS } from "@/lib/voice/constants";
 import { useSettings } from "@/hooks/useSettings";
 import { usePersonalizationSuggestions } from "@/hooks/usePersonalizationSuggestions";
 import { useReviewSuggestionsAloud } from "@/hooks/useReviewSuggestionsAloud";
@@ -163,7 +164,13 @@ export function CaptureChannel({ compact = false, large = false }: Props) {
         // otherwise.
         stopThinkingSound();
       }
-      if (handsFree && shouldResume && played) void startRecordingRef.current();
+      if (handsFree && shouldResume && played) {
+        // MIC_ARM_SETTLE_MS: audio.onended (inside speakResponse.mutateAsync
+        // above) is a digital completion signal, not proof the room has
+        // actually gone quiet -- see that constant's own comment.
+        await new Promise((resolve) => setTimeout(resolve, MIC_ARM_SETTLE_MS));
+        void startRecordingRef.current();
+      }
     },
     [speakResponse, handsFree],
   );
@@ -269,6 +276,12 @@ export function CaptureChannel({ compact = false, large = false }: Props) {
         // once the "thinking" sound has already been stopped by onPlaybackStart.
         stopThinkingSound();
       }
+      // MIC_ARM_SETTLE_MS: without this, a lingering echo/Bluetooth-output
+      // tail past the digital "ended" event can satisfy ConfirmationBar's
+      // own speech-then-silence detection before the user gets a word in,
+      // producing a "Didn't catch a yes or no" that isn't about anything
+      // the user actually said -- see that constant's own comment.
+      await new Promise((resolve) => setTimeout(resolve, MIC_ARM_SETTLE_MS));
       if (!cancelled) setConfirmationReadySessionId(sessionId);
     })();
     return () => {
