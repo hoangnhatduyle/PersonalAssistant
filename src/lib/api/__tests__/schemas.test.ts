@@ -61,6 +61,16 @@ describe("appointmentPayloadSchema", () => {
     expect(parsed.success).toBe(true);
   });
 
+  it("rejects duration_minutes over the 24-hour cap", () => {
+    const parsed = appointmentPayloadSchema.safeParse({ ...base, duration_minutes: 5760 });
+    expect(parsed.success).toBe(false);
+  });
+
+  it("accepts duration_minutes at exactly the 24-hour cap", () => {
+    const parsed = appointmentPayloadSchema.safeParse({ ...base, duration_minutes: 1440 });
+    expect(parsed.success).toBe(true);
+  });
+
   it("rejects a recurrence_start_date after recurrence_end_date", () => {
     const parsed = appointmentPayloadSchema.safeParse({
       ...base,

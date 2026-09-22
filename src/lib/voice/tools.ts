@@ -201,7 +201,7 @@ const MUTATION_FIELD_PROPERTIES = {
   duration_minutes: {
     type: ["integer", "null"],
     description:
-      "A Deadline Session's planned duration in minutes, if the user gave one. For a general Event/Appointment, this is required to create one -- if missing, use save_mutation_draft to ask for it rather than guessing.",
+      "A Deadline Session's planned duration in minutes, if the user gave one. For a general Event/Appointment, this is required to create one -- if missing, use save_mutation_draft to ask for it rather than guessing. Capped at 1440 (24 hours) for an Event -- never inflate it to cover a multi-day span (e.g. a 4-day festival is NOT duration_minutes 5760); propose one Event per day instead, starting with the first day.",
   },
   list_id: {
     type: ["string", "null"],

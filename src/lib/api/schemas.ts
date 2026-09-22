@@ -3,6 +3,7 @@ import { KNOWLEDGE_MAX_PASTED_TEXT_CHARS, KNOWLEDGE_MAX_TITLE_CHARS } from "@/li
 import { MAX_SPEAK_TEXT_CHARS } from "@/lib/voice/constants";
 import { LABEL_COLOR_TOKENS } from "@/lib/label-colors";
 import { MAX_REMINDER_LEAD_MINUTES } from "@/lib/reminders/lead-time";
+import { MAX_APPOINTMENT_DURATION_MINUTES } from "@/lib/appointments/types";
 
 // Shared payload shapes from SPEC-API-004's shared_schemas. `xPatchSchema` is
 // the same shape with every field optional — used by the id-addressed PATCH
@@ -155,7 +156,13 @@ const appointmentBaseSchema = z.object({
   // appointmentPatchSchema below, same pattern as deadlinePatchSchema
   // omitting course_id.
   deadline_id: z.uuid().nullable().optional(),
-  duration_minutes: z.number().int().positive().nullable().optional(),
+  duration_minutes: z
+    .number()
+    .int()
+    .positive()
+    .max(MAX_APPOINTMENT_DURATION_MINUTES, "duration_minutes cannot exceed 1440 (24 hours) — use one appointment per day, or a recurring appointment, for anything spanning multiple days")
+    .nullable()
+    .optional(),
   meeting_blocks: z.array(meetingBlockSchema).max(10).optional(),
   recurrence_start_date: z.string().regex(RECURRENCE_DATE_REGEX, "Expected YYYY-MM-DD").nullable().optional(),
   recurrence_end_date: z.string().regex(RECURRENCE_DATE_REGEX, "Expected YYYY-MM-DD").nullable().optional(),

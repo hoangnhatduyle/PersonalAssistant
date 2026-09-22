@@ -5,6 +5,7 @@ import type { PendingMutation } from "@/lib/voice/mutations";
 import { getFirstOccurrenceEndOfDay } from "@/lib/deadlines/recurrence";
 import { localEndOfTodayUtc } from "@/lib/voice/schedule-time-window";
 import { MAX_REMINDER_LEAD_MINUTES } from "@/lib/reminders/lead-time";
+import { MAX_APPOINTMENT_DURATION_MINUTES } from "@/lib/appointments/types";
 
 // Shared across the deadline/task mutation variants below — mirrors
 // supabase/migrations/0021_item_priority.sql's item_priority enum. A bare
@@ -134,7 +135,16 @@ const mutationSchemaBase = z.discriminatedUnion("target_type", [
     title: z.string().nullable(),
     date: z.iso.date().nullable(),
     time: z.string().nullable(),
-    duration_minutes: z.number().int().positive().nullable(),
+    // Capped at 24h (MAX_APPOINTMENT_DURATION_MINUTES) so a multi-day request
+    // can't collapse into one appointment spanning several calendar days --
+    // the model must propose one appointment per day instead (see the
+    // Appointment/Event paragraph in conversation-core.ts's system prompt).
+    duration_minutes: z
+      .number()
+      .int()
+      .positive()
+      .max(MAX_APPOINTMENT_DURATION_MINUTES, "duration_minutes cannot exceed 1440 (24 hours) -- propose one appointment per day instead for anything spanning multiple days")
+      .nullable(),
     location: z.string().nullable(),
     event: eventTransitionEventSchema,
   }),

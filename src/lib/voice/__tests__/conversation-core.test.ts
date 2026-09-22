@@ -166,6 +166,39 @@ describe("runConversationTurn", () => {
     expect(loadSchedule).toHaveBeenCalledTimes(2);
   });
 
+  // Production incident (2026-09-22): asked to create a 4-day multi-day
+  // event, the model answered "Confirm: create four separate events...?" via
+  // respond_to_user, then on the user's "yes" bundled respond_to_user AND
+  // propose_mutation in the SAME batch. Only the tool call object `.find()`
+  // happens to return gets the graceful "must be called alone" retry — any
+  // OTHER finalizing call in the same batch used to fall through to
+  // dispatchTool, which throws a raw, unrecoverable Error for a finalizing
+  // tool name by design (see dispatchTool's switch). That crashed the whole
+  // turn instead of asking the model to retry, which is what the user
+  // experienced as the session going silent/erroring right after asking for
+  // confirmation, never actually confirming.
+  it("gracefully rejects EVERY finalizing tool call in a batch of 2+, not just the one found first", async () => {
+    mocks.chatCompletionsCreate.mockReset();
+    mocks.chatCompletionsCreate
+      .mockResolvedValueOnce(
+        toolCallResponse([
+          { id: "call_1", name: "respond_to_user", arguments: { message: "Confirm: create it?", needs_follow_up: true } },
+          { id: "call_2", name: "propose_mutation", arguments: validProposeMutationArgs },
+        ]),
+      )
+      .mockResolvedValueOnce(toolCallResponse([{ id: "call_3", name: "propose_mutation", arguments: validProposeMutationArgs }]));
+
+    const result = await runConversationTurn(fakeSupabase, "user-1", "yes", "conv-1");
+
+    expect(result).toEqual({
+      kind: "mutation_proposal",
+      confidence: 0.97,
+      summary: "Delete the task",
+      mutation: { targetType: "task", operation: "delete", targetId: VALID_TARGET_ID },
+      conversationId: "conv-1",
+    });
+  });
+
   it("throws when propose_mutation's arguments keep failing mutationSchema validation (never invents an id past a bad one)", async () => {
     mocks.chatCompletionsCreate.mockReset();
     mocks.chatCompletionsCreate.mockResolvedValue(

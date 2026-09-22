@@ -257,6 +257,36 @@ describe("mutationSchema", () => {
     expect(missingDuration.success).toBe(false);
   });
 
+  it("rejects an event create with duration_minutes over 24 hours (multi-day span must become one Event per day, not one inflated block)", () => {
+    const result = mutationSchema.safeParse({
+      target_type: "event",
+      operation: "create",
+      target_id: null,
+      title: "blink Cincinnati",
+      date: "2026-10-08",
+      time: "7:00 PM",
+      duration_minutes: 5760,
+      location: null,
+      event: null,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts an event create with duration_minutes at exactly the 24-hour cap", () => {
+    const result = mutationSchema.safeParse({
+      target_type: "event",
+      operation: "create",
+      target_id: null,
+      title: "All-day thing",
+      date: "2026-10-08",
+      time: "12:00 AM",
+      duration_minutes: 1440,
+      location: null,
+      event: null,
+    });
+    expect(result.success).toBe(true);
+  });
+
   it("rejects an event transition with no event", () => {
     const result = mutationSchema.safeParse({
       target_type: "event",
