@@ -102,4 +102,45 @@ test.describe("assistant: multi-day event (regression, 2026-09-22 incident)", ()
       expect(row.duration_minutes).toBe(240);
     }
   });
+
+  // Production incident (2026-09-22), second half: after day 1 was proposed
+  // and confirmed, the user pressed the mic again and said (Deepgram
+  // transcribed it as) "Can you create the event for the rest of the day?" —
+  // singular "day", not "days". The assistant responded with a completely
+  // unrelated question ("What title should I use for the event that covers
+  // the rest of today?"), i.e. it planned a brand-new all-day appointment
+  // for TODAY instead of continuing the festival. Root cause: a confirmed
+  // mutation's own turn (including its "I'll add the rest once you confirm"
+  // plan) never wrote conversation_id/response_message, so
+  // loadConversationHistory silently dropped it — the very next turn had
+  // zero memory the festival, or day 1, had ever been discussed. Fixed in
+  // session.ts (conversation_id at proposal time, response_message once
+  // confirmed/declined/expired). This reproduces the exact reported phrase.
+  test("the exact ambiguous follow-up phrase from the incident ('...rest of the day', not 'days') still continues the festival", async ({ page }) => {
+    test.setTimeout(90_000);
+    const user = await createUserAndSignIn(page);
+    await openAssistant(page);
+
+    const first = await runMutation(
+      page,
+      "I need to create an event called Plink Cincinnati that is happening on October 8 to October 11, 7PM to 11PM every day.",
+    );
+    expect(first.prompt.toLowerCase()).toMatch(/plink cincinnati/);
+
+    const second = await runMutation(page, "Can you create the event for the rest of the day?");
+    expect(second.prompt.toLowerCase()).toMatch(/plink cincinnati/);
+    expect(second.prompt).not.toMatch(/what title/i);
+
+    const { data } = await admin
+      .from("appointments")
+      .select("title, date, duration_minutes")
+      .eq("user_id", user.userId)
+      .is("deleted_at", null)
+      .order("date", { ascending: true });
+    expect(data).toHaveLength(2);
+    for (const row of data!) {
+      expect(row.title.toLowerCase()).toContain("cincinnati");
+      expect(row.duration_minutes).toBe(240);
+    }
+  });
 });

@@ -20,7 +20,7 @@ import {
 import type { PendingMutation } from "../mutations";
 import type { ConversationAnswer } from "../conversation-core";
 import { CONFIRMATION_PRE_ARM_GRACE_SECONDS, CONFIRMATION_WINDOW_SECONDS } from "../transitions";
-import { endConversation, resolveActiveConversation } from "../conversation-memory";
+import { endConversation, loadConversationHistory, resolveActiveConversation } from "../conversation-memory";
 
 // Echoes back whatever conversationId it was called with (the real one
 // resolveActiveConversation resolved against the test DB, since that
@@ -114,6 +114,16 @@ describe("intakeVoiceTurn / confirmVoiceSession / declineVoiceSession", () => {
     const preArmMs = (CONFIRMATION_WINDOW_SECONDS + CONFIRMATION_PRE_ARM_GRACE_SECONDS) * 1_000;
     expect(deltaMs).toBeGreaterThan(preArmMs - 2_000);
     expect(deltaMs).toBeLessThanOrEqual(preArmMs + 5_000);
+    // Production incident (2026-09-22): this was never set, so
+    // confirm/decline/expire below had nothing to attach a response_message
+    // to, and the whole turn (including any multi-step plan the summary
+    // stated) silently vanished from loadConversationHistory forever, even
+    // once the mutation was confirmed and executed.
+    expect(row.conversation_id).not.toBeNull();
+    // Still correctly excluded from history until this proposal actually
+    // resolves (confirm/decline/expire) -- a mutation genuinely mid-flight
+    // must not appear as if the assistant already said something final.
+    expect(row.response_message).toBeNull();
   });
 
   // AC-3
@@ -269,6 +279,11 @@ describe("intakeVoiceTurn / confirmVoiceSession / declineVoiceSession", () => {
     const row = await sessionRow(intake.sessionId);
     expect(row.state).toBe("Responding");
     expect(row.pending_mutation).toBeNull();
+    // A declined mutation must still be visible to a later turn's history —
+    // otherwise the model has no way to know this specific plan was already
+    // proposed and rejected.
+    expect(row.response_message).toContain("create a task");
+    expect(row.response_message).toMatch(/declined/i);
 
     const { data: task } = await admin.from("tasks").select("id").eq("user_id", userId).eq("title", "Should never be created").maybeSingle();
     expect(task).toBeNull();
@@ -300,6 +315,52 @@ describe("intakeVoiceTurn / confirmVoiceSession / declineVoiceSession", () => {
     const row = await sessionRow(intake.sessionId);
     expect(row.state).toBe("Responding");
     expect(row.pending_mutation).toBeNull();
+    // Production incident (2026-09-22): a confirmed-and-executed mutation
+    // turn never carried a response_message, so it was permanently invisible
+    // to loadConversationHistory — the model had zero memory that it had
+    // proposed, let alone completed, this exact action. The original
+    // proposal text (with any multi-step plan it stated) must survive here,
+    // not just a generic "done" acknowledgement.
+    expect(row.response_message).toContain("create a task to read chapter 4");
+    expect(row.response_message).toMatch(/done/i);
+  });
+
+  // Production incident (2026-09-22): a user asked (by voice) to create a
+  // multi-day event; the assistant proposed and correctly created the first
+  // day, promising to add the rest once confirmed — but on the very next mic
+  // turn, with zero prior context, it asked a completely unrelated
+  // clarifying question instead of continuing the plan. Root cause: the
+  // resolved conversation_id/response_message gap fixed above meant the
+  // confirmed turn never made it into loadConversationHistory, so the next
+  // turn's model call had no memory the plan (or the mutation) ever
+  // happened. This drives the exact same shape end-to-end: propose, confirm,
+  // then read the history a follow-up turn would actually see.
+  it("a confirmed mutation's turn (including any plan it stated) is visible to loadConversationHistory on a later turn", async () => {
+    const mutation: PendingMutation = { targetType: "task", operation: "create", payload: { title: "Festival day 1" } };
+    const runConversationTurn = fakeMutationProposal({
+      confidence: 0.97,
+      summary: "Create Festival day 1. I'll add the remaining days the same way once you confirm.",
+      mutation,
+    });
+    const intake = await intakeVoiceTurn(
+      user.client,
+      userId,
+      { transcript: "add my festival, day one" },
+      { transcribe: vi.fn(), runConversationTurn },
+    );
+    await confirmVoiceSession(user.client, userId, intake.sessionId);
+
+    const row = await sessionRow(intake.sessionId);
+    // This describe block's tests share one user/conversation, so history
+    // can carry earlier tests' turns too -- look at the LAST turns (this
+    // one's), not just any match.
+    const history = await loadConversationHistory(user.client, userId, row.conversation_id as string);
+
+    expect(history.at(-2)).toEqual({ role: "user", content: "add my festival, day one" });
+    const assistantTurn = history.at(-1);
+    expect(assistantTurn?.role).toBe("assistant");
+    expect(assistantTurn?.content).toContain("I'll add the remaining days the same way once you confirm");
+    expect(assistantTurn?.content).toMatch(/done/i);
   });
 
   // Security/code/architect-review finding: two concurrent confirms for the
@@ -348,6 +409,7 @@ describe("intakeVoiceTurn / confirmVoiceSession / declineVoiceSession", () => {
     const row = await sessionRow(intake.sessionId);
     expect(row.state).toBe("Responding");
     expect(row.pending_mutation).toBeNull();
+    expect(row.response_message).toMatch(/expired/i);
   });
 
   describe("armVoiceConfirmation", () => {
@@ -430,6 +492,7 @@ describe("intakeVoiceTurn / confirmVoiceSession / declineVoiceSession", () => {
       const row = await sessionRow(intake.sessionId);
       expect(row.state).toBe("Responding");
       expect(row.pending_mutation).toBeNull();
+      expect(row.response_message).toMatch(/expired/i);
 
       const { data: task } = await admin.from("tasks").select("id").eq("user_id", userId).eq("title", "Should expire, not execute").maybeSingle();
       expect(task).toBeNull();

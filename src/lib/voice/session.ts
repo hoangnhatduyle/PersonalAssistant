@@ -340,6 +340,20 @@ async function intakeVoiceTurnInner(
   await transition(supabase, userId, sessionId, "IntentResolved", "mutating_action_resolved", {
     pending_mutation: mutation,
     expires_at: computeConfirmationPreArmExpiry(),
+    // Production incident (2026-09-22): a mutation-proposal row never wrote
+    // conversation_id at all, so confirmVoiceSession/declineVoiceSession/
+    // expireVoiceSession below had nothing to attach a response_message to
+    // later, and loadConversationHistory's `.eq("conversation_id", ...)`
+    // filter would have excluded it anyway even if they had. That silently
+    // erased every mutation turn from history the instant it was proposed —
+    // including whatever plan the summary stated (e.g. "I'll add the other
+    // days the same way once you confirm") — so a follow-up turn had zero
+    // memory that the mutation was ever discussed, only the bare post-
+    // mutation entity-context snapshot to go on. Attaching conversation_id
+    // here (response_message is deliberately still left for whichever of
+    // confirm/decline/expire below actually resolves this proposal) is what
+    // lets that write land in the right conversation.
+    conversation_id: outcome.conversationId,
   });
   return { sessionId, state: "AwaitingConfirmation", message };
 }
@@ -379,6 +393,7 @@ export async function confirmVoiceSession(
     await transition(supabase, userId, sessionId, "AwaitingConfirmation", "confirmation_window_expired", {
       pending_mutation: null,
       ended_at: new Date().toISOString(),
+      response_message: `${session.resolved_intent} (Expired — no confirmation heard in time.)`,
     }).catch(() => {});
     throw new VoiceSessionExpiredError();
   }
@@ -395,6 +410,14 @@ export async function confirmVoiceSession(
     await transition(supabase, userId, sessionId, "Executing", "execution_completed", {
       pending_mutation: null,
       ended_at: new Date().toISOString(),
+      // Restores this turn to loadConversationHistory (see the
+      // conversation_id comment above): `resolved_intent` already holds the
+      // full spoken proposal, including any multi-step plan it stated
+      // ("I'll add the other days the same way once you confirm") -- kept
+      // verbatim rather than replaced by result.summary's terser "Created
+      // appointment ..." so a follow-up turn can still see that plan, with
+      // the outcome appended so it also knows this one actually went through.
+      response_message: `${session.resolved_intent} (Done — ${result.summary})`,
     });
     return { executed: true, result };
   } catch (executionError) {
@@ -419,7 +442,7 @@ export async function declineVoiceSession(
 ): Promise<{ message: string }> {
   const { data: session, error } = await supabase
     .from("voice_sessions")
-    .select("id, state")
+    .select("id, state, resolved_intent")
     .eq("id", sessionId)
     .eq("user_id", userId)
     .maybeSingle();
@@ -429,11 +452,17 @@ export async function declineVoiceSession(
     throw new VoiceSessionInvalidStateError(`Cannot decline from state "${session.state}"`);
   }
 
+  const message = "Okay, I won't do that.";
   await transition(supabase, userId, sessionId, "AwaitingConfirmation", "user_declines", {
     pending_mutation: null,
     ended_at: new Date().toISOString(),
+    // See the conversation_id/response_message comments above (proposal +
+    // confirm) -- a declined mutation needs the same visibility, so a later
+    // turn knows this specific plan was proposed and rejected rather than
+    // having no memory of it at all.
+    response_message: `${session.resolved_intent} (Declined — you said no.)`,
   });
-  return { message: "Okay, I won't do that." };
+  return { message };
 }
 
 /**
@@ -511,7 +540,7 @@ export async function expireVoiceSession(
 ): Promise<{ expired: boolean }> {
   const { data: session, error } = await supabase
     .from("voice_sessions")
-    .select("id, state")
+    .select("id, state, resolved_intent")
     .eq("id", sessionId)
     .eq("user_id", userId)
     .maybeSingle();
@@ -523,6 +552,11 @@ export async function expireVoiceSession(
     await transition(supabase, userId, sessionId, "AwaitingConfirmation", "confirmation_window_expired", {
       pending_mutation: null,
       ended_at: new Date().toISOString(),
+      // See the conversation_id/response_message comments above (proposal +
+      // confirm/decline) -- an unanswered mutation needs the same
+      // visibility, so a later turn knows this specific plan was proposed
+      // and never actually confirmed, rather than having no memory of it.
+      response_message: `${session.resolved_intent} (Expired — no confirmation heard in time.)`,
     });
     return { expired: true };
   } catch (transitionError) {
