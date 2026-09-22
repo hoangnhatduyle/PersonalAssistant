@@ -274,7 +274,19 @@ export function CaptureChannel({ compact = false, large = false }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [state, speakResponse]);
+    // speakResponse is a fresh object every render (useSpeakVoiceResponse
+    // spreads the mutation into a new literal each call, even though
+    // .mutateAsync's own identity is stable) -- keeping it in this array
+    // retriggers the effect the instant mutateAsync flips isPending (which
+    // this same call causes), running this closure's own cleanup and
+    // permanently voiding confirmationReadySessionId via the stale
+    // `cancelled` flag before the in-flight speak call resolves. That left
+    // voice confirmations stuck on "Reading that back…" forever with the
+    // mic never arming (reported in production 2026-09-22) -- only a real
+    // state transition (guarded by spokenConfirmationSessionIdRef above)
+    // should restart this effect.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state]);
 
   const {
     status: recorderStatus,
