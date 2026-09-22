@@ -21,13 +21,16 @@ vi.mock("@/lib/voice/conversation-memory", () => ({
 }));
 
 vi.mock("@/lib/voice/schedule-loader", () => ({
-  loadSchedule: vi.fn().mockResolvedValue({ rankedSchedule: [], courses: [] }),
+  loadSchedule: vi.fn().mockResolvedValue({ overdueItems: [], rankedSchedule: [], courses: [] }),
   // Mirrors the real implementation's model-facing shape: courses is
   // deliberately dropped here too (see schedule-loader.ts's doc comment on
   // toScheduleToolPayload -- a confirmed hallucination source, not just
   // dead weight) so a test asserting on this mock's output shape reflects
   // reality.
-  toScheduleToolPayload: (result: { rankedSchedule: unknown }) => ({ rankedSchedule: result.rankedSchedule }),
+  toScheduleToolPayload: (result: { overdueItems: unknown; rankedSchedule: unknown }) => ({
+    overdueItems: result.overdueItems,
+    rankedSchedule: result.rankedSchedule,
+  }),
 }));
 
 vi.mock("@/lib/voice/suggestions-lookup", () => ({
@@ -243,6 +246,7 @@ describe("runConversationTurn", () => {
     mocks.chatCompletionsCreate.mockReset();
     vi.mocked(loadSchedule).mockResolvedValueOnce({
       scheduleItems: [],
+      overdueItems: [],
       rankedSchedule: [{ date: "2026-09-03", items: [{ kind: "task", id: "t1", title: "Submit form", priority: "High", context: null }] }],
       courses: [],
     });

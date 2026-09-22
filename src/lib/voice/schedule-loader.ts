@@ -10,7 +10,7 @@ import {
   resolveScheduleWindowDateKeys,
   type ScheduleTimeWindow,
 } from "@/lib/voice/schedule-time-window";
-import { rankScheduleItems, type Priority, type ScheduleItem } from "@/lib/voice/schedule-formatting";
+import { rankScheduleItems, zonedDateKey, type Priority, type ScheduleItem } from "@/lib/voice/schedule-formatting";
 import { expandBlockForDateKeys, formatMinutesOfDay, type MeetingBlock } from "@/lib/calendar/recurrence";
 import { findConflictingAppointmentIds, parseStructuredTime } from "@/lib/appointments/conflicts";
 
@@ -41,14 +41,22 @@ export interface ScheduleLoadRankedDay {
   items: ScheduleLoadRankedItem[];
 }
 
+export interface ScheduleLoadOverdueItem extends ScheduleLoadRankedItem {
+  /** YYYY-MM-DD in the user's timezone -- the day this item was originally due. A flat overdue list has no day-group to carry this implicitly the way rankedSchedule does, so each item states its own. */
+  date: string;
+}
+
 export interface ScheduleLoadResult {
   scheduleItems: ScheduleItem[];
-  /** Already grouped by calendar day and sorted by priority — the deterministic ordering a caller must narrate, never re-derive. */
+  /** Still-open Deadlines/Tasks whose due day is already in the past, flattened and ranked priority-descending then longest-overdue-first — always narrate this ahead of rankedSchedule. Always empty for window "date" (a single specific day never pulls in unrelated overdue items — see loadSchedule's includeOverdueQuery). */
+  overdueItems: ScheduleLoadOverdueItem[];
+  /** Today-or-future items only, grouped by calendar day and sorted by priority — the deterministic ordering a caller must narrate, never re-derive. */
   rankedSchedule: ScheduleLoadRankedDay[];
   courses: ScheduleLoadCourse[];
 }
 
 export interface ScheduleToolPayload {
+  overdueItems: ScheduleLoadOverdueItem[];
   rankedSchedule: ScheduleLoadRankedDay[];
 }
 
@@ -73,9 +81,13 @@ export interface ScheduleToolPayload {
  * from. (result.courses stays on ScheduleLoadResult -- schedule-loader.ts's
  * own courseNameById/buildCourseScheduleItems still need the full row
  * server-side; only the model-facing payload boundary changed.)
+ *
+ * overdueItems carries the same guarantee: every field on it is already
+ * server-resolved/narration-ready (kind/id/title/priority/context/date),
+ * never a raw row the model would have to interpret itself.
  */
 export function toScheduleToolPayload(result: ScheduleLoadResult): ScheduleToolPayload {
-  return { rankedSchedule: result.rankedSchedule };
+  return { overdueItems: result.overdueItems, rankedSchedule: result.rankedSchedule };
 }
 
 /**
@@ -100,6 +112,22 @@ export async function loadSchedule(
   const bounds = resolveScheduleWindowBounds(window, timezone, now, explicitDateKey);
   const dateKeys = resolveScheduleWindowDateKeys(window, timezone, now, explicitDateKey);
 
+  // Today's local-midnight boundary, computed once and reused both as the
+  // "unscoped" branch's anchor date below and as the upper bound for
+  // widening every window (except "date") with already-overdue Deadlines/
+  // Tasks -- see overdueDeadlinesQuery/overdueTasksQuery below.
+  const todayDateKey = resolveScheduleWindowDateKeys("today", timezone, now)!.startDateKey;
+  const [todayYear, todayMonth, todayDay] = todayDateKey.split("-").map(Number);
+  const overdueBoundaryUtc = localMidnightUtc(todayYear, todayMonth, todayDay, timezone);
+  // A "date" window means "describe exactly this one day, no more" (see the
+  // system prompt's "describes only the exact window/date it was requested
+  // for" invariant) -- widening it with overdue items from unrelated days
+  // would violate that and risks reintroducing the exact class of cross-day
+  // hallucination toScheduleToolPayload's own comment documents fixing once.
+  // "today"/"week"/"unscoped" are all "now-forward" queries where surfacing
+  // "this is still hanging over you" is exactly what's being asked for.
+  const includeOverdueQuery = window !== "date";
+
   // Deadlines are never part of a tracked Person's (0013_people.sql)
   // schedule by product decision (a Deadline only ever gets a person_id
   // indirectly, by inheriting it from an assigned Course -- the app has no
@@ -123,6 +151,34 @@ export async function loadSchedule(
     .not("due_at", "is", null)
     .eq("status", "Open");
   tasksQuery = personId ? tasksQuery.eq("person_id", personId) : tasksQuery.is("person_id", null);
+  // Still-open Deadlines/Tasks whose due day has already passed relative to
+  // today, fetched in ADDITION to (never instead of) deadlinesQuery/
+  // tasksQuery above, which only ever look now-forward. Bounded by today's
+  // local midnight rather than `now` itself, so this is exactly
+  // complementary to a "today"/"week" window's own lower bound (both anchor
+  // to the same instant) -- no double-fetch of an item due earlier today.
+  // Skipped entirely (see includeOverdueQuery below) for a "date" window.
+  const overdueDeadlinesQuery = supabase
+    .from("deadlines")
+    .select("id, title, due_at, priority, course_id")
+    .eq("user_id", userId)
+    .is("deleted_at", null)
+    .is("person_id", null)
+    .in("status", OPEN_DEADLINE_STATUSES)
+    .lt("due_at", overdueBoundaryUtc.toISOString())
+    .order("due_at", { ascending: true })
+    .limit(OVERDUE_ITEM_CAP);
+  let overdueTasksQuery = supabase
+    .from("tasks")
+    .select("id, title, due_at, priority, list_id")
+    .eq("user_id", userId)
+    .is("deleted_at", null)
+    .not("due_at", "is", null)
+    .eq("status", "Open")
+    .lt("due_at", overdueBoundaryUtc.toISOString())
+    .order("due_at", { ascending: true })
+    .limit(OVERDUE_ITEM_CAP);
+  overdueTasksQuery = personId ? overdueTasksQuery.eq("person_id", personId) : overdueTasksQuery.is("person_id", null);
   // Deadline Sessions (planned work sessions toward a Deadline -- appointments
   // rows with category "Session"/session_status "planned") are, like
   // Deadlines and Course To-Do items, an owner-only concept: a tracked
@@ -185,7 +241,7 @@ export async function loadSchedule(
   } else {
     // "unscoped": next-5-of-each, anchored to "today" for the date-only
     // appointments.date column.
-    todayKeyForUnscoped = resolveScheduleWindowDateKeys("today", timezone, now)!.startDateKey;
+    todayKeyForUnscoped = todayDateKey;
     deadlinesQuery = deadlinesQuery.gte("due_at", now.toISOString()).order("due_at", { ascending: true }).limit(5);
     tasksQuery = tasksQuery.gte("due_at", now.toISOString()).order("due_at", { ascending: true }).limit(5);
     sessionsQuery = sessionsQuery.gte("date", todayKeyForUnscoped).order("date", { ascending: true }).limit(5);
@@ -198,7 +254,17 @@ export async function loadSchedule(
   // for a real empty result below.
   const skippedResult = Promise.resolve({ data: null, error: null });
 
-  const [deadlinesResult, tasksResult, coursesResult, todoListsResult, sessionsResult, appointmentsResult, deadlineTitlesResult] = await Promise.all([
+  const [
+    deadlinesResult,
+    tasksResult,
+    coursesResult,
+    todoListsResult,
+    sessionsResult,
+    appointmentsResult,
+    deadlineTitlesResult,
+    overdueDeadlinesResult,
+    overdueTasksResult,
+  ] = await Promise.all([
     includeOwnerOnlyData ? deadlinesQuery : skippedResult,
     tasksQuery,
     coursesQuery,
@@ -206,6 +272,8 @@ export async function loadSchedule(
     includeOwnerOnlyData ? sessionsQuery : skippedResult,
     includeOwnerOnlyData ? appointmentsQuery : skippedResult,
     includeOwnerOnlyData ? deadlineTitlesQuery : skippedResult,
+    includeOwnerOnlyData && includeOverdueQuery ? overdueDeadlinesQuery : skippedResult,
+    includeOverdueQuery ? overdueTasksQuery : skippedResult,
   ]);
   if (deadlinesResult.error) throw deadlinesResult.error;
   if (tasksResult.error) throw tasksResult.error;
@@ -214,6 +282,8 @@ export async function loadSchedule(
   if (sessionsResult.error) throw sessionsResult.error;
   if (appointmentsResult.error) throw appointmentsResult.error;
   if (deadlineTitlesResult.error) throw deadlineTitlesResult.error;
+  if (overdueDeadlinesResult.error) throw overdueDeadlinesResult.error;
+  if (overdueTasksResult.error) throw overdueTasksResult.error;
 
   // meeting_blocks/recurrence_start_date/recurrence_end_date are typed
   // generically (Json/string) by the Supabase generator, which can't see the
@@ -228,30 +298,34 @@ export async function loadSchedule(
 
   const courseScheduleItems = buildCourseScheduleItems(courses, dateKeys, todayKeyForUnscoped, timezone);
 
+  // Factored out of the plain inline map below so overdueDeadlinesResult/
+  // overdueTasksResult (same row shape, just a different query) can reuse
+  // the exact same mapping without duplicating it.
+  const toDeadlineItem = (d: { id: string; title: string; due_at: string; priority: Priority | null; course_id: string }): ScheduleItem => ({
+    id: d.id,
+    title: d.title,
+    dueAt: new Date(d.due_at),
+    kind: "deadline",
+    priority: d.priority,
+    context: courseNameById.get(d.course_id) ?? null,
+  });
+  // Board merge: a Task filed under a Board List (list_id) carries that
+  // list's name as context, the same way a Course To-Do item used to; an
+  // unlisted Task has no natural grouping.
+  const toTaskItem = (t: { id: string; title: string; due_at: string | null; priority: Priority | null; list_id: string | null }): ScheduleItem => ({
+    id: t.id,
+    title: t.title,
+    dueAt: new Date(t.due_at!),
+    kind: "task",
+    priority: t.priority,
+    context: t.list_id ? listNameById.get(t.list_id) ?? null : null,
+  });
+
   const scheduleItems: ScheduleItem[] = [
-    ...(deadlinesResult.data ?? []).map(
-      (d): ScheduleItem => ({
-        id: d.id,
-        title: d.title,
-        dueAt: new Date(d.due_at),
-        kind: "deadline",
-        priority: d.priority,
-        context: courseNameById.get(d.course_id) ?? null,
-      }),
-    ),
-    // Board merge: a Task filed under a Board List (list_id) carries that
-    // list's name as context, the same way a Course To-Do item used to; an
-    // unlisted Task has no natural grouping.
-    ...(tasksResult.data ?? []).map(
-      (t): ScheduleItem => ({
-        id: t.id,
-        title: t.title,
-        dueAt: new Date(t.due_at!),
-        kind: "task",
-        priority: t.priority,
-        context: t.list_id ? listNameById.get(t.list_id) ?? null : null,
-      }),
-    ),
+    ...(deadlinesResult.data ?? []).map(toDeadlineItem),
+    ...(overdueDeadlinesResult.data ?? []).map(toDeadlineItem),
+    ...(tasksResult.data ?? []).map(toTaskItem),
+    ...(overdueTasksResult.data ?? []).map(toTaskItem),
     ...(sessionsResult.data ?? []).map((session): ScheduleItem => {
       const [year, month, day] = session.date.split("-").map(Number);
       const deadlineTitle = deadlineTitleById.get(session.deadline_id!) ?? null;
@@ -304,17 +378,32 @@ export async function loadSchedule(
     ...courseScheduleItems,
   ];
 
-  const rankedSchedule = rankScheduleItems(scheduleItems, timezone).map((group) => ({
-    date: group.dateKey,
-    items: group.items.map((item) => ({ kind: item.kind, id: item.id, title: item.title, priority: item.priority, context: item.context })),
+  const toRankedItem = (item: ScheduleItem): ScheduleLoadRankedItem => ({
+    kind: item.kind,
+    id: item.id,
+    title: item.title,
+    priority: item.priority,
+    context: item.context,
+  });
+
+  const ranked = rankScheduleItems(scheduleItems, timezone, now);
+  const rankedSchedule: ScheduleLoadRankedDay[] = ranked.dayGroups.map((group) => ({ date: group.dateKey, items: group.items.map(toRankedItem) }));
+  const overdueItems: ScheduleLoadOverdueItem[] = ranked.overdueItems.map((item) => ({
+    ...toRankedItem(item),
+    date: zonedDateKey(item.dueAt, timezone),
   }));
 
-  return { scheduleItems, rankedSchedule, courses };
+  return { scheduleItems, overdueItems, rankedSchedule, courses };
 }
 
 const WINDOWED_COURSE_ITEM_CAP = 30;
 const UNSCOPED_COURSE_LOOKAHEAD_DAYS = 90;
 const UNSCOPED_COURSE_ITEM_CAP = 5;
+// Generous sanity ceiling for the supplemental "still overdue, from any past
+// day" queries -- same spirit as the window-scoped queries' own .limit(20),
+// not a "top N most important" cap (ranking/truncation for narration
+// purposes happens downstream, in rankScheduleItems).
+const OVERDUE_ITEM_CAP = 20;
 
 /**
  * Expands every course's recurring meeting_blocks into dated ScheduleItems

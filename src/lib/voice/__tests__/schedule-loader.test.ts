@@ -376,6 +376,112 @@ describe("loadSchedule", () => {
     expect(titles).toContain("Due on target date");
     expect(titles).not.toContain("Due the day before");
   });
+
+  describe("overdueItems", () => {
+    it("includes a still-open Deadline due yesterday in overdueItems, not rankedSchedule", async () => {
+      const { userId: freshUserId, client } = await createAuthenticatedUser();
+      const courseId = await createCourse(admin, freshUserId, { name: "Overdue deadline course" });
+      const yesterdayNoonUtc = new Date(Date.now() - 86_400_000).toISOString();
+      await createDeadline(admin, freshUserId, courseId, { title: "Overdue deadline", due_at: yesterdayNoonUtc });
+
+      const result = await loadSchedule(client, freshUserId, "today");
+
+      expect(result.overdueItems.map((item) => item.title)).toContain("Overdue deadline");
+      const rankedTitles = result.rankedSchedule.flatMap((day) => day.items.map((item) => item.title));
+      expect(rankedTitles).not.toContain("Overdue deadline");
+    });
+
+    it("includes a still-open Task due last week in overdueItems", async () => {
+      const { userId: freshUserId, client } = await createAuthenticatedUser();
+      const lastWeekIso = new Date(Date.now() - 7 * 86_400_000).toISOString();
+      await createTask(admin, freshUserId, { title: "Overdue task", due_at: lastWeekIso });
+
+      const result = await loadSchedule(client, freshUserId, "today");
+
+      expect(result.overdueItems.map((item) => item.title)).toContain("Overdue task");
+    });
+
+    it("excludes a Completed Deadline / Done Task from overdueItems even when due in the past", async () => {
+      const { userId: freshUserId, client } = await createAuthenticatedUser();
+      const courseId = await createCourse(admin, freshUserId, { name: "Completed overdue course" });
+      const yesterdayIso = new Date(Date.now() - 86_400_000).toISOString();
+
+      const completedDeadlineId = await createDeadline(admin, freshUserId, courseId, { title: "Completed overdue deadline", due_at: yesterdayIso });
+      await walkTransitions(admin, "deadlines", completedDeadlineId, "status", ["In Progress", "Submitted", "Completed"]);
+
+      const doneTaskId = await createTask(admin, freshUserId, { title: "Done overdue task", due_at: yesterdayIso });
+      await walkTransitions(admin, "tasks", doneTaskId, "status", ["Done"]);
+
+      const result = await loadSchedule(client, freshUserId, "today");
+
+      const overdueTitles = result.overdueItems.map((item) => item.title);
+      expect(overdueTitles).not.toContain("Completed overdue deadline");
+      expect(overdueTitles).not.toContain("Done overdue task");
+    });
+
+    it("orders overdueItems by priority descending, then longest-overdue-first on a tie", async () => {
+      const { userId: freshUserId, client } = await createAuthenticatedUser();
+      const courseId = await createCourse(admin, freshUserId, { name: "Overdue ordering course" });
+      const threeDaysAgo = new Date(Date.now() - 3 * 86_400_000).toISOString();
+      const twoDaysAgo = new Date(Date.now() - 2 * 86_400_000).toISOString();
+      const oneDayAgo = new Date(Date.now() - 86_400_000).toISOString();
+
+      await createDeadline(admin, freshUserId, courseId, { title: "Low, overdue 1 day", due_at: oneDayAgo, priority: "Low" });
+      await createDeadline(admin, freshUserId, courseId, { title: "Urgent, overdue 3 days", due_at: threeDaysAgo, priority: "Urgent" });
+      await createTask(admin, freshUserId, { title: "Urgent, overdue 2 days", due_at: twoDaysAgo, priority: "Urgent" });
+
+      const result = await loadSchedule(client, freshUserId, "today");
+
+      const titles = result.overdueItems.map((item) => item.title);
+      // Both Urgent items rank ahead of the Low one; between the two
+      // Urgent items, the longer-overdue one (3 days) comes first.
+      expect(titles.indexOf("Urgent, overdue 3 days")).toBeLessThan(titles.indexOf("Urgent, overdue 2 days"));
+      expect(titles.indexOf("Urgent, overdue 2 days")).toBeLessThan(titles.indexOf("Low, overdue 1 day"));
+    });
+
+    it("with a personId, overdueItems contains only that person's overdue Tasks, never Deadlines", async () => {
+      const { userId: freshUserId, client } = await createAuthenticatedUser();
+      const personId = await createPerson(admin, freshUserId, { name: "Sister" });
+      const courseId = await createCourse(admin, freshUserId, { name: "My overdue course" });
+      const yesterdayIso = new Date(Date.now() - 86_400_000).toISOString();
+
+      await createDeadline(admin, freshUserId, courseId, { title: "My overdue deadline", due_at: yesterdayIso });
+      await createTask(admin, freshUserId, { title: "My overdue task", due_at: yesterdayIso });
+      await createTask(admin, freshUserId, { title: "Sister's overdue task", due_at: yesterdayIso, person_id: personId });
+
+      const result = await loadSchedule(client, freshUserId, "today", undefined, personId);
+
+      const titles = result.overdueItems.map((item) => item.title);
+      expect(titles).toContain("Sister's overdue task");
+      expect(titles).not.toContain("My overdue deadline");
+      expect(titles).not.toContain("My overdue task");
+    });
+
+    it('"date" window never populates overdueItems, even when overdue items exist', async () => {
+      const { userId: freshUserId, client } = await createAuthenticatedUser();
+      const courseId = await createCourse(admin, freshUserId, { name: "Date window overdue course" });
+      const yesterdayIso = new Date(Date.now() - 86_400_000).toISOString();
+      await createDeadline(admin, freshUserId, courseId, { title: "Overdue deadline for date window test", due_at: yesterdayIso });
+
+      const targetDateKey = new Date(Date.now() + 5 * 86_400_000).toISOString().slice(0, 10);
+      const result = await loadSchedule(client, freshUserId, "date", new Date(), undefined, targetDateKey);
+
+      expect(result.overdueItems).toEqual([]);
+    });
+
+    it('"week" and "unscoped" windows also surface overdueItems', async () => {
+      const { userId: freshUserId, client } = await createAuthenticatedUser();
+      const courseId = await createCourse(admin, freshUserId, { name: "Week/unscoped overdue course" });
+      const yesterdayIso = new Date(Date.now() - 86_400_000).toISOString();
+      await createDeadline(admin, freshUserId, courseId, { title: "Overdue deadline for window test", due_at: yesterdayIso });
+
+      const weekResult = await loadSchedule(client, freshUserId, "week");
+      const unscopedResult = await loadSchedule(client, freshUserId, "unscoped");
+
+      expect(weekResult.overdueItems.map((item) => item.title)).toContain("Overdue deadline for window test");
+      expect(unscopedResult.overdueItems.map((item) => item.title)).toContain("Overdue deadline for window test");
+    });
+  });
 });
 
 // Regression test for a real, reproduced hallucination: a model narrating a
@@ -396,7 +502,7 @@ describe("toScheduleToolPayload", () => {
     const result = await loadSchedule(client, userId, "today");
     const payload = toScheduleToolPayload(result);
 
-    expect(payload).toEqual({ rankedSchedule: result.rankedSchedule });
+    expect(payload).toEqual({ overdueItems: result.overdueItems, rankedSchedule: result.rankedSchedule });
     expect(payload).not.toHaveProperty("courses");
     // Sanity check the fixture actually proves something: the underlying
     // result truly does carry the course this payload must still exclude.

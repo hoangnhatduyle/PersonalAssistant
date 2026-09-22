@@ -36,21 +36,44 @@ function effectivePriorityRank(priority: Priority | null): number {
   return PRIORITY_RANK[priority ?? "Medium"];
 }
 
-function zonedDateKey(date: Date, timeZone: string): string {
-  // en-CA's numeric date format is YYYY-MM-DD, which doubles as a
-  // directly-sortable string key.
+/** en-CA's numeric date format is YYYY-MM-DD, which doubles as a directly-sortable string key. Exported for schedule-loader.ts to stamp each flattened overdue item with its own due date. */
+export function zonedDateKey(date: Date, timeZone: string): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
 }
 
+/** Priority descending (NULL treated as "Medium" for comparison only), then dueAt ascending as a final tiebreak -- shared by both the overdue flat sort and the per-day sort below. */
+function comparePriorityThenDueAt(a: ScheduleItem, b: ScheduleItem): number {
+  const rankDiff = effectivePriorityRank(b.priority) - effectivePriorityRank(a.priority);
+  return rankDiff !== 0 ? rankDiff : a.dueAt.getTime() - b.dueAt.getTime();
+}
+
+export interface RankedScheduleItems {
+  /** Items whose local-calendar due day (per `timezone`) is strictly before `now`'s -- flattened across days (never day-grouped), sorted by effective priority descending, then dueAt ascending (earliest due date = longest overdue = first). */
+  overdueItems: ScheduleItem[];
+  /** Today-or-future items only, bucketed into local-calendar-day groups ascending by day; within each day, sorted by priority descending then dueAt ascending -- unchanged from this function's previous (pre-overdue-split) behavior. */
+  dayGroups: ScheduleDayGroup[];
+}
+
 /**
- * Buckets items into local-calendar-day groups (by `timezone`), ascending by
- * day; within each day, sorts by priority descending (NULL treated as
- * "Medium" for comparison only), then by dueAt ascending as a final
- * tiebreak.
+ * Splits `items` into already-overdue (flat, priority-then-recency ranked)
+ * and today-or-later (day-grouped, priority-ranked within each day) --
+ * see RankedScheduleItems for the exact ordering each side gets.
  */
-export function rankScheduleItems(items: ScheduleItem[], timezone: string): ScheduleDayGroup[] {
-  const byDay = new Map<string, ScheduleItem[]>();
+export function rankScheduleItems(items: ScheduleItem[], timezone: string, now: Date): RankedScheduleItems {
+  const nowKey = zonedDateKey(now, timezone);
+  const overdueItems: ScheduleItem[] = [];
+  const currentItems: ScheduleItem[] = [];
   for (const item of items) {
+    if (zonedDateKey(item.dueAt, timezone) < nowKey) {
+      overdueItems.push(item);
+    } else {
+      currentItems.push(item);
+    }
+  }
+  overdueItems.sort(comparePriorityThenDueAt);
+
+  const byDay = new Map<string, ScheduleItem[]>();
+  for (const item of currentItems) {
     const key = zonedDateKey(item.dueAt, timezone);
     const bucket = byDay.get(key);
     if (bucket) {
@@ -60,15 +83,14 @@ export function rankScheduleItems(items: ScheduleItem[], timezone: string): Sche
     }
   }
 
-  return Array.from(byDay.entries())
+  const dayGroups = Array.from(byDay.entries())
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
     .map(([dateKey, dayItems]) => ({
       dateKey,
-      items: [...dayItems].sort((a, b) => {
-        const rankDiff = effectivePriorityRank(b.priority) - effectivePriorityRank(a.priority);
-        return rankDiff !== 0 ? rankDiff : a.dueAt.getTime() - b.dueAt.getTime();
-      }),
+      items: [...dayItems].sort(comparePriorityThenDueAt),
     }));
+
+  return { overdueItems, dayGroups };
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
