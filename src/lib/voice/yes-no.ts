@@ -15,8 +15,35 @@ const NO_PATTERNS = [
   /\bnever ?mind\b/i,
   /\bskip\b/i,
   /\bdismiss\b/i,
+  /\bnot now\b/i,
+  /\bhold off\b/i,
+  /\bnegative\b/i,
+  /\bleave it\b/i,
+  /\bforget it\b/i,
 ];
-const YES_PATTERNS = [/\byes\b/i, /\byeah\b/i, /\byep\b/i, /\bconfirm\b/i, /\bdo it\b/i, /\bsure\b/i, /\bgo ?ahead\b/i, /\bcorrect\b/i, /\bapply\b/i, /\bok(ay)?\b/i];
+const YES_PATTERNS = [
+  /\byes\b/i,
+  /\byeah\b/i,
+  /\byep\b/i,
+  /\bconfirm\b/i,
+  /\bdo it\b/i,
+  /\bsure\b/i,
+  /\bgo ?ahead\b/i,
+  /\bcorrect\b/i,
+  /\bapply\b/i,
+  /\bok(ay)?\b/i,
+  /\bthat'?s right\b/i,
+  /\bsounds good\b/i,
+  /\bplease do\b/i,
+  /\ball ?right\b/i,
+  /\bdefinitely\b/i,
+  /\babsolutely\b/i,
+  /\byup\b/i,
+  /\buh[- ]?huh\b/i,
+  /\baffirmative\b/i,
+  /\bproceed\b/i,
+  /\bgo for it\b/i,
+];
 
 /**
  * Lightweight keyword classification for a short spoken confirmation

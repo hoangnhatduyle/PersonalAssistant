@@ -112,6 +112,12 @@ export interface ProposeMutationArgs {
   recurrence_end_date: string | null;
   // Cancelling a repeating Deadline: which occurrences (null = not chosen yet).
   cancel_scope: "occurrence" | "series" | null;
+  // General multi-step command queue: every additional, already-fully-resolved
+  // action this same request implies beyond this one (see MUTATION_FIELD_PROPERTIES's
+  // own additional_steps description below). Always null on save_mutation_draft.
+  additional_steps: Array<
+    { summary: string } & Omit<ProposeMutationArgs, "confidence" | "summary" | "additional_steps">
+  > | null;
 }
 
 /** get_personalization_suggestions and start_new_conversation both take no arguments. */
@@ -150,7 +156,7 @@ export type EmptyToolArgs = Record<string, never>;
  * out so the two tool schemas can never drift out of sync on a field's type
  * or description.
  */
-const MUTATION_FIELD_PROPERTIES = {
+const MUTATION_FIELD_PROPERTIES_BASE = {
   target_type: { type: "string", enum: ["course", "deadline", "task", "note", "reminder", "session", "todo_list", "event"] },
   operation: { type: "string", enum: ["create", "update", "delete", "acknowledge", "transition"] },
   target_id: {
@@ -229,6 +235,32 @@ const MUTATION_FIELD_PROPERTIES = {
     enum: ["occurrence", "series", null],
     description:
       "Deadline transition with event user_cancels on a repeating deadline only: \"occurrence\" = cancel just this one (the series continues), \"series\" = cancel the whole series (every open occurrence, and no more are created). Null unless the user actually said which -- leave null and the app asks. Null for everything else.",
+  },
+} as const;
+
+const MUTATION_FIELD_NAMES_BASE = Object.keys(MUTATION_FIELD_PROPERTIES_BASE) as (keyof typeof MUTATION_FIELD_PROPERTIES_BASE)[];
+
+// additional_steps (general multi-step command queue): a fully-resolved,
+// independently-valid mutation shares MUTATION_FIELD_PROPERTIES_BASE's own
+// shape (plus its own one-line summary) -- reused as the array's `items`
+// schema rather than duplicated, so a field can never drift between the
+// top-level shape and a queued step's shape.
+const MUTATION_FIELD_PROPERTIES = {
+  ...MUTATION_FIELD_PROPERTIES_BASE,
+  additional_steps: {
+    type: ["array", "null"],
+    maxItems: 20,
+    description:
+      "propose_mutation only. Every additional action this single request implies beyond the one being proposed right now, each fully resolved and independently confirmable, in the order they should be offered. Use this for a same-pattern-repeated-daily event (one item per remaining day, same fields, each with its own date) or a compound request naming multiple distinct targets (e.g. deleting two meetings). Null when there is nothing more to queue. On save_mutation_draft this is always null -- a draft is by definition incomplete, so it can never have fully-resolved future steps yet.",
+    items: {
+      type: "object",
+      properties: {
+        summary: { type: "string", description: "One sentence describing this queued action, to be spoken back to the user for its own confirmation once it's proposed." },
+        ...MUTATION_FIELD_PROPERTIES_BASE,
+      },
+      required: ["summary", ...MUTATION_FIELD_NAMES_BASE],
+      additionalProperties: false,
+    },
   },
 } as const;
 

@@ -255,6 +255,29 @@ export const mutationSchema = mutationSchemaBase.superRefine((value, ctx) => {
 export type RawMutation = z.infer<typeof mutationSchema>;
 
 /**
+ * One item of propose_mutation's additional_steps array (tools.ts) -- the
+ * general multi-step command queue mechanism (a same-pattern-repeated-daily
+ * Event, or a compound request naming multiple distinct targets). Each item
+ * is a *complete*, independently-valid mutation, validated through the exact
+ * same mutationSchema (including its per-target-type superRefine
+ * completeness checks) every top-level propose_mutation call is, plus its
+ * own one-line summary for its own confirmation prompt once session.ts's
+ * confirmVoiceSession pops it off the queue. z.intersection (rather than
+ * declaring `summary` on each of mutationSchemaBase's own branches) is what
+ * lets `summary` survive parsing -- a plain (non-strict) zod object branch
+ * would otherwise silently strip it as an unrecognized key, the same reason
+ * propose_mutation's own confidence/summary fields are parsed separately
+ * from the mutation payload in conversation-core.ts's parseProposeMutationArgs.
+ */
+export const queuedMutationStepSchema = z.intersection(mutationSchema, z.object({ summary: z.string().trim().min(1) }));
+export type RawQueuedMutationStep = z.infer<typeof queuedMutationStepSchema>;
+
+// Capped at 20 -- a technical safety net against a pathological response,
+// not a realistic product limit (mirrors MAX_TOOL_CALL_ITERATIONS's own
+// role in conversation-core.ts).
+export const additionalStepsSchema = z.array(queuedMutationStepSchema).max(20).nullable().default(null);
+
+/**
  * The same discriminated union as mutationSchema, WITHOUT its superRefine
  * per-operation completeness checks -- used by save_mutation_draft
  * (conversation-core.ts), which by definition may be missing a required

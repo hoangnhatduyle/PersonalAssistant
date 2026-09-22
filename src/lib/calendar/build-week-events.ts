@@ -1,4 +1,4 @@
-import { expandBlockInWeek, formatMinutesOfDay } from "@/lib/calendar/recurrence";
+import { expandBlockInWeek, formatMinutesOfDay, parseTimeToMinutes } from "@/lib/calendar/recurrence";
 import { isOpenDeadline, isOpenTask } from "@/lib/dashboard/upcoming-items";
 import { DEADLINE_STATUS_TONE, TASK_STATUS_TONE, type StatusTone } from "@/lib/status-colors";
 import type { CourseRow, DeadlineRow, TaskRow, PersonRow, AppointmentRow } from "@/lib/api/entity-types";
@@ -65,17 +65,6 @@ function sameDay(a: Date, b: Date): boolean {
 function toDateKey(date: Date): string {
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
-}
-
-/** "14:00" / "14:00:00" -> 840. Returns null for a missing or unparseable time so the caller can skip that row. */
-function parseTimeToMinutes(time: string | null): number | null {
-  if (!time) return null;
-  const match = /^(\d{1,2}):(\d{2})/.exec(time);
-  if (!match) return null;
-  const hours = Number(match[1]);
-  const minutes = Number(match[2]);
-  if (hours > 23 || minutes > 59) return null;
-  return hours * 60 + minutes;
 }
 
 /**

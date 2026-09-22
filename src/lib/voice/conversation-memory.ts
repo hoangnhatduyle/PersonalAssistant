@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database, Json } from "@/lib/supabase/types";
 import type { RawMutation } from "@/lib/voice/intent";
+import type { PendingMutation } from "@/lib/voice/mutations";
 
 const POSTGRES_UNIQUE_VIOLATION = "23505";
 
@@ -187,6 +188,54 @@ export async function setDraftMutation(
   const { error } = await supabase
     .from("voice_conversations")
     .update({ draft_mutation: draft as unknown as Json })
+    .eq("id", conversationId)
+    .eq("user_id", userId);
+  if (error) throw error;
+}
+
+/** One already-confirmed-pending step of the general multi-step command queue (conversation-core.ts's QueuedMutationStep) -- a complete, ready-to-propose mutation plus the summary to speak for its own confirmation prompt. */
+export interface QueuedStep {
+  mutation: PendingMutation;
+  summary: string;
+}
+
+/**
+ * The remaining steps (if any) of the multi-step command queue a
+ * propose_mutation call resolved up front (additional_steps, tools.ts) --
+ * conversation-scoped cross-turn state, the exact same shape/lifecycle as
+ * draft_mutation above (see 0046_voice_conversation_queued_steps.sql for why
+ * it needs no tamper-lockdown trigger either: a queued step is never
+ * executed directly, it only ever seeds a fresh AwaitingConfirmation row
+ * that still has to go through the normal confirm/decline dance).
+ * session.ts's confirmVoiceSession pops the head off this list on every
+ * confirm and mints the next AwaitingConfirmation session from it; decline/
+ * expire clear the whole list instead of advancing it.
+ */
+export async function loadQueuedSteps(
+  supabase: SupabaseClient<Database>,
+  userId: string,
+  conversationId: string,
+): Promise<QueuedStep[]> {
+  const { data, error } = await supabase
+    .from("voice_conversations")
+    .select("queued_steps")
+    .eq("id", conversationId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (error) throw error;
+  return (data?.queued_steps as QueuedStep[] | null) ?? [];
+}
+
+/** Sets (a propose_mutation call resolved additional_steps) or clears (queue exhausted, or a decline/expiry aborted it) the conversation's queued steps. */
+export async function setQueuedSteps(
+  supabase: SupabaseClient<Database>,
+  userId: string,
+  conversationId: string,
+  steps: QueuedStep[] | null,
+): Promise<void> {
+  const { error } = await supabase
+    .from("voice_conversations")
+    .update({ queued_steps: steps as unknown as Json })
     .eq("id", conversationId)
     .eq("user_id", userId);
   if (error) throw error;

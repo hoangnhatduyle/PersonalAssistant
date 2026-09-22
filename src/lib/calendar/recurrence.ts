@@ -40,6 +40,38 @@ function isWithinRange(dateOnly: string, rangeStart: string | null, rangeEnd: st
   return true;
 }
 
+const TIME_24H_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
+const TIME_12H_RE = /^(0?[1-9]|1[0-2]):([0-5]\d)\s*([AaPp][Mm])$/;
+
+/**
+ * Parses a structured appointment time into minutes-since-midnight, accepting
+ * either zero-padded 24-hour ("19:00") or 12-hour with AM/PM ("7:00 PM").
+ * Returns null for anything else, including a Deadline Session's free-text
+ * label (e.g. "Starting at 7:00 PM") — those stay unparseable by design.
+ * The single source of truth for every consumer of the free-text
+ * `appointments.time` column (conflict detection, past-appointment checks,
+ * dashboard ordering, and the week-grid layout) — previously two
+ * incompatible parsers existed for the same column, one of which silently
+ * dropped AM/PM.
+ */
+export function parseTimeToMinutes(time: string | null | undefined): number | null {
+  if (!time) return null;
+  const trimmed = time.trim();
+
+  const match24 = TIME_24H_RE.exec(trimmed);
+  if (match24) return Number(match24[1]) * 60 + Number(match24[2]);
+
+  const match12 = TIME_12H_RE.exec(trimmed);
+  if (match12) {
+    const hour = Number(match12[1]) % 12;
+    const minute = Number(match12[2]);
+    const isPM = match12[3].toLowerCase() === "pm";
+    return (hour + (isPM ? 12 : 0)) * 60 + minute;
+  }
+
+  return null;
+}
+
 /** "630" -> "10:30 AM" for hour-axis labels, event tooltips, and summary text. */
 export function formatMinutesOfDay(minutes: number): string {
   const hour24 = Math.floor(minutes / 60) % 24;

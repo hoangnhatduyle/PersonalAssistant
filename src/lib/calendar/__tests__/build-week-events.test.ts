@@ -288,6 +288,25 @@ describe("buildWeekGridData", () => {
     });
   });
 
+  it("places an Appointment with an AM/PM-formatted time in the correct PM range, not misread as AM", () => {
+    const data = buildWeekGridData(
+      [],
+      [],
+      [],
+      [],
+      REFERENCE,
+      [makeAppointment({ id: "a-pm", date: "2026-01-08", time: "7:00 PM", duration_minutes: 240 })],
+    );
+    const thursday = data.days.find((day) => day.dayOfWeek === 4)!;
+    expect(thursday.events).toHaveLength(1);
+    expect(thursday.events[0]).toMatchObject({
+      id: "appointment-a-pm",
+      timeLabel: "7 PM–11 PM",
+      startMinutes: 19 * 60,
+      endMinutes: 23 * 60,
+    });
+  });
+
   it("excludes a Deadline Session (category 'Session') from the week grid", () => {
     const data = buildWeekGridData(
       [],

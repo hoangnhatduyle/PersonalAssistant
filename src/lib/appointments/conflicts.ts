@@ -1,21 +1,8 @@
 import type { AppointmentRow } from "@/lib/api/entity-types";
+import { parseTimeToMinutes } from "@/lib/calendar/recurrence";
 
 /** Narrower than a full AppointmentRow so callers that select only a subset of columns (e.g. the voice schedule loader) can pass their query results directly. */
 type ConflictCheckableAppointment = Pick<AppointmentRow, "id" | "date" | "time" | "duration_minutes">;
-
-const STRUCTURED_TIME_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
-
-/**
- * Parses a structured "HH:MM" 24-hour time into minutes-since-midnight.
- * Returns null for anything else, including a Deadline Session's free-text
- * time (e.g. "Starting at 7:00 PM") — those are never conflict-checkable.
- */
-export function parseStructuredTime(time: string | null | undefined): number | null {
-  if (!time) return null;
-  const match = STRUCTURED_TIME_RE.exec(time);
-  if (!match) return null;
-  return Number(match[1]) * 60 + Number(match[2]);
-}
 
 /**
  * Flags appointment ids whose [start, start+duration) time range overlaps
@@ -30,7 +17,7 @@ export function findConflictingAppointmentIds(appointments: ConflictCheckableApp
   const byDate = new Map<string, Array<{ id: string; start: number; end: number }>>();
 
   for (const appointment of appointments) {
-    const start = parseStructuredTime(appointment.time);
+    const start = parseTimeToMinutes(appointment.time);
     if (start === null || !appointment.duration_minutes) continue;
     const interval = { id: appointment.id, start, end: start + appointment.duration_minutes };
     const bucket = byDate.get(appointment.date);

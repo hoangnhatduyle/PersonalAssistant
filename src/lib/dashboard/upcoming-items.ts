@@ -1,6 +1,7 @@
 import type { AppointmentRow, CourseRow, DeadlineRow, DeadlineStatus, TaskRow, TaskStatus, ReminderRow, PersonRow } from "@/lib/api/entity-types";
-import { findConflictingAppointmentIds, parseStructuredTime } from "@/lib/appointments/conflicts";
+import { findConflictingAppointmentIds } from "@/lib/appointments/conflicts";
 import { findCourseConflictingAppointmentIds } from "@/lib/appointments/course-conflicts";
+import { parseTimeToMinutes } from "@/lib/calendar/recurrence";
 
 export type UpcomingItemKind = "deadline" | "task" | "reminder" | "session" | "appointment";
 
@@ -11,6 +12,18 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 function localDayOffset(itemAt: Date, now: Date): number {
   const startOf = (date: Date) => new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
   return Math.round((startOf(itemAt) - startOf(now)) / DAY_MS);
+}
+
+/**
+ * Builds a local Date from a "YYYY-MM-DD" key plus minutes-since-midnight.
+ * Not a string-interpolated `` `${date}T${time}:00` `` — `parseTimeToMinutes`
+ * now accepts 12-hour "7:00 PM" values too, and splicing that raw text into
+ * an ISO-like string would produce an Invalid Date. Date normalizes minute
+ * overflow for us, same technique as list-view.ts's isPastAppointment.
+ */
+function dateAtMinutesOfDay(dateKey: string, minutesOfDay: number): Date {
+  const [year, month, day] = dateKey.split("-").map(Number);
+  return new Date(year, month - 1, day, 0, minutesOfDay);
 }
 
 export interface UpcomingItem {
@@ -130,11 +143,11 @@ export function buildUpcomingItems({
   for (const appointment of appointments) {
     if (appointment.category === "Session") {
       if (appointment.session_status !== "planned") continue;
-      const sessionStructuredMinutes = parseStructuredTime(appointment.time);
+      const sessionStructuredMinutes = parseTimeToMinutes(appointment.time);
       const at =
         sessionStructuredMinutes === null
           ? new Date(`${appointment.date}T23:59:59.999`)
-          : new Date(`${appointment.date}T${appointment.time}:00`);
+          : dateAtMinutesOfDay(appointment.date, sessionStructuredMinutes);
       items.push({
         id: appointment.id,
         kind: "session",
@@ -148,11 +161,11 @@ export function buildUpcomingItems({
 
     if (appointment.event_status !== "planned") continue;
 
-    const structuredMinutes = parseStructuredTime(appointment.time);
+    const structuredMinutes = parseTimeToMinutes(appointment.time);
     const at =
       structuredMinutes === null
         ? new Date(`${appointment.date}T23:59:59.999`)
-        : new Date(`${appointment.date}T${appointment.time}:00`);
+        : dateAtMinutesOfDay(appointment.date, structuredMinutes);
     items.push({
       id: appointment.id,
       kind: "appointment",

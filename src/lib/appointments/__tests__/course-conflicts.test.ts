@@ -94,6 +94,14 @@ describe("findCourseConflictingAppointmentIds", () => {
     expect(ids.size).toBe(0);
   });
 
+  it("flags an AM/PM-formatted appointment time overlapping a course meeting block", () => {
+    const ids = findCourseConflictingAppointmentIds(
+      [makeAppointment({ id: "a", date: "2026-01-05", time: "11:00 AM", duration_minutes: 60 })],
+      [makeCourse()],
+    );
+    expect(ids).toEqual(new Set(["a"]));
+  });
+
   it("skips an appointment with an unparseable time or a missing duration", () => {
     const ids = findCourseConflictingAppointmentIds(
       [

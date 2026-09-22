@@ -18,9 +18,9 @@ import {
   VoiceSessionNotFoundError,
 } from "../session";
 import type { PendingMutation } from "../mutations";
-import type { ConversationAnswer } from "../conversation-core";
+import type { ConversationAnswer, QueuedMutationStep } from "../conversation-core";
 import { CONFIRMATION_PRE_ARM_GRACE_SECONDS, CONFIRMATION_WINDOW_SECONDS } from "../transitions";
-import { endConversation, loadConversationHistory, resolveActiveConversation } from "../conversation-memory";
+import { endConversation, loadConversationHistory, loadQueuedSteps, resolveActiveConversation } from "../conversation-memory";
 
 // Echoes back whatever conversationId it was called with (the real one
 // resolveActiveConversation resolved against the test DB, since that
@@ -36,11 +36,17 @@ function fakeConversationTurn(overrides: Partial<ConversationAnswer> = {}) {
   }));
 }
 
-function fakeMutationProposal(overrides: { confidence: number; mutation: PendingMutation; summary?: string }) {
+function fakeMutationProposal(overrides: {
+  confidence: number;
+  mutation: PendingMutation;
+  summary?: string;
+  queuedSteps?: QueuedMutationStep[];
+}) {
   return vi.fn().mockImplementation(async (_supabase: unknown, _userId: string, _transcript: string, conversationId: string) => ({
     kind: "mutation_proposal" as const,
     summary: "ok",
     conversationId,
+    queuedSteps: [],
     ...overrides,
   }));
 }
@@ -141,6 +147,26 @@ describe("intakeVoiceTurn / confirmVoiceSession / declineVoiceSession", () => {
     expect(row.pending_mutation).toBeNull();
   });
 
+  // Same class of gap as the confirmed-mutation regression above, but for a
+  // clarification exchange instead: a low-confidence mutation proposal never
+  // wrote conversation_id/response_message, so "could you rephrase that" was
+  // just as invisible to loadConversationHistory as a confirmed turn used to
+  // be -- the model had no memory it had just asked the user to clarify.
+  it("a low-confidence mutation's clarification turn is visible to loadConversationHistory on a later turn", async () => {
+    const mutation: PendingMutation = { targetType: "task", operation: "create", payload: { title: "Unclear" } };
+    const runConversationTurn = fakeMutationProposal({ confidence: 0.4, summary: "unclear", mutation });
+
+    const result = await intakeVoiceTurn(user.client, userId, { transcript: "uh do the thing" }, { transcribe: vi.fn(), runConversationTurn });
+
+    const row = await sessionRow(result.sessionId);
+    expect(row.conversation_id).not.toBeNull();
+    expect(row.response_message).toBe(result.message);
+
+    const history = await loadConversationHistory(user.client, userId, row.conversation_id as string);
+    expect(history.at(-2)).toEqual({ role: "user", content: "uh do the thing" });
+    expect(history.at(-1)).toEqual({ role: "assistant", content: result.message });
+  });
+
   // Silence/no-speech handling: a blank transcript must deterministically ask
   // the user to repeat themselves rather than reaching the model at all --
   // previously nothing stopped an empty transcript from being misclassified
@@ -169,6 +195,11 @@ describe("intakeVoiceTurn / confirmVoiceSession / declineVoiceSession", () => {
     expect(row.query_kind).toBeNull();
     expect(row.schedule_time_window).toBeNull();
     expect(row.error_message).toBeNull();
+    // Unchanged behavior, not a regression: this case runs before an active
+    // conversation is even resolved, so there's no conversation_id to attach
+    // and nothing worth preserving in history for a genuinely silent turn.
+    expect(row.conversation_id).toBeNull();
+    expect(row.response_message).toBeNull();
   });
 
   it("an all-whitespace transcript transcribed from audio also asks the user to repeat", async () => {
@@ -247,6 +278,33 @@ describe("intakeVoiceTurn / confirmVoiceSession / declineVoiceSession", () => {
     expect(row.query_kind).toBeNull();
     expect(row.schedule_time_window).toBeNull();
     expect(row.error_message).toBe("OpenAI request timed out");
+
+    consoleErrorSpy.mockRestore();
+  });
+
+  // Same gap as the low-confidence clarification case above, for the other
+  // clarification call site: a runConversationTurn failure happens AFTER
+  // resolveActiveConversation already succeeded, so conversation_id is
+  // available and must be attached the same way, or a "trouble processing
+  // that" exchange is equally invisible to the next turn's history.
+  it("a runConversationTurn failure's clarification turn is visible to loadConversationHistory on a later turn", async () => {
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const runConversationTurn = vi.fn().mockRejectedValue(new Error("OpenAI request timed out"));
+
+    const result = await intakeVoiceTurn(
+      user.client,
+      userId,
+      { transcript: "what should I do this afternoon, take two" },
+      { transcribe: vi.fn(), runConversationTurn },
+    );
+
+    const row = await sessionRow(result.sessionId);
+    expect(row.conversation_id).not.toBeNull();
+    expect(row.response_message).toBe(result.message);
+
+    const history = await loadConversationHistory(user.client, userId, row.conversation_id as string);
+    expect(history.at(-2)).toEqual({ role: "user", content: "what should I do this afternoon, take two" });
+    expect(history.at(-1)).toEqual({ role: "assistant", content: result.message });
 
     consoleErrorSpy.mockRestore();
   });
@@ -410,6 +468,153 @@ describe("intakeVoiceTurn / confirmVoiceSession / declineVoiceSession", () => {
     expect(row.state).toBe("Responding");
     expect(row.pending_mutation).toBeNull();
     expect(row.response_message).toMatch(/expired/i);
+  });
+
+  // General multi-step command queue (Workstream C, swirling-beaming-nautilus.md):
+  // a single propose_mutation call resolves every remaining step up front
+  // (additional_steps, tools.ts); confirmVoiceSession pops the queue and
+  // auto-proposes the next one with no further LLM calls, while a decline/
+  // timeout aborts the rest instead of advancing it.
+  describe("general multi-step command queue", () => {
+    function queuedStep(title: string, summary: string): QueuedMutationStep {
+      return { mutation: { targetType: "task", operation: "create", payload: { title } }, summary };
+    }
+
+    it("a plain (non-queued) confirm returns next: null", async () => {
+      const mutation: PendingMutation = { targetType: "task", operation: "create", payload: { title: "No queue here" } };
+      const runConversationTurn = fakeMutationProposal({ confidence: 0.98, summary: "create a task", mutation });
+      const intake = await intakeVoiceTurn(user.client, userId, { transcript: "add a task" }, { transcribe: vi.fn(), runConversationTurn });
+
+      const confirmed = await confirmVoiceSession(user.client, userId, intake.sessionId);
+      expect(confirmed.next).toBeNull();
+    });
+
+    it("confirming a mutation with queued steps returns next with a fresh AwaitingConfirmation row sharing the same conversation", async () => {
+      const mutation: PendingMutation = { targetType: "task", operation: "create", payload: { title: "Festival day 1" } };
+      const queuedSteps = [queuedStep("Festival day 2", "Also add day 2?")];
+      const runConversationTurn = fakeMutationProposal({ confidence: 0.98, summary: "create day 1", mutation, queuedSteps });
+      const intake = await intakeVoiceTurn(user.client, userId, { transcript: "add my festival" }, { transcribe: vi.fn(), runConversationTurn });
+
+      const confirmed = await confirmVoiceSession(user.client, userId, intake.sessionId);
+      expect(confirmed.next?.message).toBe("Also add day 2?");
+
+      const firstRow = await sessionRow(intake.sessionId);
+      const nextRow = await sessionRow(confirmed.next!.sessionId);
+      expect(nextRow.state).toBe("AwaitingConfirmation");
+      expect(nextRow.pending_mutation).toEqual(queuedSteps[0].mutation);
+      expect(nextRow.conversation_id).toBe(firstRow.conversation_id);
+      expect(nextRow.transcript).toBe("(auto-continuing a multi-step command)");
+      expect(nextRow.resolved_intent).toBe("Also add day 2?");
+    });
+
+    it("repeated confirms walk the full queue, next: null once exhausted", async () => {
+      const mutation: PendingMutation = { targetType: "task", operation: "create", payload: { title: "Festival day 1 of 3" } };
+      const queuedSteps = [queuedStep("Festival day 2 of 3", "Also add day 2?"), queuedStep("Festival day 3 of 3", "Also add day 3?")];
+      const runConversationTurn = fakeMutationProposal({ confidence: 0.98, summary: "create day 1", mutation, queuedSteps });
+      const intake = await intakeVoiceTurn(user.client, userId, { transcript: "add my festival" }, { transcribe: vi.fn(), runConversationTurn });
+
+      const first = await confirmVoiceSession(user.client, userId, intake.sessionId);
+      expect(first.next?.message).toBe("Also add day 2?");
+
+      const second = await confirmVoiceSession(user.client, userId, first.next!.sessionId);
+      expect(second.next?.message).toBe("Also add day 3?");
+
+      const third = await confirmVoiceSession(user.client, userId, second.next!.sessionId);
+      expect(third.next).toBeNull();
+
+      const { data: tasks } = await admin
+        .from("tasks")
+        .select("title")
+        .eq("user_id", userId)
+        .in("title", ["Festival day 1 of 3", "Festival day 2 of 3", "Festival day 3 of 3"]);
+      expect(tasks).toHaveLength(3);
+    });
+
+    it("declining clears the remaining queue", async () => {
+      const mutation: PendingMutation = { targetType: "task", operation: "create", payload: { title: "Declined step 1" } };
+      const queuedSteps = [queuedStep("Should never be minted after decline", "queued")];
+      const runConversationTurn = fakeMutationProposal({ confidence: 0.98, summary: "create a task", mutation, queuedSteps });
+      const intake = await intakeVoiceTurn(user.client, userId, { transcript: "add a task" }, { transcribe: vi.fn(), runConversationTurn });
+
+      await declineVoiceSession(user.client, userId, intake.sessionId);
+
+      const row = await sessionRow(intake.sessionId);
+      expect(await loadQueuedSteps(admin, userId, row.conversation_id as string)).toEqual([]);
+    });
+
+    it("an unanswered expiry (expireVoiceSession) clears the remaining queue", async () => {
+      const mutation: PendingMutation = { targetType: "task", operation: "create", payload: { title: "Expired step 1" } };
+      const queuedSteps = [queuedStep("Should never be minted after expiry", "queued")];
+      const runConversationTurn = fakeMutationProposal({ confidence: 0.98, summary: "create a task", mutation, queuedSteps });
+      const intake = await intakeVoiceTurn(user.client, userId, { transcript: "add a task" }, { transcribe: vi.fn(), runConversationTurn });
+
+      await expireVoiceSession(user.client, userId, intake.sessionId);
+
+      const row = await sessionRow(intake.sessionId);
+      expect(await loadQueuedSteps(admin, userId, row.conversation_id as string)).toEqual([]);
+    });
+
+    it("the lazy expiry path inside confirmVoiceSession itself also clears the remaining queue", async () => {
+      const mutation: PendingMutation = { targetType: "task", operation: "create", payload: { title: "Lazily expired step 1" } };
+      const queuedSteps = [queuedStep("Should never be minted after a lazy expiry", "queued")];
+      const runConversationTurn = fakeMutationProposal({ confidence: 0.98, summary: "create a task", mutation, queuedSteps });
+      const intake = await intakeVoiceTurn(user.client, userId, { transcript: "add a task" }, { transcribe: vi.fn(), runConversationTurn });
+
+      await admin.from("voice_sessions").update({ expires_at: new Date(Date.now() - 1000).toISOString() }).eq("id", intake.sessionId);
+      await expect(confirmVoiceSession(user.client, userId, intake.sessionId)).rejects.toBeInstanceOf(VoiceSessionExpiredError);
+
+      const row = await sessionRow(intake.sessionId);
+      expect(await loadQueuedSteps(admin, userId, row.conversation_id as string)).toEqual([]);
+    });
+
+    // Architect-review requirement: a failure minting the next step must
+    // never mask or roll back the mutation that already succeeded.
+    it("a chain-minting failure still returns the successful result with next: null, without throwing", async () => {
+      const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const mutation: PendingMutation = { targetType: "task", operation: "create", payload: { title: "Should still succeed despite chain failure" } };
+      const queuedSteps = [queuedStep("Should never be minted", "queued")];
+      const runConversationTurn = fakeMutationProposal({ confidence: 0.98, summary: "create a task", mutation, queuedSteps });
+      const intake = await intakeVoiceTurn(user.client, userId, { transcript: "add a task" }, { transcribe: vi.fn(), runConversationTurn });
+
+      // Simulates mintNextQueuedStep's own voice_sessions insert failing --
+      // the FIRST insert() call to "voice_sessions" made through this
+      // client after this point is that mint's own insert (confirmVoiceSession
+      // itself only ever selects/updates voice_sessions, never inserts).
+      let voiceSessionInsertCalls = 0;
+      const originalFrom = user.client.from.bind(user.client);
+      const fromSpy = vi.spyOn(user.client, "from").mockImplementation(((table: string) => {
+        const builder = originalFrom(table as never);
+        if (table === "voice_sessions") {
+          const originalInsert = builder.insert.bind(builder);
+          (builder as unknown as { insert: typeof originalInsert }).insert = ((...args: Parameters<typeof originalInsert>) => {
+            voiceSessionInsertCalls++;
+            if (voiceSessionInsertCalls === 1) {
+              return { select: () => ({ single: async () => ({ data: null, error: new Error("simulated insert failure") }) }) };
+            }
+            return originalInsert(...args);
+          }) as typeof originalInsert;
+        }
+        return builder;
+      }) as typeof user.client.from);
+
+      try {
+        const confirmed = await confirmVoiceSession(user.client, userId, intake.sessionId);
+        expect(confirmed.executed).toBe(true);
+        expect(confirmed.next).toBeNull();
+        expect(consoleErrorSpy).toHaveBeenCalledWith("confirmVoiceSession: failed to mint the next queued step", expect.any(Error));
+      } finally {
+        fromSpy.mockRestore();
+        consoleErrorSpy.mockRestore();
+      }
+
+      const { data: task } = await admin
+        .from("tasks")
+        .select("id")
+        .eq("user_id", userId)
+        .eq("title", "Should still succeed despite chain failure")
+        .maybeSingle();
+      expect(task).not.toBeNull();
+    });
   });
 
   describe("armVoiceConfirmation", () => {

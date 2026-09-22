@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { expandBlockForDateKeys, expandBlockInWeek, getNextOccurrence, formatBlocksSummary, formatMinutesOfDay } from "../recurrence";
+import {
+  expandBlockForDateKeys,
+  expandBlockInWeek,
+  getNextOccurrence,
+  formatBlocksSummary,
+  formatMinutesOfDay,
+  parseTimeToMinutes,
+} from "../recurrence";
 import { makeMeetingBlock } from "./fixtures";
 
 // Sun 2026-01-04 .. Sat 2026-01-10 (exclusive end).
@@ -14,6 +21,31 @@ describe("formatMinutesOfDay", () => {
     expect(formatMinutesOfDay(13 * 60 + 30)).toBe("1:30 PM");
     expect(formatMinutesOfDay(0)).toBe("12 AM");
     expect(formatMinutesOfDay(12 * 60)).toBe("12 PM");
+  });
+});
+
+describe("parseTimeToMinutes", () => {
+  it("parses zero-padded 24-hour times", () => {
+    expect(parseTimeToMinutes("00:00")).toBe(0);
+    expect(parseTimeToMinutes("09:30")).toBe(570);
+    expect(parseTimeToMinutes("23:59")).toBe(1439);
+  });
+
+  it("parses 12-hour AM/PM times", () => {
+    expect(parseTimeToMinutes("7:00 PM")).toBe(1140);
+    expect(parseTimeToMinutes("7:00 AM")).toBe(420);
+    expect(parseTimeToMinutes("12:00 PM")).toBe(720);
+    expect(parseTimeToMinutes("12:00 AM")).toBe(0);
+  });
+
+  it("returns null for free text, missing, or malformed input", () => {
+    expect(parseTimeToMinutes("Starting at 7:00 PM")).toBeNull();
+    expect(parseTimeToMinutes(null)).toBeNull();
+    expect(parseTimeToMinutes(undefined)).toBeNull();
+    expect(parseTimeToMinutes("")).toBeNull();
+    expect(parseTimeToMinutes("25:00")).toBeNull();
+    expect(parseTimeToMinutes("9:30")).toBeNull();
+    expect(parseTimeToMinutes("13:00 PM")).toBeNull();
   });
 });
 

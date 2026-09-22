@@ -14,7 +14,16 @@ import { loadSchedule, toScheduleToolPayload, type ScheduleToolPayload } from "@
 import { runKnowledgeLookup, type KnowledgeCitation } from "@/lib/knowledge/retrieval";
 import { runSuggestionsLookup } from "@/lib/voice/suggestions-lookup";
 import { runDeadlineProgressLookup } from "@/lib/voice/deadline-progress-lookup";
-import { loadEntityContext, loadUserTimezone, mutationDraftSchema, mutationSchema, toPendingMutation, type EntityContext, type RawMutation } from "@/lib/voice/intent";
+import {
+  additionalStepsSchema,
+  loadEntityContext,
+  loadUserTimezone,
+  mutationDraftSchema,
+  mutationSchema,
+  toPendingMutation,
+  type EntityContext,
+  type RawMutation,
+} from "@/lib/voice/intent";
 import { gateDeadlineRecurrence } from "@/lib/voice/deadline-recurrence-gate";
 import type { PendingMutation } from "@/lib/voice/mutations";
 import {
@@ -46,6 +55,12 @@ export interface ConversationAnswer {
   draftMutation?: DraftMutationRecord;
 }
 
+/** One step of the general multi-step command queue (intent.ts's queuedMutationStepSchema, mapped through toPendingMutation) -- session.ts persists an ordered list of these and pops one off on every confirm. */
+export interface QueuedMutationStep {
+  mutation: PendingMutation;
+  summary: string;
+}
+
 export interface ConversationMutationProposal {
   kind: "mutation_proposal";
   /** The model's own confidence this is the right mutation — session.ts gates this against VOICE_CONFIDENCE_BAR exactly as it did resolveIntent's confidence before the merge. */
@@ -54,6 +69,8 @@ export interface ConversationMutationProposal {
   summary: string;
   mutation: PendingMutation;
   conversationId: string;
+  /** Every additional, already-fully-resolved future step this same request implies (propose_mutation's additional_steps) -- empty when there's nothing more to queue. */
+  queuedSteps: QueuedMutationStep[];
 }
 
 export type ConversationTurnOutcome = ConversationAnswer | ConversationMutationProposal;
@@ -95,7 +112,7 @@ Every get_schedule/get_person_schedule result (and the pre-loaded Today's schedu
 - get_personalization_suggestions: call this when the user asks to check the app's generated personalization/reminder-timing suggestions ("check my suggestions", "did the app recommend changing my reminder timing?"). It runs synchronously and its result is already final by the time you see it — there is nothing left "in progress." Relay its message near-verbatim as your actual answer via respond_to_user; never say something like "checking now" or "let me look into that" instead of the real message — that phrasing describes work you haven't done, since the tool has already run and returned by that point.
 - get_deadline_progress: call this when the user asks about planned-session progress toward a specific Deadline ("how much progress on Homework 1", "how many sessions do I have left", "did I finish my sessions for the project"). Match the deadline mentioned by title against the "deadlines" list in the entity context below and pass that deadline's id — never invent an id, and never guess when nothing in the list matches (respond that you don't have a matching deadline instead). Relay its message near-verbatim.
 - start_new_conversation: only when the user explicitly asks to start over, forget what was said before, or begin a new conversation. Never announce that you did it — just continue naturally with whatever else they asked in the same turn.
-- propose_mutation: call this when the user gives a clear instruction to change app data — create/update/delete a Deadline, Task, Note, or Course; mark a Deadline's or Task's status via a transition ("mark it in progress", "mark it submitted", "mark it done", "cancel it" — set operation "transition" and the matching event, never a raw status string); acknowledge/dismiss/snooze a Reminder; create/delete a Deadline work Session or mark one done/skipped; create/rename/delete a Board List (a simple named container for Task cards, e.g. "Misc" or a per-course reading list) — see the paragraph below for placing a Task into one; create/update/delete a general Appointment/Event, or mark one done/missed via transition — see the dedicated Appointment paragraph below, since it has its own required-field rule. Call it alone, never alongside another tool call, and never in the same turn as respond_to_user. See "Deciding whether something is a mutation" below for when something is or isn't really a command — read it carefully, since acting on a data change the user didn't actually ask for is a much worse mistake than asking a question is.
+- propose_mutation: call this when the user gives a clear instruction to change app data — create/update/delete a Deadline, Task, Note, or Course; mark a Deadline's or Task's status via a transition ("mark it in progress", "mark it submitted", "mark it done", "cancel it" — set operation "transition" and the matching event, never a raw status string); acknowledge/dismiss/snooze a Reminder; create/delete a Deadline work Session or mark one done/skipped; create/rename/delete a Board List (a simple named container for Task cards, e.g. "Misc" or a per-course reading list) — see the paragraph below for placing a Task into one; create/update/delete a general Appointment/Event, or mark one done/missed via transition — see the dedicated Appointment paragraph below, since it has its own required-field rule. Call it alone, never alongside another tool call, and never in the same turn as respond_to_user. See "Deciding whether something is a mutation" below for when something is or isn't really a command — read it carefully, since acting on a data change the user didn't actually ask for is a much worse mistake than asking a question is. When the user's single request implies more than this one action, resolve every remaining action yourself, right now, and put them in additional_steps — see "Multi-step commands" below; never plan to call propose_mutation again yourself later in the conversation for something you could already fully resolve this turn.
 - save_mutation_draft: call this instead of propose_mutation when the user's instruction is clearly a mutation but is missing a required field you cannot resolve yourself (e.g. an Appointment's time — never a date/time you can already resolve from relative phrasing, that still goes through propose_mutation as usual). Pass every field you already know plus a natural spoken question ("question") asking for exactly what's missing, in the same turn — never guess a value, never fall back to a plain respond_to_user question instead (that would lose everything you already resolved). See "Cross-turn drafts" below for how a draft carries forward once the user answers.
 
 A Deadline/Task/Session status change is always a "transition", never a plain "update" with a status field — the app enforces this server-side, and inventing a raw status value fails validation. Deadline events: user_marks_in_progress (Not Started -> In Progress), user_marks_submitted (In Progress/Overdue -> Submitted), user_confirms_done (Submitted -> Completed), user_cancels (Not Started/In Progress -> Cancelled). Task events: user_marks_done (Open -> Done), user_cancels (Open -> Cancelled). Session events: user_marks_session_done (planned/skipped -> done), user_marks_session_skipped (planned -> skipped). Match the target against the "deadlines"/"tasks"/"sessions" lists in the entity context below by title — never invent an id, and if the requested transition doesn't apply from where that item actually stands (e.g. "mark it submitted" on something already Completed), set confidence below 0.95 rather than guessing.
@@ -104,7 +121,9 @@ A Deadline work Session always belongs to an existing Deadline — match "sessio
 
 A general Appointment/Event ("add an appointment", "add a dentist visit Friday at 3pm", "mark my dentist appointment as done", "I missed my haircut appointment") is a different target_type ("event") from a Deadline work Session, even though both live on the same underlying calendar — a Session always has a deadline_id and comes from the "sessions" list; an Event never does and comes from the "appointments" list instead (each entry has id, title, date, time). Match an existing one by title (and date, if given, to disambiguate) against "appointments" for update/delete/transition. Creating one needs title, date, time, AND duration_minutes — all four, unlike a Session, which tolerates a missing time. If any of those four is missing, call save_mutation_draft instead of propose_mutation, asking specifically for what's missing (e.g. "What time, and how long will it be?") — never guess a time or a default duration. "Mark it done"/"mark it missed" is a transition (user_marks_event_done/user_marks_event_missed), exactly like a Deadline/Task/Session status change — never a plain update.
 
-A single Event always represents one calendar day — duration_minutes is capped at 1440 (24 hours) and a create is rejected past that, so never inflate it to cover more than one day (e.g. a 4-day festival is NOT one Event with duration_minutes 5760). When the user describes something spanning multiple days with the same daily time window ("blink Cincinnati runs October 8th through 11th, 7 to 11pm each night"), each day is its own Event with the same title/time/duration_minutes on its own date — and since propose_mutation only ever proposes and confirms one Event at a time, create just the FIRST day now, and say plainly in your summary which day this is and that you'll add the rest the same way once confirmed (e.g. "I'll add blink Cincinnati for Thursday, October 8th, 7 to 11 PM. It looks like this runs through Sunday the 11th — once you confirm this one, tell me to add the rest and I'll do Friday, Saturday, and Sunday the same way."). Treat "yes, add the rest"/"add Friday too" as an instruction to propose the next day's occurrence, using the conversation history to know which day comes next and when every day has been added.
+A single Event always represents one calendar day — duration_minutes is capped at 1440 (24 hours) and a create is rejected past that, so never inflate it to cover more than one day (e.g. a 4-day festival is NOT one Event with duration_minutes 5760). When the user describes something spanning multiple days with the same daily time window ("blink Cincinnati runs October 8th through 11th, 7 to 11pm each night"), each day is its own Event with the same title/time/duration_minutes on its own date — propose the FIRST day now, and queue one additional_steps item per remaining day (same title/time/duration_minutes, each with its own date and its own summary) — see "Multi-step commands" below for exactly how.
+
+Multi-step commands: a single request can imply more than one action — a same-pattern-repeated-daily Event (above) is one shape of this, and a compound request naming multiple distinct targets in one breath ("delete my 3pm and 4pm meeting", "add a task to buy milk and remind me to call mom") is another. Resolve EVERY implied action yourself, in this one turn, before calling propose_mutation — never plan to ask the user to repeat themselves or say "tell me to add the rest" for something you could already resolve right now. propose_mutation itself still only ever proposes and confirms ONE action at a time (the first one), but its additional_steps field carries every remaining action as its own complete, ready-to-propose mutation plus its own one-line summary, in the order they should be offered — the app itself proposes each one automatically, right after the previous one is confirmed, with no further input needed from you. State the full scope in your summary for the first one (e.g. "I'll add blink Cincinnati for Thursday, October 8th, 7 to 11 PM — I'll add Friday, Saturday, and Sunday the same way once you confirm this one."), and give each queued item its own natural summary for when its own turn comes (e.g. "Also add blink Cincinnati for Friday, October 9th, 7 to 11 PM?"). Leave additional_steps null when the request only implies the one action you're already proposing. A decline, or the user simply not answering in time, on any step (the first one or a queued one) ends the whole sequence — the remaining queued steps are dropped automatically, so never re-propose them yourself either.
 
 A Board List create only needs a name, plus an optional course_id (from the "courses" list below) when the user ties it to a specific course rather than a freestanding list ("Misc", "Project: X"). To rename or delete an existing Board List, match it against the "todoLists" entity context by name and pass its id as target_id — an update's name field is the new name; deleting a list also removes its cards, so if the user seems unaware of that, it's still fine to propose it (the confirmation prompt covers it), just don't understate what will happen in your summary. A Task can optionally be placed into a Board List via list_id on a Task create or update — match the list the user names ("my grocery list", "the reading list for CS 101") against the "todoLists" list in the entity context (each entry has id, name, and course_id). Omit list_id for a plain task with no list. There's no separate "item" concept anymore — what used to be a Course To-Do item is just a Task with list_id set, so create/update/mark-done/delete it exactly the way you would any other Task (see the transition-events paragraph above for marking done, and match an existing one against the "tasks" list, which also carries each task's list_id when it has one).
 
@@ -147,7 +166,8 @@ Examples:
 - "Add an appointment for my dentist visit Friday at 3pm for 30 minutes" -> propose_mutation, target_type "event", operation create, title "Dentist visit", date resolved to Friday, time "3:00 PM", duration_minutes 30, high confidence.
 - "Add an appointment for my dentist visit Friday" (no time or duration given) -> save_mutation_draft, target_type "event", operation create, title "Dentist visit", date resolved to Friday, time and duration_minutes both null, question asking for the time and how long it will be. NOT propose_mutation with a guessed time, and NOT a plain respond_to_user question that would lose the title/date you already resolved.
 - "Mark my dentist appointment as done" (an "appointments" entry titled "Dentist visit" exists) -> propose_mutation, target_type "event", operation transition, target_id from that entry, event "user_marks_event_done", high confidence.
-- "Add blink Cincinnati, it runs October 8th to the 11th, 7 to 11pm every night" -> propose_mutation, target_type "event", operation create, title "blink Cincinnati", date resolved to October 8th, time "7:00 PM", duration_minutes 240 (4 hours, NOT 5760), high confidence, summary stating this covers only the 8th and that the 9th/10th/11th will follow the same way once confirmed. A later "yes, add the rest" or "add the 9th too" -> propose_mutation again, same title/time/duration_minutes, date advanced to the next day not yet created.
+- "Add blink Cincinnati, it runs October 8th to the 11th, 7 to 11pm every night" -> propose_mutation, target_type "event", operation create, title "blink Cincinnati", date resolved to October 8th, time "7:00 PM", duration_minutes 240 (4 hours, NOT 5760), high confidence, summary stating this covers the whole run and that the 9th/10th/11th will follow automatically once confirmed. additional_steps: three items, each the same title/time/duration_minutes with date advanced one day at a time (9th, 10th, 11th), each with its own summary ("Also add blink Cincinnati for Friday, October 9th, 7 to 11 PM?", etc.). NOT a bare propose_mutation with additional_steps null, and NOT waiting for the user to say "add the rest" — you already know the full span, so resolve it all now.
+- "Add a task to buy milk and remind me to call mom" -> propose_mutation, target_type "task", operation create, title "Buy milk", high confidence, summary "I'll add a task to buy milk, then a task to call mom.". additional_steps: one item, target_type "task", operation create, title "Call mom", summary "Also add a task to call mom?". Two distinct, unrelated actions named in the same breath -- NOT one task titled "buy milk and call mom", and NOT proposing only the first and silently dropping the second.
 
 - "Add a weekly quiz deadline for CS 101 every Monday and Wednesday at 5pm until December 11th" (course matches) -> propose_mutation, deadline create, recurring true, recurrence_days [1,3], recurrence_end_date "2026-12-11", due_at the next Monday or Wednesday at 5 PM, summary saying it repeats every Monday and Wednesday until December 11th.
 - "Add a deadline for my CS 101 essay on Friday at 5pm" (nothing said about repeating) -> propose_mutation, deadline create, recurring null (the app then asks "should this repeat?" by itself). NOT recurring false, and NOT your own respond_to_user question.
@@ -252,6 +272,7 @@ const respondToUserArgsSchema: z.ZodType<RespondToUserArgs> = z.object({
 const proposeMutationMetaSchema = z.object({
   confidence: z.number().min(0).max(1),
   summary: z.string().trim().min(1),
+  additional_steps: additionalStepsSchema,
 });
 
 /**
@@ -305,7 +326,7 @@ function parseProposeMutationArgs(
   openDraft: DraftMutationRecord | null,
   context: EntityContext,
 ):
-  | { kind: "proposal"; confidence: number; summary: string; mutation: PendingMutation }
+  | { kind: "proposal"; confidence: number; summary: string; mutation: PendingMutation; queuedSteps: QueuedMutationStep[] }
   | { kind: "ask"; question: string; mutation: RawMutation } {
   let raw: unknown;
   try {
@@ -323,7 +344,21 @@ function parseProposeMutationArgs(
   if (gate.kind === "ask") return { kind: "ask", question: gate.question, mutation: gate.mutation };
 
   const rawMutation = mutationSchema.parse(gate.mutation);
-  return { kind: "proposal", confidence: meta.confidence, summary: meta.summary, mutation: toPendingMutation(rawMutation, now, timezone) };
+  // additional_steps was already validated (each item through the same
+  // mutationSchema, superRefine included) by proposeMutationMetaSchema above
+  // -- toPendingMutation is reused unchanged per item, exactly like the
+  // primary mutation above it.
+  const queuedSteps: QueuedMutationStep[] = (meta.additional_steps ?? []).map((step) => ({
+    mutation: toPendingMutation(step, now, timezone),
+    summary: step.summary,
+  }));
+  return {
+    kind: "proposal",
+    confidence: meta.confidence,
+    summary: meta.summary,
+    mutation: toPendingMutation(rawMutation, now, timezone),
+    queuedSteps,
+  };
 }
 
 const saveMutationDraftMetaSchema: z.ZodType<SaveMutationDraftArgs> = z.object({
@@ -608,8 +643,8 @@ export const runConversationTurn: RunConversationTurnFn = async (supabase, userI
           draftMutation: { mutation: proposal.mutation, question: proposal.question },
         };
       }
-      const { confidence, summary, mutation } = proposal;
-      return { kind: "mutation_proposal", confidence, summary, mutation, conversationId: activeConversationId };
+      const { confidence, summary, mutation, queuedSteps } = proposal;
+      return { kind: "mutation_proposal", confidence, summary, mutation, queuedSteps, conversationId: activeConversationId };
     }
 
     // Sequential, not Promise.all: start_new_conversation changes

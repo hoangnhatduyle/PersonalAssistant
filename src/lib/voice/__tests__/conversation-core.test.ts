@@ -129,9 +129,117 @@ describe("runConversationTurn", () => {
       summary: "Delete the task",
       mutation: { targetType: "task", operation: "delete", targetId: VALID_TARGET_ID },
       conversationId: "conv-1",
+      queuedSteps: [],
     });
     expect(mocks.chatCompletionsCreate).toHaveBeenCalledTimes(1);
     expect(loadSchedule).toHaveBeenCalledWith(fakeSupabase, "user-1", "today", expect.any(Date));
+  });
+
+  // General multi-step command queue (Workstream C, swirling-beaming-
+  // nautilus.md): propose_mutation's additional_steps array is mapped
+  // through toPendingMutation exactly like the primary mutation, in order.
+  it("maps propose_mutation's additional_steps into queuedSteps, each through the same toPendingMutation as the primary mutation", async () => {
+    mocks.chatCompletionsCreate.mockReset();
+    mocks.chatCompletionsCreate.mockResolvedValueOnce(
+      toolCallResponse([
+        {
+          id: "call_1",
+          name: "propose_mutation",
+          arguments: {
+            confidence: 0.97,
+            summary: "Add blink Cincinnati for Thursday, October 8th.",
+            target_type: "event",
+            operation: "create",
+            target_id: null,
+            title: "blink Cincinnati",
+            date: "2026-10-08",
+            time: "7:00 PM",
+            duration_minutes: 240,
+            location: null,
+            event: null,
+            additional_steps: [
+              {
+                summary: "Also add blink Cincinnati for Friday, October 9th, 7 to 11 PM?",
+                target_type: "event",
+                operation: "create",
+                target_id: null,
+                title: "blink Cincinnati",
+                date: "2026-10-09",
+                time: "7:00 PM",
+                duration_minutes: 240,
+                location: null,
+                event: null,
+              },
+              {
+                summary: "Also add blink Cincinnati for Saturday, October 10th, 7 to 11 PM?",
+                target_type: "event",
+                operation: "create",
+                target_id: null,
+                title: "blink Cincinnati",
+                date: "2026-10-10",
+                time: "7:00 PM",
+                duration_minutes: 240,
+                location: null,
+                event: null,
+              },
+            ],
+          },
+        },
+      ]),
+    );
+
+    const result = await runConversationTurn(fakeSupabase, "user-1", "add my festival, every night this weekend", "conv-1");
+
+    expect(result).toMatchObject({ kind: "mutation_proposal" });
+    if (result.kind !== "mutation_proposal") throw new Error("expected a mutation_proposal");
+    expect(result.mutation).toEqual({
+      targetType: "event",
+      operation: "create",
+      payload: { title: "blink Cincinnati", date: "2026-10-08", time: "7:00 PM", duration_minutes: 240 },
+    });
+    expect(result.queuedSteps).toEqual([
+      {
+        summary: "Also add blink Cincinnati for Friday, October 9th, 7 to 11 PM?",
+        mutation: {
+          targetType: "event",
+          operation: "create",
+          payload: { title: "blink Cincinnati", date: "2026-10-09", time: "7:00 PM", duration_minutes: 240 },
+        },
+      },
+      {
+        summary: "Also add blink Cincinnati for Saturday, October 10th, 7 to 11 PM?",
+        mutation: {
+          targetType: "event",
+          operation: "create",
+          payload: { title: "blink Cincinnati", date: "2026-10-10", time: "7:00 PM", duration_minutes: 240 },
+        },
+      },
+    ]);
+  });
+
+  // A step that fails its own target-type's required-field rule fails the
+  // whole propose_mutation call, the same recoverable-ZodError path (one
+  // retry, then a genuine failure) any other invalid proposal takes -- see
+  // "throws when propose_mutation's arguments keep failing mutationSchema
+  // validation" above. Resolving 2 of 3 steps and silently dropping the
+  // third would leave the user with an incomplete plan they never agreed to.
+  it("rejects the whole propose_mutation call when a queued step is itself invalid, after one recovery attempt", async () => {
+    mocks.chatCompletionsCreate.mockReset();
+    mocks.chatCompletionsCreate.mockResolvedValue(
+      toolCallResponse([
+        {
+          id: "call_1",
+          name: "propose_mutation",
+          arguments: {
+            ...validProposeMutationArgs,
+            additional_steps: [{ summary: "Also add a task?", target_type: "task", operation: "create", target_id: null, title: null }],
+          },
+        },
+      ]),
+    );
+
+    await expect(runConversationTurn(fakeSupabase, "user-1", "delete my task, and add another", "conv-1")).rejects.toThrow();
+    expect(mocks.chatCompletionsCreate).toHaveBeenCalledTimes(2);
   });
 
   // Mirrors the existing respond_to_user-bundling guard: a finalizing tool
@@ -196,6 +304,7 @@ describe("runConversationTurn", () => {
       summary: "Delete the task",
       mutation: { targetType: "task", operation: "delete", targetId: VALID_TARGET_ID },
       conversationId: "conv-1",
+      queuedSteps: [],
     });
   });
 

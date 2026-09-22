@@ -12,7 +12,7 @@ import {
 import { formatCascadeDisclosure, previewCourseDeleteCascade } from "@/lib/voice/cascade-preview";
 import { executePendingMutation, type MutationExecutionResult, type PendingMutation } from "@/lib/voice/mutations";
 import type { KnowledgeCitation } from "@/lib/knowledge/retrieval";
-import { resolveActiveConversation, setDraftMutation } from "@/lib/voice/conversation-memory";
+import { loadQueuedSteps, resolveActiveConversation, setDraftMutation, setQueuedSteps } from "@/lib/voice/conversation-memory";
 import { runConversationTurn, type ConversationTurnOutcome, type RunConversationTurnFn } from "@/lib/voice/conversation-core";
 import { stripSpokenFillers } from "@/lib/voice/spoken-input";
 import { timed } from "@/lib/voice/_perf-temp";
@@ -120,10 +120,18 @@ async function respondWithClarification(
     schedule_time_window: string | null;
     error_message: string | null;
   },
+  conversationId?: string,
 ): Promise<VoiceTurnResult> {
   await transition(supabase, userId, sessionId, "Transcribing", "intent_ambiguous_or_low_confidence", resolvedIntentFields);
+  // Mirrors the mutation-proposal/execution paths' own conversation_id +
+  // response_message writes: without this, a "please rephrase" turn is
+  // invisible to loadConversationHistory on the next turn, the same gap
+  // fixed for confirm/decline/expire. Omitted (undefined) only for the
+  // blank-transcript case, which runs before an active conversation is
+  // resolved and has no id to attach.
   await transition(supabase, userId, sessionId, "IntentAmbiguous", "clarification_requested", {
     ended_at: new Date().toISOString(),
+    ...(conversationId ? { conversation_id: conversationId, response_message: message } : {}),
   });
   return { sessionId, state: "Responding", message, needsFollowUp: true };
 }
@@ -193,6 +201,11 @@ async function intakeVoiceTurnInner(
   let transcript: string;
   let spoken: string;
   let outcome: ConversationTurnOutcome;
+  // Hoisted out of the try block (rather than the `const` destructure's
+  // natural try-scoped binding) so the catch block below can still attach
+  // it to a runConversationTurn failure's clarification row -- it stays
+  // undefined only if resolveActiveConversation itself never got to run.
+  let conversationId: string | undefined;
   try {
     transcript =
       "transcript" in input ? input.transcript : await timed("transcribe (STT)", () => deps.transcribe(input.audio, input.mimetype));
@@ -228,9 +241,13 @@ async function intakeVoiceTurnInner(
     // started with, or the very turn that triggered a reset would file
     // itself under the now-closed conversation and corrupt the next turn's
     // history lookup.
-    const { conversationId } = await timed("resolveActiveConversation", () => resolveActiveConversation(supabase, userId));
+    ({ conversationId } = await timed("resolveActiveConversation", () => resolveActiveConversation(supabase, userId)));
+    // Non-null: just assigned above -- TS can't narrow a `let` captured by
+    // the nested closure below, since it can't prove nothing reassigns it
+    // before the closure runs (it doesn't).
+    const activeConversationId = conversationId!;
     outcome = await timed("runConversationTurn (merged LLM call)", () =>
-      (deps.runConversationTurn ?? runConversationTurn)(supabase, userId, spoken, conversationId),
+      (deps.runConversationTurn ?? runConversationTurn)(supabase, userId, spoken, activeConversationId),
     );
   } catch (error) {
     // Previously discarded entirely -- a failed turn left resolved_intent/
@@ -240,13 +257,20 @@ async function intakeVoiceTurnInner(
     // elevenlabs.ts, etc. -- no dedicated logger module exists).
     console.error("intakeVoiceTurn: transcribe/runConversationTurn failed", error);
     const errorMessage = (error instanceof Error ? error.message : String(error)).slice(0, 500);
-    return respondWithClarification(supabase, userId, sessionId, "Sorry, I had trouble processing that — could you try again?", {
-      resolved_intent: null,
-      confidence_score: null,
-      query_kind: null,
-      schedule_time_window: null,
-      error_message: errorMessage,
-    });
+    return respondWithClarification(
+      supabase,
+      userId,
+      sessionId,
+      "Sorry, I had trouble processing that — could you try again?",
+      {
+        resolved_intent: null,
+        confidence_score: null,
+        query_kind: null,
+        schedule_time_window: null,
+        error_message: errorMessage,
+      },
+      conversationId,
+    );
   }
 
   // SPEC-VOICE-006: persist the draft this turn produced (save_mutation_draft
@@ -313,13 +337,20 @@ async function intakeVoiceTurnInner(
   // merge). outcome.confidence is still persisted to confidence_score
   // below either way, for diagnostics.
   if (!meetsConfidenceBar(outcome.confidence)) {
-    return respondWithClarification(supabase, userId, sessionId, `I'm not sure I understood — could you rephrase that? (heard: "${spoken}")`, {
-      resolved_intent: outcome.summary,
-      confidence_score: outcome.confidence,
-      query_kind: null,
-      schedule_time_window: null,
-      error_message: null,
-    });
+    return respondWithClarification(
+      supabase,
+      userId,
+      sessionId,
+      `I'm not sure I understood — could you rephrase that? (heard: "${spoken}")`,
+      {
+        resolved_intent: outcome.summary,
+        confidence_score: outcome.confidence,
+        query_kind: null,
+        schedule_time_window: null,
+        error_message: null,
+      },
+      outcome.conversationId,
+    );
   }
 
   await transition(supabase, userId, sessionId, "Transcribing", "intent_resolved_high_confidence", {
@@ -355,12 +386,75 @@ async function intakeVoiceTurnInner(
     // lets that write land in the right conversation.
     conversation_id: outcome.conversationId,
   });
+  // General multi-step command queue (Workstream C): persist every
+  // additional, already-fully-resolved step this proposal's own
+  // propose_mutation call queued up (additional_steps, tools.ts) so
+  // confirmVoiceSession can pop and auto-propose them one at a time once
+  // this first step is confirmed -- with no further LLM calls.
+  await setQueuedSteps(supabase, userId, outcome.conversationId, outcome.queuedSteps.length > 0 ? outcome.queuedSteps : null);
   return { sessionId, state: "AwaitingConfirmation", message };
 }
 
 export interface VoiceConfirmResult {
   executed: boolean;
   result: MutationExecutionResult;
+  /**
+   * Set when this confirm popped a queued step (Workstream C's general
+   * multi-step command queue) and successfully minted a fresh
+   * AwaitingConfirmation session for it -- the client applies this exactly
+   * like a brand-new turn's own AwaitingConfirmation result. Null when the
+   * queue was empty/absent, OR when minting the next step failed (logged
+   * server-side; the mutation that already succeeded here is never masked
+   * or rolled back by that failure).
+   */
+  next: { sessionId: string; message: string } | null;
+}
+
+/**
+ * Pops the head of the conversation's queued-steps list (if any) and mints a
+ * fresh voice_sessions row already in AwaitingConfirmation for it, walking
+ * the exact same event sequence intakeVoiceTurnInner uses for a brand-new
+ * mutation proposal -- confidence_score 1 since this step was already fully
+ * resolved (and its confidence already accepted) by the ORIGINAL
+ * propose_mutation call that produced the whole queue. Writes the reduced
+ * tail back via setQueuedSteps (or clears it to null once empty). Never
+ * throws -- a failure here must never mask or roll back the mutation that
+ * already succeeded in confirmVoiceSession above it, so every caller treats
+ * this as best-effort and falls back to `next: null`.
+ */
+async function mintNextQueuedStep(
+  supabase: SupabaseClient<Database>,
+  userId: string,
+  conversationId: string,
+): Promise<{ sessionId: string; message: string } | null> {
+  const queue = await loadQueuedSteps(supabase, userId, conversationId);
+  if (queue.length === 0) return null;
+  const [head, ...rest] = queue;
+
+  const { data: created, error: insertError } = await supabase
+    .from("voice_sessions")
+    .insert({ user_id: userId })
+    .select("id, state")
+    .single();
+  if (insertError) throw insertError;
+  const sessionId = created.id;
+
+  await transition(supabase, userId, sessionId, created.state, "user_initiates_capture", {});
+  await transition(supabase, userId, sessionId, "Listening", "capture_ends", {
+    transcript: "(auto-continuing a multi-step command)",
+  });
+  await transition(supabase, userId, sessionId, "Transcribing", "intent_resolved_high_confidence", {
+    resolved_intent: head.summary,
+    confidence_score: 1,
+  });
+  await transition(supabase, userId, sessionId, "IntentResolved", "mutating_action_resolved", {
+    pending_mutation: head.mutation,
+    expires_at: computeConfirmationPreArmExpiry(),
+    conversation_id: conversationId,
+  });
+
+  await setQueuedSteps(supabase, userId, conversationId, rest.length > 0 ? rest : null);
+  return { sessionId, message: head.summary };
 }
 
 /**
@@ -395,6 +489,10 @@ export async function confirmVoiceSession(
       ended_at: new Date().toISOString(),
       response_message: `${session.resolved_intent} (Expired — no confirmation heard in time.)`,
     }).catch(() => {});
+    // Same "a timeout must not keep auto-proposing further steps" rule as
+    // declineVoiceSession/expireVoiceSession below -- this is the third and
+    // last place an AwaitingConfirmation session can lapse unanswered.
+    if (session.conversation_id) await setQueuedSteps(supabase, userId, session.conversation_id, null).catch(() => {});
     throw new VoiceSessionExpiredError();
   }
 
@@ -419,7 +517,19 @@ export async function confirmVoiceSession(
       // the outcome appended so it also knows this one actually went through.
       response_message: `${session.resolved_intent} (Done — ${result.summary})`,
     });
-    return { executed: true, result };
+    // General multi-step command queue (Workstream C): auto-propose the
+    // next queued step, if any, with no further LLM calls. Best-effort --
+    // this mutation already succeeded above, and a failure minting the next
+    // step must never mask or roll back that success.
+    let next: { sessionId: string; message: string } | null = null;
+    if (session.conversation_id) {
+      try {
+        next = await mintNextQueuedStep(supabase, userId, session.conversation_id);
+      } catch (chainError) {
+        console.error("confirmVoiceSession: failed to mint the next queued step", chainError);
+      }
+    }
+    return { executed: true, result, next };
   } catch (executionError) {
     // Architect-review finding: keep pending_mutation on a failed execution
     // (unlike the success/decline/expiry paths, which correctly clear it) —
@@ -442,7 +552,7 @@ export async function declineVoiceSession(
 ): Promise<{ message: string }> {
   const { data: session, error } = await supabase
     .from("voice_sessions")
-    .select("id, state, resolved_intent")
+    .select("id, state, resolved_intent, conversation_id")
     .eq("id", sessionId)
     .eq("user_id", userId)
     .maybeSingle();
@@ -462,6 +572,9 @@ export async function declineVoiceSession(
     // having no memory of it at all.
     response_message: `${session.resolved_intent} (Declined — you said no.)`,
   });
+  // A decline aborts the rest of the multi-step command queue, if any --
+  // must not keep auto-proposing further steps after the user said no.
+  if (session.conversation_id) await setQueuedSteps(supabase, userId, session.conversation_id, null);
   return { message };
 }
 
@@ -540,7 +653,7 @@ export async function expireVoiceSession(
 ): Promise<{ expired: boolean }> {
   const { data: session, error } = await supabase
     .from("voice_sessions")
-    .select("id, state, resolved_intent")
+    .select("id, state, resolved_intent, conversation_id")
     .eq("id", sessionId)
     .eq("user_id", userId)
     .maybeSingle();
@@ -558,6 +671,9 @@ export async function expireVoiceSession(
       // and never actually confirmed, rather than having no memory of it.
       response_message: `${session.resolved_intent} (Expired — no confirmation heard in time.)`,
     });
+    // An unanswered confirmation aborts the rest of the multi-step command
+    // queue, same as an explicit decline -- see declineVoiceSession above.
+    if (session.conversation_id) await setQueuedSteps(supabase, userId, session.conversation_id, null);
     return { expired: true };
   } catch (transitionError) {
     if (transitionError instanceof VoiceSessionInvalidStateError) return { expired: false };

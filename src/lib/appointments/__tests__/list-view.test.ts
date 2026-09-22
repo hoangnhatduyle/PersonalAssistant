@@ -57,6 +57,12 @@ describe("isPastAppointment", () => {
     expect(isPastAppointment(appt, at(14, 1))).toBe(true);
   });
 
+  it("parses an AM/PM-formatted time correctly, not shifted to AM", () => {
+    const appt = makeAppointment({ time: "7:00 PM", duration_minutes: 60 });
+    expect(isPastAppointment(appt, at(19, 30))).toBe(false);
+    expect(isPastAppointment(appt, at(20, 1))).toBe(true);
+  });
+
   it("stays upcoming for the whole day when time is free text or missing", () => {
     const freeText = makeAppointment({ time: "Starting at 7:00 PM", duration_minutes: null });
     const noTime = makeAppointment({ time: null, duration_minutes: null });

@@ -67,3 +67,45 @@ export async function askAssistant(page: Page, text: string): Promise<string> {
   await expect(page.getByLabel("Text fallback for voice capture")).toBeEnabled({ timeout: 45_000 });
   return reply.innerText();
 }
+
+/**
+ * Chain-aware variant of runMutation (Workstream C's general multi-step
+ * command queue): sends ONE initial command, then clicks Confirm on each
+ * proposal in turn, following the server's `next` auto-continuation with NO
+ * further text submitted -- exactly what proves the chain, not a lucky
+ * follow-up phrase, is what drives a multi-step command to completion.
+ * Confirming a step either surfaces a brand-new confirmation prompt
+ * (`ConfirmationBar` remounts under a fresh `key={state.sessionId}`, so the
+ * "Confirm" role query below transparently re-targets the new instance) or
+ * lands on a terminal "Responding" message -- distinguished by whether the
+ * Confirm button is still present after the click settles, not by the
+ * button ever having disappeared and reappeared, since a same-status
+ * AwaitingConfirmation->AwaitingConfirmation transition never unmounts
+ * through anything in between.
+ */
+export async function runMutationChain(page: Page, text: string): Promise<{ prompts: string[]; result: string }> {
+  await submitText(page, text);
+  const confirmButton = page.getByRole("button", { name: "Confirm", exact: true });
+  await expect(confirmButton, `expected a confirmation prompt for: "${text}"`).toBeVisible({ timeout: 45_000 });
+
+  const prompts: string[] = [];
+  for (;;) {
+    const prompt = await page.locator("p.text-text-primary").last().innerText();
+    prompts.push(prompt);
+    await confirmButton.click();
+    // Either the button goes away (terminal) or a new prompt appears under
+    // it (chain continues) -- wait for one of those, not just "not visible",
+    // since a stale reference to the same prompt text would pass instantly.
+    await expect(async () => {
+      const stillThere = await confirmButton.isVisible();
+      if (!stillThere) return;
+      const currentPrompt = await page.locator("p.text-text-primary").last().innerText();
+      expect(currentPrompt).not.toBe(prompt);
+    }).toPass({ timeout: 15_000 });
+
+    if (!(await confirmButton.isVisible())) {
+      const result = await page.locator("p.text-text-primary").last().innerText();
+      return { prompts, result };
+    }
+  }
+}

@@ -62,7 +62,7 @@ describe("ConfirmationBar", () => {
     expect(screen.getByText(countdownLabel(CONFIRMATION_WINDOW_SECONDS - 4))).toBeInTheDocument();
   });
 
-  it("applies the confirm result, appending cascade counts the same way the REST delete flow does", async () => {
+  it("applies the confirm result, appending cascade counts the same way the REST delete flow does, and invites a next command", async () => {
     confirmMutateAsync.mockResolvedValue({
       session_id: "session-1",
       executed: true,
@@ -71,6 +71,7 @@ describe("ConfirmationBar", () => {
         data: null,
         cascade: { deadlinesDeleted: 2, remindersDismissed: 1, notesUnlinked: 3 },
       },
+      next: null,
     });
     renderBar();
 
@@ -81,13 +82,13 @@ describe("ConfirmationBar", () => {
       {
         sessionId: "session-1",
         state: "Responding",
-        message: "Deleted the course and 2 deadline(s). 2 deadline(s) deleted, 1 reminder(s) dismissed, 3 note(s) unlinked.",
+        message: "Deleted the course and 2 deadline(s). 2 deadline(s) deleted, 1 reminder(s) dismissed, 3 note(s) unlinked. Anything else?",
       },
       "text",
     );
   });
 
-  it("applies the decline result", async () => {
+  it("applies the decline result, inviting a next command", async () => {
     declineMutateAsync.mockResolvedValue({ session_id: "session-1", executed: false, message: "Okay, I won't do that." });
     renderBar();
 
@@ -98,10 +99,38 @@ describe("ConfirmationBar", () => {
       {
         sessionId: "session-1",
         state: "Responding",
-        message: "Okay, I won't do that.",
+        message: "Okay, I won't do that. Anything else?",
       },
       "text",
     );
+  });
+
+  // General multi-step command queue (Workstream C): confirming a step that
+  // has more queued must chain straight into the next AwaitingConfirmation
+  // prompt instead of the "Anything else?" close-out -- the queue isn't
+  // actually empty yet.
+  it("applies the server's queued next step as a fresh AwaitingConfirmation turn instead of closing out", async () => {
+    confirmMutateAsync.mockResolvedValue({
+      session_id: "session-1",
+      executed: true,
+      result: { summary: "Added blink Cincinnati for Thursday.", data: null, cascade: null },
+      next: { session_id: "session-2", message: "Also add blink Cincinnati for Friday, October 9th, 7 to 11 PM?" },
+    });
+    renderBar();
+
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+
+    await waitFor(() => expect(confirmMutateAsync).toHaveBeenCalledWith("session-1"));
+    expect(applyTurnResult).toHaveBeenCalledWith(
+      {
+        sessionId: "session-2",
+        state: "AwaitingConfirmation",
+        message: "Also add blink Cincinnati for Friday, October 9th, 7 to 11 PM?",
+      },
+      "text",
+    );
+    expect(applyTurnResult).toHaveBeenCalledTimes(1);
+    expect(onSpoken).not.toHaveBeenCalled();
   });
 
   it("toasts and resets to idle when the server reports the window already expired", async () => {
@@ -214,11 +243,12 @@ describe("ConfirmationBar", () => {
 
   // Traces: SPEC-API-010 AC-6, AC-7, NC-API-SPEAK-007.
   describe("voice-originated origin propagation", () => {
-    it("propagates origin \"voice\" to applyTurnResult and calls onSpoken with the confirm result", async () => {
+    it("propagates origin \"voice\" to applyTurnResult and calls onSpoken with the confirm result, resuming hands-free listening", async () => {
       confirmMutateAsync.mockResolvedValue({
         session_id: "session-1",
         executed: true,
         result: { summary: "Deleted the course.", data: null, cascade: null },
+        next: null,
       });
       renderBar("voice");
 
@@ -226,13 +256,15 @@ describe("ConfirmationBar", () => {
 
       await waitFor(() => expect(applyTurnResult).toHaveBeenCalled());
       expect(applyTurnResult).toHaveBeenCalledWith(
-        { sessionId: "session-1", state: "Responding", message: "Deleted the course." },
+        { sessionId: "session-1", state: "Responding", message: "Deleted the course. Anything else?" },
         "voice",
       );
-      expect(onSpoken).toHaveBeenCalledWith("Deleted the course.");
+      // shouldResume: true -- fixes the "mic never re-arms after a
+      // confirm/decline" bug (onSpoken previously always defaulted it to false).
+      expect(onSpoken).toHaveBeenCalledWith("Deleted the course. Anything else?", true);
     });
 
-    it("propagates origin \"voice\" to applyTurnResult and calls onSpoken with the decline result", async () => {
+    it("propagates origin \"voice\" to applyTurnResult and calls onSpoken with the decline result, resuming hands-free listening", async () => {
       declineMutateAsync.mockResolvedValue({ session_id: "session-1", executed: false, message: "Okay, I won't do that." });
       renderBar("voice");
 
@@ -240,10 +272,29 @@ describe("ConfirmationBar", () => {
 
       await waitFor(() => expect(applyTurnResult).toHaveBeenCalled());
       expect(applyTurnResult).toHaveBeenCalledWith(
-        { sessionId: "session-1", state: "Responding", message: "Okay, I won't do that." },
+        { sessionId: "session-1", state: "Responding", message: "Okay, I won't do that. Anything else?" },
         "voice",
       );
-      expect(onSpoken).toHaveBeenCalledWith("Okay, I won't do that.");
+      expect(onSpoken).toHaveBeenCalledWith("Okay, I won't do that. Anything else?", true);
+    });
+
+    it("does not call onSpoken for a voice-origin confirm that chains into a next queued step", async () => {
+      confirmMutateAsync.mockResolvedValue({
+        session_id: "session-1",
+        executed: true,
+        result: { summary: "Added blink Cincinnati for Thursday.", data: null, cascade: null },
+        next: { session_id: "session-2", message: "Also add blink Cincinnati for Friday?" },
+      });
+      renderBar("voice");
+
+      fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+
+      await waitFor(() => expect(applyTurnResult).toHaveBeenCalled());
+      expect(applyTurnResult).toHaveBeenCalledWith(
+        { sessionId: "session-2", state: "AwaitingConfirmation", message: "Also add blink Cincinnati for Friday?" },
+        "voice",
+      );
+      expect(onSpoken).not.toHaveBeenCalled();
     });
   });
 

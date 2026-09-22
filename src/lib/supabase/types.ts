@@ -1785,6 +1785,7 @@ export type Database = {
           ended_at: string | null
           id: string
           last_active_at: string
+          queued_steps: Json | null
           started_at: string
           user_id: string
         }
@@ -1796,6 +1797,7 @@ export type Database = {
           ended_at?: string | null
           id?: string
           last_active_at?: string
+          queued_steps?: Json | null
           started_at?: string
           user_id: string
         }
@@ -1807,6 +1809,7 @@ export type Database = {
           ended_at?: string | null
           id?: string
           last_active_at?: string
+          queued_steps?: Json | null
           started_at?: string
           user_id?: string
         }
@@ -2881,6 +2884,7 @@ export type Database = {
           ended_at: string | null
           id: string
           last_active_at: string
+          queued_steps: Json | null
           started_at: string
           user_id: string
         }[]

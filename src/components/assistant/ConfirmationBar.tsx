@@ -23,9 +23,13 @@ type Props = {
    * awaiting full playback before resolving. Owned by the parent
    * CaptureChannel (its single useSpeakVoiceResponse instance, and the one
    * place that decides what happens after any spoken message finishes —
-   * see that file).
+   * see that file). The optional second parameter mirrors CaptureChannel's
+   * own speakAndMaybeResume — true re-arms hands-free listening once this
+   * message has finished playing (used for the "anything else?" close-out
+   * below; never for a fresh AwaitingConfirmation prompt, which instead
+   * waits for a yes/no answer).
    */
-  onSpoken: (text: string) => Promise<void>;
+  onSpoken: (text: string, shouldResume?: boolean) => Promise<void>;
   /**
    * True once CaptureChannel has finished speaking the confirmation prompt for a voice-originated turn — the earliest moment it's safe to start listening for a spoken yes/no without talking over itself, and the moment the confirmation window's clock starts (a text-origin turn starts it on mount instead).
    */
@@ -140,13 +144,27 @@ export function ConfirmationBar({ sessionId, message, origin, onSpoken, readyToL
 
   const handleConfirm = async () => {
     try {
-      const { result } = await confirmTurn.mutateAsync(sessionId);
+      const { result, next } = await confirmTurn.mutateAsync(sessionId);
+      // General multi-step command queue (Workstream C): confirming this
+      // step auto-proposed the next queued one -- apply it exactly like a
+      // fresh AwaitingConfirmation turn (VoiceCaptureProvider's
+      // applyTurnResult already handles that generically) and stop here;
+      // the "anything else?" close-out below only applies once the queue is
+      // actually empty.
+      if (next) {
+        applyTurnResult({ sessionId: next.session_id, state: "AwaitingConfirmation", message: next.message }, origin);
+        return;
+      }
       const cascadeSuffix = result.cascade
         ? ` ${result.cascade.deadlinesDeleted} deadline(s) deleted, ${result.cascade.remindersDismissed} reminder(s) dismissed, ${result.cascade.notesUnlinked} note(s) unlinked.`
         : "";
-      const responseMessage = `${result.summary}${cascadeSuffix}`;
+      // General session close-out: once a mutation resolves with nothing
+      // further queued, invite the next command -- the only visual/spoken
+      // cue the conversation is still open once the Confirm/Decline buttons
+      // are gone.
+      const responseMessage = `${result.summary}${cascadeSuffix} Anything else?`;
       applyTurnResult({ sessionId, state: "Responding", message: responseMessage }, origin);
-      if (origin === "voice") void onSpoken(responseMessage);
+      if (origin === "voice") void onSpoken(responseMessage, true);
     } catch (error) {
       handleFailure(error);
     }
@@ -155,8 +173,12 @@ export function ConfirmationBar({ sessionId, message, origin, onSpoken, readyToL
   const handleDecline = async () => {
     try {
       const declined = await declineTurn.mutateAsync(sessionId);
-      applyTurnResult({ sessionId, state: "Responding", message: declined.message }, origin);
-      if (origin === "voice") void onSpoken(declined.message);
+      // A decline always ends the queue (session.ts's declineVoiceSession
+      // clears it), so this always gets the same close-out treatment as the
+      // no-more-queued-steps branch of handleConfirm above.
+      const responseMessage = `${declined.message} Anything else?`;
+      applyTurnResult({ sessionId, state: "Responding", message: responseMessage }, origin);
+      if (origin === "voice") void onSpoken(responseMessage, true);
     } catch (error) {
       handleFailure(error);
     }

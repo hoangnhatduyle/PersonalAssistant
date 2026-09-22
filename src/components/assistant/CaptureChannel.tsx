@@ -113,11 +113,21 @@ export function CaptureChannel({ compact = false, large = false }: Props) {
   const reviewAloud = useReviewSuggestionsAloud();
   const [localStatus, setLocalStatus] = useState<LocalStatus>("idle");
   const [textInput, setTextInput] = useState("");
-  // True once the AwaitingConfirmation prompt has finished being spoken —
-  // the earliest moment ConfirmationBar may safely start listening for a
-  // spoken yes/no without talking over itself. Reset at the top of every
-  // new submitTurn so a fresh turn never inherits a stale "ready" signal.
-  const [confirmationReady, setConfirmationReady] = useState(false);
+  // The sessionId whose AwaitingConfirmation prompt has finished being
+  // spoken — the earliest moment ConfirmationBar may safely start listening
+  // for a spoken yes/no without talking over itself. Keyed by sessionId
+  // (not a plain boolean) because a multi-step command queue (Workstream C)
+  // can chain straight from one AwaitingConfirmation session to the next
+  // without status ever leaving "awaiting-confirmation" in between — a
+  // leftover boolean would misfire "ready" on the very first render of the
+  // next step. Reset at the top of every new submitTurn so a fresh turn
+  // never inherits a stale "ready" signal.
+  const [confirmationReadySessionId, setConfirmationReadySessionId] = useState<string | null>(null);
+  // Guards the awaiting-confirmation effect below against speaking the same
+  // session's prompt twice (e.g. a dev-mode double-invoke) — set the moment
+  // that effect commits to speaking a given sessionId's prompt, independent
+  // of confirmationReadySessionId (which is only set once speech finishes).
+  const spokenConfirmationSessionIdRef = useRef<string | null>(null);
 
   // useAutoStopRecorder's `start` (below) and speakAndMaybeResume (here)
   // reference each other — speakAndMaybeResume re-arms the mic after
@@ -161,7 +171,7 @@ export function CaptureChannel({ compact = false, large = false }: Props) {
   const submitTurn = useCallback(
     async (input: VoiceTurnClientInput, origin: VoiceTurnOrigin) => {
       setLocalStatus("transcribing");
-      setConfirmationReady(false);
+      setConfirmationReadySessionId(null);
       // Only a voice-originated turn ever triggers TTS (see below), so only
       // it gets the "thinking" ambience while STT/LLM/TTS-synthesis run.
       const isThinking = origin === "voice";
@@ -180,19 +190,16 @@ export function CaptureChannel({ compact = false, large = false }: Props) {
         // next. Only a voice-originated turn ever triggers TTS.
         if (origin === "voice") {
           if (result.state === "AwaitingConfirmation") {
-            // Appended only to the spoken form -- the model's summary reads
-            // declaratively ("Marking X complete"), which a voice-only user
-            // can easily mistake for something already done rather than a
-            // proposal awaiting yes/no. The displayed message (already
-            // committed via applyTurnResult above) keeps the bare summary,
-            // since ConfirmationBar's Confirm/Decline buttons make the
-            // pending state visually obvious there.
-            try {
-              await speakResponse.mutateAsync(`${result.message} Say yes to confirm, or no to cancel.`);
-            } catch {
-              // Toast already surfaced by useSpeakVoiceResponse's onError.
-            }
-            setConfirmationReady(true);
+            // The prompt itself is now spoken by the awaiting-confirmation
+            // effect below, not here -- that effect is the one place that
+            // correctly handles BOTH a fresh proposal (this path) and a
+            // chain-minted next step (Workstream C's multi-step command
+            // queue), which never goes through submitTurn at all since
+            // ConfirmationBar applies it directly via applyTurnResult. This
+            // branch only needs to keep the ambient "thinking" sound alive
+            // until that effect's own TTS call actually starts (see this
+            // function's own deferThinkingSoundStop comment above).
+            deferThinkingSoundStop = true;
           } else if (result.queryKind === "personalization_suggestions") {
             let played = false;
             try {
@@ -231,6 +238,43 @@ export function CaptureChannel({ compact = false, large = false }: Props) {
     },
     [voiceTurn, applyTurnResult, showToast, speakResponse, speakAndMaybeResume, refetchSuggestions, reviewAloud, handsFree],
   );
+
+  // Speaks a voice-origin AwaitingConfirmation prompt exactly once per
+  // sessionId, then flips confirmationReadySessionId so ConfirmationBar
+  // knows it's safe to start listening for a spoken yes/no. Watching `state`
+  // itself (rather than being called inline from submitTurn) is what lets
+  // this one effect correctly handle BOTH a fresh proposal AND a
+  // chain-minted next step of a multi-step command queue (Workstream C) --
+  // the latter reaches "awaiting-confirmation" via ConfirmationBar calling
+  // applyTurnResult directly, never through submitTurn at all.
+  useEffect(() => {
+    if (state.status !== "awaiting-confirmation" || state.origin !== "voice") return;
+    if (spokenConfirmationSessionIdRef.current === state.sessionId) return;
+    spokenConfirmationSessionIdRef.current = state.sessionId;
+    const sessionId = state.sessionId;
+    let cancelled = false;
+    // Appended only to the spoken form -- the model's summary reads
+    // declaratively ("Marking X complete"), which a voice-only user can
+    // easily mistake for something already done rather than a proposal
+    // awaiting yes/no. The displayed message (already committed via
+    // applyTurnResult) keeps the bare summary, since ConfirmationBar's
+    // Confirm/Decline buttons make the pending state visually obvious there.
+    (async () => {
+      try {
+        await speakResponse.mutateAsync(`${state.message} Say yes to confirm, or no to cancel.`);
+      } catch {
+        // Toast already surfaced by useSpeakVoiceResponse's onError.
+      } finally {
+        // Fallback for submitTurn's deferThinkingSoundStop path -- a no-op
+        // once the "thinking" sound has already been stopped by onPlaybackStart.
+        stopThinkingSound();
+      }
+      if (!cancelled) setConfirmationReadySessionId(sessionId);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [state, speakResponse]);
 
   const {
     status: recorderStatus,
@@ -367,11 +411,18 @@ export function CaptureChannel({ compact = false, large = false }: Props) {
 
       {state.status === "awaiting-confirmation" && (
         <ConfirmationBar
+          // A chain-minted next step (Workstream C) never leaves
+          // "awaiting-confirmation" status between steps, so a reused
+          // component instance would silently carry over every one-time-
+          // per-mount assumption inside ConfirmationBar itself (its
+          // countdown effect, expiry effect, arm call, own yes/no
+          // listener). Keying on sessionId forces a fresh mount per step.
+          key={state.sessionId}
           sessionId={state.sessionId}
           message={state.message}
           origin={state.origin}
           onSpoken={speakAndMaybeResume}
-          readyToListen={confirmationReady && state.origin === "voice"}
+          readyToListen={confirmationReadySessionId === state.sessionId && state.origin === "voice"}
         />
       )}
       {state.status === "responded" && (

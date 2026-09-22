@@ -25,11 +25,12 @@ export async function POST(_request: Request, { params }: RouteParams) {
   const { sessionId } = await params;
 
   try {
-    const { executed, result } = await confirmVoiceSession(supabase, user.id, sessionId);
+    const { executed, result, next } = await confirmVoiceSession(supabase, user.id, sessionId);
     return successResponse({
       session_id: sessionId,
       executed,
       result: { summary: result.summary, data: result.data, cascade: result.cascade ?? null },
+      next: next ? { session_id: next.sessionId, message: next.message } : null,
     });
   } catch (error) {
     if (error instanceof VoiceSessionNotFoundError) return notFoundResponse();

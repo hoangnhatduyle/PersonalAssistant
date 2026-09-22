@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { findConflictingAppointmentIds, parseStructuredTime } from "../conflicts";
+import { findConflictingAppointmentIds } from "../conflicts";
 import type { AppointmentRow } from "@/lib/api/entity-types";
 
 function makeAppointment(overrides: Partial<AppointmentRow> = {}): AppointmentRow {
@@ -28,24 +28,29 @@ function makeAppointment(overrides: Partial<AppointmentRow> = {}): AppointmentRo
   };
 }
 
-describe("parseStructuredTime", () => {
-  it("parses a valid HH:MM into minutes-since-midnight", () => {
-    expect(parseStructuredTime("00:00")).toBe(0);
-    expect(parseStructuredTime("09:30")).toBe(570);
-    expect(parseStructuredTime("23:59")).toBe(1439);
-  });
-
-  it("returns null for free text, missing, or malformed input", () => {
-    expect(parseStructuredTime("Starting at 7:00 PM")).toBeNull();
-    expect(parseStructuredTime(null)).toBeNull();
-    expect(parseStructuredTime(undefined)).toBeNull();
-    expect(parseStructuredTime("")).toBeNull();
-    expect(parseStructuredTime("25:00")).toBeNull();
-    expect(parseStructuredTime("9:30")).toBeNull();
-  });
-});
-
 describe("findConflictingAppointmentIds", () => {
+  // parseTimeToMinutes's own parsing cases (24-hour, 12-hour AM/PM, malformed)
+  // live in src/lib/calendar/__tests__/recurrence.test.ts. These cases prove
+  // the AM/PM case is actually wired through end-to-end here, not just
+  // parseable in isolation -- this is the exact class of bug that shipped:
+  // a "7:00 PM" appointment used to silently disable conflict detection.
+  it("flags an overlap between two AM/PM-formatted times", () => {
+    const ids = findConflictingAppointmentIds([
+      makeAppointment({ id: "a", time: "7:00 PM", duration_minutes: 60 }),
+      makeAppointment({ id: "b", time: "7:30 PM", duration_minutes: 60 }),
+    ]);
+    expect(ids).toEqual(new Set(["a", "b"]));
+  });
+
+  it("does not flag non-overlapping AM/PM-formatted times", () => {
+    const ids = findConflictingAppointmentIds([
+      makeAppointment({ id: "a", time: "7:00 AM", duration_minutes: 30 }),
+      makeAppointment({ id: "b", time: "7:00 PM", duration_minutes: 30 }),
+    ]);
+    expect(ids.size).toBe(0);
+  });
+
+
   it("flags two appointments with an exact overlap", () => {
     const ids = findConflictingAppointmentIds([
       makeAppointment({ id: "a", time: "14:00", duration_minutes: 60 }),

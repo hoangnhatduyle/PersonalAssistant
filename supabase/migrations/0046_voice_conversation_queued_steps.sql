@@ -1,0 +1,29 @@
+-- General multi-step command queue (Workstream C, swirling-beaming-nautilus.md).
+-- Fixes a confirmed gap: a multi-day Event (or any compound request implying
+-- several actions) required the user to re-prompt ("add the rest too") after
+-- every single step -- the assistant never continued on its own, and relied
+-- on the LLM correctly interpreting an ambiguous follow-up utterance each
+-- time, which already misfired once in production.
+--
+-- queued_steps holds the ordered list of already-fully-resolved future steps
+-- (propose_mutation's new additional_steps array, each mapped through
+-- toPendingMutation exactly like the primary mutation) that a single
+-- propose_mutation call produced up front. session.ts's confirmVoiceSession
+-- pops the head off this list on every confirm, mints a fresh
+-- AwaitingConfirmation session from it, and writes the reduced tail back --
+-- no further LLM calls. Lives on voice_conversations, not voice_sessions:
+-- this is cross-turn continuity state, the same thing draft_mutation
+-- (0037_voice_conversation_draft_mutation.sql) already models, with the same
+-- 30-minute idle timeout and 48h retention sweep naturally bounding how long
+-- a stale queue can linger.
+--
+-- Deliberately NOT given the same tamper-lockdown trigger voice_sessions.
+-- pending_mutation has (0005_voice_session_column_lockdown.sql), for the
+-- identical reasoning draft_mutation's own migration already documents: a
+-- queued step is never executed directly -- it only ever seeds a fresh
+-- AwaitingConfirmation row that still has to go through the normal
+-- confirm/decline dance, so tampering with it has no privilege-escalation
+-- path; the owner-only RLS policy already on voice_conversations is
+-- sufficient.
+alter table public.voice_conversations
+  add column queued_steps jsonb;

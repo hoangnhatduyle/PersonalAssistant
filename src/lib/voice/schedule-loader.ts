@@ -11,8 +11,8 @@ import {
   type ScheduleTimeWindow,
 } from "@/lib/voice/schedule-time-window";
 import { rankScheduleItems, zonedDateKey, type Priority, type ScheduleItem } from "@/lib/voice/schedule-formatting";
-import { expandBlockForDateKeys, formatMinutesOfDay, type MeetingBlock } from "@/lib/calendar/recurrence";
-import { findConflictingAppointmentIds, parseStructuredTime } from "@/lib/appointments/conflicts";
+import { expandBlockForDateKeys, formatMinutesOfDay, parseTimeToMinutes, type MeetingBlock } from "@/lib/calendar/recurrence";
+import { findConflictingAppointmentIds } from "@/lib/appointments/conflicts";
 
 const OPEN_DEADLINE_STATUSES = ["Not Started", "In Progress", "Submitted", "Overdue"] as const;
 
@@ -335,7 +335,7 @@ export async function loadSchedule(
       // natural clock phrase, and fall back to the raw string otherwise.
       // Never parsed into dueAt -- Sessions still always anchor to end of
       // day here, only the dashboard's countdown uses the structured time.
-      const sessionMinutes = parseStructuredTime(session.time);
+      const sessionMinutes = parseTimeToMinutes(session.time);
       const sessionTimeLabel = sessionMinutes !== null ? formatMinutesOfDay(sessionMinutes) : session.time;
       const context =
         deadlineTitle && sessionTimeLabel ? `${deadlineTitle} — ${sessionTimeLabel}` : (deadlineTitle ?? sessionTimeLabel ?? null);
@@ -360,7 +360,7 @@ export async function loadSchedule(
     // .ts) to always relay rather than omit.
     ...(appointmentsResult.data ?? []).map((appointment): ScheduleItem => {
       const [year, month, day] = appointment.date.split("-").map(Number);
-      const structuredMinutes = parseStructuredTime(appointment.time);
+      const structuredMinutes = parseTimeToMinutes(appointment.time);
       const conflictNote = appointmentConflictIds.has(appointment.id) ? "conflicts with another appointment at the same time" : null;
       const contextParts = [appointment.category, appointment.location, conflictNote].filter((part): part is string => Boolean(part));
       return {

@@ -58,6 +58,8 @@ export interface VoiceConfirmResult {
   session_id: string;
   executed: boolean;
   result: MutationExecutionResult;
+  /** Set when confirming this session auto-proposed the next queued step of a multi-step command (session.ts's confirmVoiceSession) — ConfirmationBar applies it exactly like a fresh AwaitingConfirmation turn. */
+  next: { session_id: string; message: string } | null;
 }
 
 /** POST /api/voice/[sessionId]/confirm — executes the persisted pending mutation. */

@@ -1,4 +1,4 @@
-import { parseStructuredTime } from "@/lib/appointments/conflicts";
+import { parseTimeToMinutes } from "@/lib/calendar/recurrence";
 import type { AppointmentRow } from "@/lib/api/entity-types";
 
 /** "Mon, Sep 14" — shared by the list row and the search haystack so what a user sees is what they can search. */
@@ -30,7 +30,7 @@ export function isPastAppointment(appointment: AppointmentRow, now: Date): boole
   }
 
   const [year, month, day] = appointment.date.split("-").map(Number);
-  const startMinutes = parseStructuredTime(appointment.time);
+  const startMinutes = parseTimeToMinutes(appointment.time);
   const endMinutes = startMinutes === null ? 24 * 60 : startMinutes + (appointment.duration_minutes ?? 0);
   // Date normalizes minute overflow (e.g. 1440 -> next midnight) for us.
   const end = new Date(year, month - 1, day, 0, endMinutes);

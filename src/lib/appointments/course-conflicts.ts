@@ -1,6 +1,5 @@
 import type { AppointmentRow, CourseRow } from "@/lib/api/entity-types";
-import { parseStructuredTime } from "@/lib/appointments/conflicts";
-import { expandBlockForDateKeys } from "@/lib/calendar/recurrence";
+import { expandBlockForDateKeys, parseTimeToMinutes } from "@/lib/calendar/recurrence";
 
 type ConflictCheckableAppointment = Pick<AppointmentRow, "id" | "date" | "time" | "duration_minutes">;
 type ConflictCheckableCourse = Pick<CourseRow, "meeting_blocks" | "recurrence_start_date" | "recurrence_end_date" | "person_id">;
@@ -27,7 +26,7 @@ export function findCourseConflictingAppointmentIds(
   const myCourses = courses.filter((course) => course.person_id === null);
 
   for (const appointment of appointments) {
-    const start = parseStructuredTime(appointment.time);
+    const start = parseTimeToMinutes(appointment.time);
     if (start === null || !appointment.duration_minutes) continue;
     const end = start + appointment.duration_minutes;
 

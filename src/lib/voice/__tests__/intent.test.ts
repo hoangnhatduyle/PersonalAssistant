@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { loadEntityContext, loadUserTimezone, mutationSchema, toPendingMutation } from "../intent";
+import { additionalStepsSchema, loadEntityContext, loadUserTimezone, mutationSchema, toPendingMutation } from "../intent";
 import { adminClient, createAuthenticatedUser, createCourse, createDeadline, createPerson, createTask } from "../../../../supabase/tests/helpers";
 
 const VALID_TARGET_ID = "11111111-1111-4111-8111-111111111111";
@@ -441,6 +441,75 @@ describe("mutationSchema", () => {
     });
     expect(result.success).toBe(true);
     if (result.success && result.data.target_type === "task") expect(result.data.priority).toBeNull();
+  });
+});
+
+// General multi-step command queue (Workstream C, swirling-beaming-nautilus.md):
+// propose_mutation's additional_steps field, each item validated through the
+// exact same mutationSchema every top-level proposal is, plus its own summary.
+describe("additionalStepsSchema", () => {
+  const validTaskStep = {
+    target_type: "task",
+    operation: "create",
+    target_id: null,
+    title: "Call mom",
+    due_at: null,
+    reminder_lead_minutes: null,
+    priority: null,
+    summary: "Also add a task to call mom?",
+  };
+
+  it("is null/omitted unaffected -- a request with nothing more to queue", () => {
+    expect(additionalStepsSchema.safeParse(null).success).toBe(true);
+    expect(additionalStepsSchema.safeParse(undefined).success).toBe(true);
+    expect(additionalStepsSchema.parse(undefined)).toBeNull();
+  });
+
+  it("accepts a valid array of fully-resolved steps, each independently valid through mutationSchema", () => {
+    const result = additionalStepsSchema.safeParse([
+      validTaskStep,
+      {
+        target_type: "event",
+        operation: "create",
+        target_id: null,
+        title: "blink Cincinnati",
+        date: "2026-10-09",
+        time: "7:00 PM",
+        duration_minutes: 240,
+        location: null,
+        event: null,
+        summary: "Also add blink Cincinnati for Friday, October 9th, 7 to 11 PM?",
+      },
+    ]);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data).toHaveLength(2);
+      expect(result.data?.[0]).toMatchObject({ target_type: "task", title: "Call mom", summary: "Also add a task to call mom?" });
+    }
+  });
+
+  it("rejects an item that fails its own target-type's required-field rule", () => {
+    const result = additionalStepsSchema.safeParse([{ ...validTaskStep, title: null }]);
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects an item with a missing summary", () => {
+    const withoutSummary: Record<string, unknown> = { ...validTaskStep };
+    delete withoutSummary.summary;
+    const result = additionalStepsSchema.safeParse([withoutSummary]);
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects an item with an empty-string summary", () => {
+    const result = additionalStepsSchema.safeParse([{ ...validTaskStep, summary: "" }]);
+    expect(result.success).toBe(false);
+  });
+
+  it("enforces the length cap", () => {
+    const tooMany = Array.from({ length: 21 }, () => validTaskStep);
+    expect(additionalStepsSchema.safeParse(tooMany).success).toBe(false);
+    const atCap = Array.from({ length: 20 }, () => validTaskStep);
+    expect(additionalStepsSchema.safeParse(atCap).success).toBe(true);
   });
 });
 

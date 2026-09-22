@@ -144,6 +144,15 @@ describe("buildUpcomingItems", () => {
     expect(items[0].at).toEqual(new Date("2026-01-04T18:00:00"));
   });
 
+  it("uses an AM/PM-formatted time for `at` correctly, not shifted to AM", () => {
+    const items = buildUpcomingItems({
+      deadlines: [],
+      tasks: [],
+      appointments: [makeAppointment({ id: "s-pm", date: "2026-01-04", time: "7:00 PM" })],
+    });
+    expect(items[0].at).toEqual(new Date(2026, 0, 4, 19, 0));
+  });
+
   it("falls back to end of day for a Deadline Session with no parseable time", () => {
     const items = buildUpcomingItems({
       deadlines: [],

@@ -3,7 +3,7 @@ import { requireAuthenticatedContext } from "@/lib/api/auth";
 import { parsePagination, wantsIncludeDeleted } from "@/lib/api/pagination";
 import { appointmentPayloadSchema } from "@/lib/api/schemas";
 import { syncReminderForTarget } from "@/lib/api/reminders";
-import { parseStructuredTime } from "@/lib/appointments/conflicts";
+import { parseTimeToMinutes } from "@/lib/calendar/recurrence";
 import {
   successResponse,
   notFoundResponse,
@@ -65,7 +65,7 @@ export async function POST(request: NextRequest) {
   // instead of this top-level time/duration_minutes pair.
   const isRecurring = (parsed.data.meeting_blocks?.length ?? 0) > 0;
   if (!parsed.data.deadline_id && !isRecurring) {
-    if (parseStructuredTime(parsed.data.time) === null) {
+    if (parseTimeToMinutes(parsed.data.time) === null) {
       return validationErrorResponse("time is required in HH:MM format for an appointment");
     }
     if (!parsed.data.duration_minutes) {
