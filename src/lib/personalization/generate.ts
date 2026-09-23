@@ -52,7 +52,7 @@ export const generateSuggestion: GenerateSuggestionFn = async (input) => {
   const openai = new OpenAI({ apiKey: requireEnv("OPENAI_API_KEY") });
 
   const completion = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
+    model: "gpt-5.6-luna",
     response_format: { type: "json_object" },
     messages: [
       { role: "system", content: SYSTEM_PROMPT },

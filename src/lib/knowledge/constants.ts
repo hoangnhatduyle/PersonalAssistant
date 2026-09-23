@@ -13,7 +13,7 @@
 export const KNOWLEDGE_CHUNK_SIZE_CHARS = 1200;
 export const KNOWLEDGE_CHUNK_OVERLAP_CHARS = 150;
 export const KNOWLEDGE_EMBEDDING_MODEL = "text-embedding-3-small";
-export const KNOWLEDGE_VISION_MODEL = "gpt-4o-mini";
+export const KNOWLEDGE_VISION_MODEL = "gpt-5.6-luna";
 // Security-review finding: an unbounded chunk count sends one massive
 // embeddings.create call (risking OpenAI's per-request token/array-size
 // limits) and a many-MB complete_knowledge_import RPC payload. Batches

@@ -43,7 +43,7 @@ async function getOpenAISpeechResponse(text: string): Promise<Response> {
   // Pinned explicitly (SPEC-API-010) for the same audio/mpeg contract.
   return openai.audio.speech.create({
     model: "gpt-4o-mini-tts",
-    voice: "alloy",
+    voice: "cedar",
     input: text,
     response_format: "mp3",
   });

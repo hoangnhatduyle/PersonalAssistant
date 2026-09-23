@@ -288,17 +288,17 @@ const proposeMutationMetaSchema = z.object({
  */
 class ToolArgsError extends Error {}
 
-function parseToolArgs<T>(schema: z.ZodType<T>, toolCall: OpenAI.ChatCompletionMessageFunctionToolCall): T {
+function parseToolArgs<T>(schema: z.ZodType<T>, toolCall: OpenAI.Responses.ResponseFunctionToolCall): T {
   let raw: unknown;
   try {
-    raw = JSON.parse(toolCall.function.arguments);
+    raw = JSON.parse(toolCall.arguments);
   } catch {
-    throw new ToolArgsError(`${toolCall.function.name} returned arguments that were not valid JSON`);
+    throw new ToolArgsError(`${toolCall.name} returned arguments that were not valid JSON`);
   }
   const result = schema.safeParse(raw);
   if (!result.success) {
     const issues = result.error.issues.map((issue) => `${issue.path.join(".") || "(root)"}: ${issue.message}`).join("; ");
-    throw new ToolArgsError(`${toolCall.function.name} received invalid arguments: ${issues}`);
+    throw new ToolArgsError(`${toolCall.name} received invalid arguments: ${issues}`);
   }
   return result.data;
 }
@@ -320,7 +320,7 @@ function parseToolArgs<T>(schema: z.ZodType<T>, toolCall: OpenAI.ChatCompletionM
  * for session.ts's existing friendly-clarification catch to handle.
  */
 function parseProposeMutationArgs(
-  toolCall: OpenAI.ChatCompletionMessageFunctionToolCall,
+  toolCall: OpenAI.Responses.ResponseFunctionToolCall,
   now: Date,
   timezone: string,
   openDraft: DraftMutationRecord | null,
@@ -330,7 +330,7 @@ function parseProposeMutationArgs(
   | { kind: "ask"; question: string; mutation: RawMutation } {
   let raw: unknown;
   try {
-    raw = JSON.parse(toolCall.function.arguments);
+    raw = JSON.parse(toolCall.arguments);
   } catch {
     throw new Error("propose_mutation returned arguments that were not valid JSON");
   }
@@ -372,10 +372,10 @@ const saveMutationDraftMetaSchema: z.ZodType<SaveMutationDraftArgs> = z.object({
  * to be missing a required field for its operation; only structural
  * validity (right target_type/operation/enum values) is enforced here.
  */
-function parseSaveMutationDraftArgs(toolCall: OpenAI.ChatCompletionMessageFunctionToolCall): { question: string; mutation: RawMutation } {
+function parseSaveMutationDraftArgs(toolCall: OpenAI.Responses.ResponseFunctionToolCall): { question: string; mutation: RawMutation } {
   let raw: unknown;
   try {
-    raw = JSON.parse(toolCall.function.arguments);
+    raw = JSON.parse(toolCall.arguments);
   } catch {
     throw new Error("save_mutation_draft returned arguments that were not valid JSON");
   }
@@ -405,14 +405,14 @@ interface ToolDispatchResult {
  * error, not a silent no-op at runtime.
  */
 async function dispatchTool(
-  toolCall: OpenAI.ChatCompletionMessageFunctionToolCall,
+  toolCall: OpenAI.Responses.ResponseFunctionToolCall,
   supabase: SupabaseClient<Database>,
   userId: string,
   conversationId: string,
   context: EntityContext,
   now: Date,
 ): Promise<ToolDispatchResult> {
-  const name = toolCall.function.name as ToolName;
+  const name = toolCall.name as ToolName;
   switch (name) {
     case "get_schedule": {
       const args = parseToolArgs(getScheduleArgsSchema, toolCall);
@@ -499,9 +499,9 @@ export const runConversationTurn: RunConversationTurnFn = async (supabase, userI
     ]),
   );
 
-  const messages: OpenAI.ChatCompletionMessageParam[] = [
-    { role: "system", content: buildSystemPrompt(now, timezone, context, toScheduleToolPayload(todaySchedule), draft) },
-    ...history.map((turn): OpenAI.ChatCompletionMessageParam => ({ role: turn.role, content: turn.content })),
+  const instructions = buildSystemPrompt(now, timezone, context, toScheduleToolPayload(todaySchedule), draft);
+  const input: OpenAI.Responses.ResponseInputItem[] = [
+    ...history.map((turn): OpenAI.Responses.EasyInputMessage => ({ role: turn.role, content: turn.content })),
     { role: "user", content: transcript },
   ];
 
@@ -528,7 +528,7 @@ export const runConversationTurn: RunConversationTurnFn = async (supabase, userI
   // trusting the prompt alone. Every other tool stays available, since such
   // a reply can legitimately answer a question the assistant just asked.
   const tools = isBareAcknowledgement(transcript)
-    ? CONVERSATION_TOOLS.filter((tool) => tool.function.name !== "get_personalization_suggestions")
+    ? CONVERSATION_TOOLS.filter((tool) => tool.name !== "get_personalization_suggestions")
     : CONVERSATION_TOOLS;
 
   for (let iteration = 0; iteration < MAX_TOOL_CALL_ITERATIONS; iteration++) {
@@ -550,37 +550,51 @@ export const runConversationTurn: RunConversationTurnFn = async (supabase, userI
     // forced, possibly-rushed final turn.
     const isFinalIteration = iteration === MAX_TOOL_CALL_ITERATIONS - 1;
     const forceRespondToUser = isFinalIteration || sawRepeatedToolCall;
-    const completion = await timed(`openai call (iteration ${iteration})`, () =>
-      openai.chat.completions.create({
-        model: "gpt-5-mini",
+    const response = await timed(`openai call (iteration ${iteration})`, () =>
+      openai.responses.create({
+        model: "gpt-5.6-luna",
         // A schedule-narration hallucination once observed here (the model
         // fabricating a class meeting not in its own tool result) was
         // traced to the tool payload leaking a course-name list the model
         // over-trusted, NOT to reasoning_effort -- escalating to "medium"
         // was tried and did not stop it, and cost several extra seconds per
         // call besides. Fixed at the payload layer instead (see
-        // toScheduleToolPayload's doc comment in schedule-loader.ts); "low"
-        // effort is verified correct post-fix and keeps the full pipeline
-        // comfortably under the product's ~10s response-time budget.
-        reasoning_effort: "low",
-        verbosity: "low",
+        // toScheduleToolPayload's doc comment in schedule-loader.ts).
+        //
+        // Now on the Responses API instead of Chat Completions: gpt-5.6+
+        // models reject function tools combined with any reasoning_effort
+        // other than "none" on Chat Completions ("Function tools with
+        // reasoning_effort are not supported ... use /v1/responses or set
+        // reasoning_effort to 'none'"), confirmed empirically 2026-09-23.
+        // Responses is the only way to get tool calling + real reasoning
+        // together. Tried "medium" first (real reasoning-effort-dependent
+        // quality jump in prior testing) but measured against real e2e
+        // traffic it missed the ~10s response budget on 8.8% of turns
+        // (p95 14.7s, one spike to 26.8s) -- dropped to "low" instead, which
+        // still restores real reasoning over the interim "none" pin while
+        // keeping tail latency in budget.
+        reasoning: { effort: "low" },
+        text: { verbosity: "low" },
         tools,
-        tool_choice: forceRespondToUser ? { type: "function", function: { name: "respond_to_user" } } : "required",
-        messages,
+        tool_choice: forceRespondToUser ? { type: "function", name: "respond_to_user" } : "required",
+        instructions,
+        input,
       }),
     );
-    const message = completion.choices[0]?.message;
-    if (!message || !message.tool_calls || message.tool_calls.length === 0) break;
 
-    messages.push({ role: "assistant", content: message.content, tool_calls: message.tool_calls });
-
-    // CONVERSATION_TOOLS only ever offers function-type tools, so a
-    // custom-tool call is never actually issued -- narrow defensively
-    // rather than assume.
-    const functionCalls = message.tool_calls.filter(
-      (toolCall): toolCall is OpenAI.ChatCompletionMessageFunctionToolCall => toolCall.type === "function",
+    // Cast needed: the SDK's ResponseOutputItem union (what a response
+    // returns) and ResponseInputItem union (what's valid to echo back) are
+    // structurally almost identical, but diverge on one variant this app
+    // never produces -- a computer-tool-call output's `status` allows
+    // "failed" on the output side but not the input-echo side. This app
+    // never offers a computer tool, so that variant is unreachable here.
+    input.push(...(response.output as unknown as OpenAI.Responses.ResponseInputItem[]));
+    const functionCalls = response.output.filter(
+      (item): item is OpenAI.Responses.ResponseFunctionToolCall => item.type === "function_call",
     );
-    const finalizingCall = functionCalls.find((toolCall) => FINALIZING_TOOL_NAMES.has(toolCall.function.name as ToolName));
+    if (functionCalls.length === 0) break;
+
+    const finalizingCall = functionCalls.find((toolCall) => FINALIZING_TOOL_NAMES.has(toolCall.name as ToolName));
 
     // A finalizing tool call ends the turn -- but only when it's the sole
     // call this iteration. If the model bundled one alongside a data tool in
@@ -588,7 +602,7 @@ export const runConversationTurn: RunConversationTurnFn = async (supabase, userI
     // tool's result, so reject it below and let the loop continue once the
     // data call's result is in hand.
     if (finalizingCall && functionCalls.length === 1) {
-      if (finalizingCall.function.name === "respond_to_user") {
+      if (finalizingCall.name === "respond_to_user") {
         const args = parseToolArgs(respondToUserArgsSchema, finalizingCall);
         return {
           kind: "answer",
@@ -600,7 +614,7 @@ export const runConversationTurn: RunConversationTurnFn = async (supabase, userI
           conversationId: activeConversationId,
         };
       }
-      if (finalizingCall.function.name === "save_mutation_draft") {
+      if (finalizingCall.name === "save_mutation_draft") {
         const { question, mutation } = parseSaveMutationDraftArgs(finalizingCall);
         return {
           kind: "answer",
@@ -625,10 +639,10 @@ export const runConversationTurn: RunConversationTurnFn = async (supabase, userI
         if (!(error instanceof z.ZodError) || hasRecoveredFromInvalidProposal) throw error;
         hasRecoveredFromInvalidProposal = true;
         const issues = error.issues.map((issue) => `${issue.path.join(".") || "(root)"}: ${issue.message}`).join("; ");
-        messages.push({
-          role: "tool",
-          tool_call_id: finalizingCall.id,
-          content: JSON.stringify({
+        input.push({
+          type: "function_call_output",
+          call_id: finalizingCall.call_id,
+          output: JSON.stringify({
             error: `propose_mutation was rejected and nothing was proposed (${issues}). If the user simply hasn't given you those fields yet, call save_mutation_draft now with everything you already know and one short, natural spoken question asking for exactly what's missing — never guess a value. If you can resolve them yourself (e.g. a course by its code, a date), call propose_mutation again with the corrected arguments.`,
           }),
         });
@@ -661,24 +675,24 @@ export const runConversationTurn: RunConversationTurnFn = async (supabase, userI
     // for a finalizing tool name by design -- crashing the whole turn
     // instead of asking the model to retry with just one.
     for (const toolCall of functionCalls) {
-      if (FINALIZING_TOOL_NAMES.has(toolCall.function.name as ToolName)) {
-        messages.push({
-          role: "tool",
-          tool_call_id: toolCall.id,
-          content: JSON.stringify({
-            error: `${toolCall.function.name} must be called alone, after any data tools you needed have already returned their results.`,
+      if (FINALIZING_TOOL_NAMES.has(toolCall.name as ToolName)) {
+        input.push({
+          type: "function_call_output",
+          call_id: toolCall.call_id,
+          output: JSON.stringify({
+            error: `${toolCall.name} must be called alone, after any data tools you needed have already returned their results.`,
           }),
         });
         continue;
       }
-      const dedupeKey = `${toolCall.function.name}:${toolCall.function.arguments}`;
+      const dedupeKey = `${toolCall.name}:${toolCall.arguments}`;
       if (dispatchedPayloads.has(dedupeKey)) {
         sawRepeatedToolCall = true;
-        messages.push({ role: "tool", tool_call_id: toolCall.id, content: JSON.stringify(dispatchedPayloads.get(dedupeKey)) });
+        input.push({ type: "function_call_output", call_id: toolCall.call_id, output: JSON.stringify(dispatchedPayloads.get(dedupeKey)) });
         continue;
       }
 
-      const result = await timed(`tool dispatch (${toolCall.function.name})`, async () => {
+      const result = await timed(`tool dispatch (${toolCall.name})`, async () => {
         try {
           return await dispatchTool(toolCall, supabase, userId, activeConversationId, context, now);
         } catch (error) {
@@ -698,7 +712,7 @@ export const runConversationTurn: RunConversationTurnFn = async (supabase, userI
       if (result.citations && result.citations.length > 0) citations = dedupeCitationsBySourceId([...citations, ...result.citations]);
       if (result.extractionLabel) extractionLabel = result.extractionLabel;
       if (result.usedPersonalizationSuggestions) usedPersonalizationSuggestions = true;
-      messages.push({ role: "tool", tool_call_id: toolCall.id, content: JSON.stringify(result.payload) });
+      input.push({ type: "function_call_output", call_id: toolCall.call_id, output: JSON.stringify(result.payload) });
     }
   }
 

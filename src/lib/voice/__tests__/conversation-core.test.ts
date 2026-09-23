@@ -4,12 +4,12 @@ import type { Database } from "@/lib/supabase/types";
 import { loadSchedule } from "@/lib/voice/schedule-loader";
 
 const mocks = vi.hoisted(() => ({
-  chatCompletionsCreate: vi.fn(),
+  responsesCreate: vi.fn(),
 }));
 
 vi.mock("openai", () => ({
   default: vi.fn().mockImplementation(function () {
-    return { chat: { completions: { create: mocks.chatCompletionsCreate } } };
+    return { responses: { create: mocks.responsesCreate } };
   }),
 }));
 
@@ -76,20 +76,20 @@ interface FakeToolCall {
   arguments: Record<string, unknown>;
 }
 
+// Each fake call is deliberately given a DIFFERENT `id` (the output item's
+// own identity) and `call_id` (the correlation id the matching
+// function_call_output must echo back) -- if these were left identical, a
+// real bug in the code under test (reading `.id` instead of `.call_id`
+// when pushing a tool result) would pass every test by coincidence.
 function toolCallResponse(calls: FakeToolCall[]) {
   return {
-    choices: [
-      {
-        message: {
-          content: null,
-          tool_calls: calls.map((call) => ({
-            id: call.id,
-            type: "function" as const,
-            function: { name: call.name, arguments: JSON.stringify(call.arguments) },
-          })),
-        },
-      },
-    ],
+    output: calls.map((call) => ({
+      type: "function_call" as const,
+      id: `fc_${call.id}`,
+      call_id: call.id,
+      name: call.name,
+      arguments: JSON.stringify(call.arguments),
+    })),
   };
 }
 
@@ -116,8 +116,8 @@ describe("runConversationTurn", () => {
   });
 
   it("returns a mutation_proposal when propose_mutation is called alone", async () => {
-    mocks.chatCompletionsCreate.mockReset();
-    mocks.chatCompletionsCreate.mockResolvedValueOnce(
+    mocks.responsesCreate.mockReset();
+    mocks.responsesCreate.mockResolvedValueOnce(
       toolCallResponse([{ id: "call_1", name: "propose_mutation", arguments: validProposeMutationArgs }]),
     );
 
@@ -131,7 +131,7 @@ describe("runConversationTurn", () => {
       conversationId: "conv-1",
       queuedSteps: [],
     });
-    expect(mocks.chatCompletionsCreate).toHaveBeenCalledTimes(1);
+    expect(mocks.responsesCreate).toHaveBeenCalledTimes(1);
     expect(loadSchedule).toHaveBeenCalledWith(fakeSupabase, "user-1", "today", expect.any(Date));
   });
 
@@ -139,8 +139,8 @@ describe("runConversationTurn", () => {
   // nautilus.md): propose_mutation's additional_steps array is mapped
   // through toPendingMutation exactly like the primary mutation, in order.
   it("maps propose_mutation's additional_steps into queuedSteps, each through the same toPendingMutation as the primary mutation", async () => {
-    mocks.chatCompletionsCreate.mockReset();
-    mocks.chatCompletionsCreate.mockResolvedValueOnce(
+    mocks.responsesCreate.mockReset();
+    mocks.responsesCreate.mockResolvedValueOnce(
       toolCallResponse([
         {
           id: "call_1",
@@ -224,8 +224,8 @@ describe("runConversationTurn", () => {
   // validation" above. Resolving 2 of 3 steps and silently dropping the
   // third would leave the user with an incomplete plan they never agreed to.
   it("rejects the whole propose_mutation call when a queued step is itself invalid, after one recovery attempt", async () => {
-    mocks.chatCompletionsCreate.mockReset();
-    mocks.chatCompletionsCreate.mockResolvedValue(
+    mocks.responsesCreate.mockReset();
+    mocks.responsesCreate.mockResolvedValue(
       toolCallResponse([
         {
           id: "call_1",
@@ -239,7 +239,7 @@ describe("runConversationTurn", () => {
     );
 
     await expect(runConversationTurn(fakeSupabase, "user-1", "delete my task, and add another", "conv-1")).rejects.toThrow();
-    expect(mocks.chatCompletionsCreate).toHaveBeenCalledTimes(2);
+    expect(mocks.responsesCreate).toHaveBeenCalledTimes(2);
   });
 
   // Mirrors the existing respond_to_user-bundling guard: a finalizing tool
@@ -248,8 +248,8 @@ describe("runConversationTurn", () => {
   // before seeing that other tool's result -- reject it and let the loop
   // continue once that result is in hand.
   it("rejects propose_mutation bundled with another tool call in the same batch, then continues once the data call resolves", async () => {
-    mocks.chatCompletionsCreate.mockReset();
-    mocks.chatCompletionsCreate
+    mocks.responsesCreate.mockReset();
+    mocks.responsesCreate
       .mockResolvedValueOnce(
         toolCallResponse([
           { id: "call_1", name: "get_schedule", arguments: { window: "date", date: "2026-09-05" } },
@@ -266,7 +266,7 @@ describe("runConversationTurn", () => {
       needsFollowUp: false,
       conversationId: "conv-1",
     });
-    expect(mocks.chatCompletionsCreate).toHaveBeenCalledTimes(2);
+    expect(mocks.responsesCreate).toHaveBeenCalledTimes(2);
     // 1 unconditional prefetch in setup + 1 real model-issued get_schedule
     // (window "date") call in the batch above -- the deliberate
     // graceful-fallback path, not a hard rejection, so it still dispatches
@@ -286,8 +286,8 @@ describe("runConversationTurn", () => {
   // experienced as the session going silent/erroring right after asking for
   // confirmation, never actually confirming.
   it("gracefully rejects EVERY finalizing tool call in a batch of 2+, not just the one found first", async () => {
-    mocks.chatCompletionsCreate.mockReset();
-    mocks.chatCompletionsCreate
+    mocks.responsesCreate.mockReset();
+    mocks.responsesCreate
       .mockResolvedValueOnce(
         toolCallResponse([
           { id: "call_1", name: "respond_to_user", arguments: { message: "Confirm: create it?", needs_follow_up: true } },
@@ -309,14 +309,14 @@ describe("runConversationTurn", () => {
   });
 
   it("throws when propose_mutation's arguments keep failing mutationSchema validation (never invents an id past a bad one)", async () => {
-    mocks.chatCompletionsCreate.mockReset();
-    mocks.chatCompletionsCreate.mockResolvedValue(
+    mocks.responsesCreate.mockReset();
+    mocks.responsesCreate.mockResolvedValue(
       toolCallResponse([{ id: "call_1", name: "propose_mutation", arguments: { ...validProposeMutationArgs, target_id: "not-a-uuid" } }]),
     );
 
     await expect(runConversationTurn(fakeSupabase, "user-1", "delete my task", "conv-1")).rejects.toThrow();
     // One recovery attempt (see the test below), then the original error surfaces.
-    expect(mocks.chatCompletionsCreate).toHaveBeenCalledTimes(2);
+    expect(mocks.responsesCreate).toHaveBeenCalledTimes(2);
   });
 
   // Production incident (2026-09-21): "add a deadline for PHYS 6540 tomorrow at 8" -- the model
@@ -337,8 +337,8 @@ describe("runConversationTurn", () => {
     };
 
     it("is fed back to the model as a tool error and the turn continues, rather than failing the whole turn", async () => {
-      mocks.chatCompletionsCreate.mockReset();
-      mocks.chatCompletionsCreate
+      mocks.responsesCreate.mockReset();
+      mocks.responsesCreate
         .mockResolvedValueOnce(toolCallResponse([{ id: "call_1", name: "propose_mutation", arguments: incompleteDeadlineArgs }]))
         .mockResolvedValueOnce(
           toolCallResponse([
@@ -359,18 +359,18 @@ describe("runConversationTurn", () => {
         conversationId: "conv-1",
         draftMutation: { question: "What should I call the deadline?" },
       });
-      expect(mocks.chatCompletionsCreate).toHaveBeenCalledTimes(2);
+      expect(mocks.responsesCreate).toHaveBeenCalledTimes(2);
 
-      const secondCallMessages = mocks.chatCompletionsCreate.mock.calls[1][0].messages as Array<{ role: string; tool_call_id?: string; content: string }>;
-      const toolError = secondCallMessages.find((message) => message.role === "tool" && message.tool_call_id === "call_1");
+      const secondCallInput = mocks.responsesCreate.mock.calls[1][0].input as Array<{ type: string; call_id?: string; output?: string }>;
+      const toolError = secondCallInput.find((item) => item.type === "function_call_output" && item.call_id === "call_1");
       expect(toolError).toBeDefined();
-      expect(toolError!.content).toMatch(/save_mutation_draft/);
-      expect(toolError!.content).toMatch(/title/);
+      expect(toolError!.output).toMatch(/save_mutation_draft/);
+      expect(toolError!.output).toMatch(/title/);
     });
 
     it("can still be completed on the recovery turn by a propose_mutation that now has every field", async () => {
-      mocks.chatCompletionsCreate.mockReset();
-      mocks.chatCompletionsCreate
+      mocks.responsesCreate.mockReset();
+      mocks.responsesCreate
         .mockResolvedValueOnce(toolCallResponse([{ id: "call_1", name: "propose_mutation", arguments: incompleteDeadlineArgs }]))
         .mockResolvedValueOnce(
           toolCallResponse([
@@ -385,31 +385,31 @@ describe("runConversationTurn", () => {
   });
 
   it("prefetches today's schedule unconditionally and answers a 'today' question in a single model call", async () => {
-    mocks.chatCompletionsCreate.mockReset();
+    mocks.responsesCreate.mockReset();
     vi.mocked(loadSchedule).mockResolvedValueOnce({
       scheduleItems: [],
       overdueItems: [],
       rankedSchedule: [{ date: "2026-09-03", items: [{ kind: "task", id: "t1", title: "Submit form", priority: "High", context: null }] }],
       courses: [],
     });
-    mocks.chatCompletionsCreate.mockResolvedValueOnce(
+    mocks.responsesCreate.mockResolvedValueOnce(
       toolCallResponse([{ id: "call_1", name: "respond_to_user", arguments: { message: "Submit form is due today.", needs_follow_up: false } }]),
     );
 
     const result = await runConversationTurn(fakeSupabase, "user-1", "what's due today?", "conv-1");
 
     expect(loadSchedule).toHaveBeenCalledWith(fakeSupabase, "user-1", "today", expect.any(Date));
-    const [firstCallArgs] = mocks.chatCompletionsCreate.mock.calls[0];
-    expect(firstCallArgs.messages[0].content).toContain("Submit form");
-    expect(firstCallArgs.messages[0].content).toContain("never call get_schedule for today again");
+    const [firstCallArgs] = mocks.responsesCreate.mock.calls[0];
+    expect(firstCallArgs.instructions).toContain("Submit form");
+    expect(firstCallArgs.instructions).toContain("never call get_schedule for today again");
     // Regression guard for a real observed hallucination: the model carried
     // a recurring class forward from an earlier turn's answer into a day it
     // didn't actually meet on. Just asserts the guarding instruction is
     // present in the built prompt -- LLM behavior itself isn't unit-testable.
-    expect(firstCallArgs.messages[0].content).toContain("never add an item that isn't actually present in the specific result");
+    expect(firstCallArgs.instructions).toContain("never add an item that isn't actually present in the specific result");
     expect(result).toEqual({ kind: "answer", message: "Submit form is due today.", needsFollowUp: false, conversationId: "conv-1" });
-    expect(mocks.chatCompletionsCreate).toHaveBeenCalledTimes(1);
-    expect(firstCallArgs.reasoning_effort).toBe("low");
+    expect(mocks.responsesCreate).toHaveBeenCalledTimes(1);
+    expect(firstCallArgs.reasoning.effort).toBe("low");
   });
 
   // Regression for the observed production bug: a model that repeats the
@@ -420,8 +420,8 @@ describe("runConversationTurn", () => {
   // forced to respond_to_user, and the repeated call itself must not incur
   // a second real dispatch.
   it("forces respond_to_user on the call right after a repeated identical tool call, without re-dispatching it", async () => {
-    mocks.chatCompletionsCreate.mockReset();
-    mocks.chatCompletionsCreate
+    mocks.responsesCreate.mockReset();
+    mocks.responsesCreate
       .mockResolvedValueOnce(toolCallResponse([{ id: "call_1", name: "get_personalization_suggestions", arguments: {} }]))
       .mockResolvedValueOnce(toolCallResponse([{ id: "call_2", name: "get_personalization_suggestions", arguments: {} }]))
       .mockResolvedValueOnce(
@@ -437,12 +437,12 @@ describe("runConversationTurn", () => {
       usedPersonalizationSuggestions: true,
       conversationId: "conv-1",
     });
-    expect(mocks.chatCompletionsCreate).toHaveBeenCalledTimes(3);
+    expect(mocks.responsesCreate).toHaveBeenCalledTimes(3);
     expect(runSuggestionsLookup).toHaveBeenCalledTimes(1);
-    const [thirdCallArgs] = mocks.chatCompletionsCreate.mock.calls[2];
-    expect(thirdCallArgs.tool_choice).toEqual({ type: "function", function: { name: "respond_to_user" } });
-    for (const [callArgs] of mocks.chatCompletionsCreate.mock.calls) {
-      expect(callArgs.reasoning_effort).toBe("low");
+    const [thirdCallArgs] = mocks.responsesCreate.mock.calls[2];
+    expect(thirdCallArgs.tool_choice).toEqual({ type: "function", name: "respond_to_user" });
+    for (const [callArgs] of mocks.responsesCreate.mock.calls) {
+      expect(callArgs.reasoning.effort).toBe("low");
     }
   });
 
@@ -458,12 +458,12 @@ describe("runConversationTurn", () => {
         knowledgeSources: [],
         people: [],
       });
-      mocks.chatCompletionsCreate.mockReset();
-      mocks.chatCompletionsCreate.mockResolvedValueOnce(
+      mocks.responsesCreate.mockReset();
+      mocks.responsesCreate.mockResolvedValueOnce(
         toolCallResponse([{ id: "call_1", name: "respond_to_user", arguments: { message: "ok", needs_follow_up: false } }]),
       );
       await runConversationTurn(fakeSupabase, "user-1", "hello", "conv-1");
-      return mocks.chatCompletionsCreate.mock.calls[0][0].messages[0].content as string;
+      return mocks.responsesCreate.mock.calls[0][0].instructions as string;
     }
 
     // The live model once resolved "Friday" to Thursday the 24th from a bare ISO timestamp -- weekday
@@ -492,13 +492,13 @@ describe("runConversationTurn", () => {
       ["Okay, what do my suggestions say?", true],
       ["What's due tomorrow?", true],
     ])("offers the suggestions tool for %j only when it isn't a bare acknowledgement (%s)", async (transcript, offered) => {
-      mocks.chatCompletionsCreate.mockReset();
-      mocks.chatCompletionsCreate.mockResolvedValueOnce(
+      mocks.responsesCreate.mockReset();
+      mocks.responsesCreate.mockResolvedValueOnce(
         toolCallResponse([{ id: "call_1", name: "respond_to_user", arguments: { message: "ok", needs_follow_up: false } }]),
       );
       await runConversationTurn(fakeSupabase, "user-1", transcript, "conv-1");
-      const tools = mocks.chatCompletionsCreate.mock.calls[0][0].tools as Array<{ function: { name: string } }>;
-      const names = tools.map((tool) => tool.function.name);
+      const tools = mocks.responsesCreate.mock.calls[0][0].tools as Array<{ name: string }>;
+      const names = tools.map((tool) => tool.name);
       expect(names.includes("get_personalization_suggestions")).toBe(offered);
       expect(names).toContain("respond_to_user");
       expect(names).toContain("propose_mutation");
@@ -535,8 +535,8 @@ describe("runConversationTurn", () => {
         knowledgeSources: [],
         people: [{ id: PERSON_ID, name: "Châu", relationship: "sister" }],
       });
-      mocks.chatCompletionsCreate.mockReset();
-      mocks.chatCompletionsCreate
+      mocks.responsesCreate.mockReset();
+      mocks.responsesCreate
         .mockResolvedValueOnce(
           toolCallResponse([{ id: "call_1", name: "get_person_schedule", arguments: { person_id: PERSON_ID, window: "date", date: "2026-09-03" } }]),
         )
@@ -556,8 +556,8 @@ describe("runConversationTurn", () => {
       // schedule) + 1 real get_person_schedule dispatch scoped to PERSON_ID.
       expect(loadSchedule).toHaveBeenCalledWith(fakeSupabase, "user-1", "today", expect.any(Date));
       expect(loadSchedule).toHaveBeenCalledWith(fakeSupabase, "user-1", "date", expect.any(Date), PERSON_ID, "2026-09-03");
-      expect(mocks.chatCompletionsCreate.mock.calls[0][0].reasoning_effort).toBe("low");
-      expect(mocks.chatCompletionsCreate.mock.calls[1][0].reasoning_effort).toBe("low");
+      expect(mocks.responsesCreate.mock.calls[0][0].reasoning.effort).toBe("low");
+      expect(mocks.responsesCreate.mock.calls[1][0].reasoning.effort).toBe("low");
     });
 
     it("still resolves correctly for a person with no relationship set (relationship: null)", async () => {
@@ -571,8 +571,8 @@ describe("runConversationTurn", () => {
         knowledgeSources: [],
         people: [{ id: PERSON_ID, name: "Châu", relationship: null }],
       });
-      mocks.chatCompletionsCreate.mockReset();
-      mocks.chatCompletionsCreate
+      mocks.responsesCreate.mockReset();
+      mocks.responsesCreate
         .mockResolvedValueOnce(
           toolCallResponse([{ id: "call_1", name: "get_person_schedule", arguments: { person_id: PERSON_ID, window: "date", date: "2026-09-03" } }]),
         )
@@ -599,8 +599,8 @@ describe("runConversationTurn", () => {
         knowledgeSources: [],
         people: [{ id: PERSON_ID, name: "Châu", relationship: "sister" }],
       });
-      mocks.chatCompletionsCreate.mockReset();
-      mocks.chatCompletionsCreate
+      mocks.responsesCreate.mockReset();
+      mocks.responsesCreate
         .mockResolvedValueOnce(
           toolCallResponse([
             { id: "call_1", name: "get_person_schedule", arguments: { person_id: UNKNOWN_PERSON_ID, window: "date", date: "2026-09-03" } },
@@ -619,11 +619,11 @@ describe("runConversationTurn", () => {
         conversationId: "conv-1",
       });
       expect(loadSchedule).not.toHaveBeenCalledWith(fakeSupabase, "user-1", "date", expect.any(Date), UNKNOWN_PERSON_ID, "2026-09-03");
-      // messages is the same array reference the mock recorded, mutated
-      // further after this call (the respond_to_user assistant message gets
-      // appended on the next iteration) -- at(-2) is this call's own tool
-      // result, at(-1) would be that later, unrelated assistant message.
-      expect(mocks.chatCompletionsCreate.mock.calls[1][0].messages.at(-2).content).toContain("Unknown person_id");
+      // input is the same array reference the mock recorded, mutated further
+      // after this call (call_2's function_call output gets pushed on the
+      // next iteration) -- at(-2) is this call's own function_call_output,
+      // at(-1) would be that later, unrelated function_call item.
+      expect((mocks.responsesCreate.mock.calls[1][0].input.at(-2) as { output: string }).output).toContain("Unknown person_id");
     });
   });
 
@@ -639,8 +639,8 @@ describe("runConversationTurn", () => {
         knowledgeSources: [],
         people: [],
       });
-      mocks.chatCompletionsCreate.mockReset();
-      mocks.chatCompletionsCreate
+      mocks.responsesCreate.mockReset();
+      mocks.responsesCreate
         .mockResolvedValueOnce(toolCallResponse([{ id: "call_1", name: "get_deadline_progress", arguments: { deadline_id: DEADLINE_ID } }]))
         .mockResolvedValueOnce(
           toolCallResponse([{ id: "call_2", name: "respond_to_user", arguments: { message: "2 of 3 sessions done.", needs_follow_up: false } }]),
@@ -672,8 +672,8 @@ describe("runConversationTurn", () => {
         knowledgeSources: [],
         people: [],
       });
-      mocks.chatCompletionsCreate.mockReset();
-      mocks.chatCompletionsCreate
+      mocks.responsesCreate.mockReset();
+      mocks.responsesCreate
         .mockResolvedValueOnce(toolCallResponse([{ id: "call_1", name: "get_deadline_progress", arguments: { deadline_id: "final-project-report" } }]))
         .mockResolvedValueOnce(
           toolCallResponse([{ id: "call_2", name: "respond_to_user", arguments: { message: "I don't have a matching deadline.", needs_follow_up: false } }]),
@@ -683,7 +683,7 @@ describe("runConversationTurn", () => {
 
       expect(result).toEqual({ kind: "answer", message: "I don't have a matching deadline.", needsFollowUp: false, conversationId: "conv-1" });
       expect(runDeadlineProgressLookup).not.toHaveBeenCalled();
-      expect(mocks.chatCompletionsCreate.mock.calls[1][0].messages.at(-2).content).toContain("received invalid arguments");
+      expect((mocks.responsesCreate.mock.calls[1][0].input.at(-2) as { output: string }).output).toContain("received invalid arguments");
     });
 
     it("rejects a deadline_id that is not in the entity context, without calling the lookup for it", async () => {
@@ -697,8 +697,8 @@ describe("runConversationTurn", () => {
         knowledgeSources: [],
         people: [],
       });
-      mocks.chatCompletionsCreate.mockReset();
-      mocks.chatCompletionsCreate
+      mocks.responsesCreate.mockReset();
+      mocks.responsesCreate
         .mockResolvedValueOnce(
           toolCallResponse([{ id: "call_1", name: "get_deadline_progress", arguments: { deadline_id: "55555555-5555-4555-8555-555555555555" } }]),
         )
@@ -710,7 +710,7 @@ describe("runConversationTurn", () => {
 
       expect(result).toEqual({ kind: "answer", message: "I don't have a matching deadline.", needsFollowUp: false, conversationId: "conv-1" });
       expect(runDeadlineProgressLookup).not.toHaveBeenCalled();
-      expect(mocks.chatCompletionsCreate.mock.calls[1][0].messages.at(-2).content).toContain("Unknown deadline_id");
+      expect((mocks.responsesCreate.mock.calls[1][0].input.at(-2) as { output: string }).output).toContain("Unknown deadline_id");
     });
   });
 
@@ -732,13 +732,13 @@ describe("runConversationTurn", () => {
     };
 
     beforeEach(() => {
-      mocks.chatCompletionsCreate.mockReset();
+      mocks.responsesCreate.mockReset();
       vi.mocked(loadDraftMutation).mockReset();
       vi.mocked(loadDraftMutation).mockResolvedValue(null);
     });
 
     it("asks whether a new deadline should repeat instead of proposing it when the user said nothing about it", async () => {
-      mocks.chatCompletionsCreate.mockResolvedValueOnce(toolCallResponse([{ id: "c1", name: "propose_mutation", arguments: deadlineCreateArgs }]));
+      mocks.responsesCreate.mockResolvedValueOnce(toolCallResponse([{ id: "c1", name: "propose_mutation", arguments: deadlineCreateArgs }]));
 
       const result = await runConversationTurn(fakeSupabase, "user-1", "add a weekly quiz for CS 101 friday at 5", "conv-1");
 
@@ -752,7 +752,7 @@ describe("runConversationTurn", () => {
 
     it("proposes a one-off deadline once the repeat question has been asked and the answer was no", async () => {
       vi.mocked(loadDraftMutation).mockResolvedValue({ question: RECURRENCE_QUESTION, mutation: mutationDraftSchema.parse(deadlineCreateArgs) });
-      mocks.chatCompletionsCreate.mockResolvedValueOnce(
+      mocks.responsesCreate.mockResolvedValueOnce(
         toolCallResponse([{ id: "c1", name: "propose_mutation", arguments: { ...deadlineCreateArgs, recurring: false } }]),
       );
 
@@ -764,7 +764,7 @@ describe("runConversationTurn", () => {
 
     it("defaults to one-off when the answer to the repeat question still doesn't say (no by default)", async () => {
       vi.mocked(loadDraftMutation).mockResolvedValue({ question: RECURRENCE_QUESTION, mutation: mutationDraftSchema.parse(deadlineCreateArgs) });
-      mocks.chatCompletionsCreate.mockResolvedValueOnce(toolCallResponse([{ id: "c1", name: "propose_mutation", arguments: deadlineCreateArgs }]));
+      mocks.responsesCreate.mockResolvedValueOnce(toolCallResponse([{ id: "c1", name: "propose_mutation", arguments: deadlineCreateArgs }]));
 
       const result = await runConversationTurn(fakeSupabase, "user-1", "hmm", "conv-1");
 
@@ -772,7 +772,7 @@ describe("runConversationTurn", () => {
     });
 
     it("proposes straight away, with the resolved schedule, when the user already said it repeats", async () => {
-      mocks.chatCompletionsCreate.mockResolvedValueOnce(
+      mocks.responsesCreate.mockResolvedValueOnce(
         toolCallResponse([
           {
             id: "c1",
@@ -795,7 +795,7 @@ describe("runConversationTurn", () => {
     });
 
     it("asks which days when the user says it repeats but names none", async () => {
-      mocks.chatCompletionsCreate.mockResolvedValueOnce(
+      mocks.responsesCreate.mockResolvedValueOnce(
         toolCallResponse([{ id: "c1", name: "propose_mutation", arguments: { ...deadlineCreateArgs, recurring: true, recurrence_days: [] } }]),
       );
 
@@ -823,7 +823,7 @@ describe("runConversationTurn", () => {
     };
 
     beforeEach(() => {
-      mocks.chatCompletionsCreate.mockReset();
+      mocks.responsesCreate.mockReset();
       vi.mocked(loadDraftMutation).mockReset();
       vi.mocked(loadDraftMutation).mockResolvedValue(null);
       vi.mocked(loadEntityContext).mockResolvedValue({
@@ -839,7 +839,7 @@ describe("runConversationTurn", () => {
     });
 
     it("asks whether to cancel this occurrence or the whole series instead of proposing", async () => {
-      mocks.chatCompletionsCreate.mockResolvedValueOnce(toolCallResponse([{ id: "c1", name: "propose_mutation", arguments: cancelArgs }]));
+      mocks.responsesCreate.mockResolvedValueOnce(toolCallResponse([{ id: "c1", name: "propose_mutation", arguments: cancelArgs }]));
 
       const result = await runConversationTurn(fakeSupabase, "user-1", "cancel my weekly quiz", "conv-1");
 
@@ -847,7 +847,7 @@ describe("runConversationTurn", () => {
     });
 
     it("proposes a whole-series cancel once the user chose it", async () => {
-      mocks.chatCompletionsCreate.mockResolvedValueOnce(
+      mocks.responsesCreate.mockResolvedValueOnce(
         toolCallResponse([{ id: "c1", name: "propose_mutation", arguments: { ...cancelArgs, cancel_scope: "series" } }]),
       );
 
@@ -861,11 +861,84 @@ describe("runConversationTurn", () => {
 
     it("falls back to just this occurrence when the question was asked and the answer stays unclear", async () => {
       vi.mocked(loadDraftMutation).mockResolvedValue({ question: CANCEL_SCOPE_QUESTION, mutation: mutationDraftSchema.parse(cancelArgs) });
-      mocks.chatCompletionsCreate.mockResolvedValueOnce(toolCallResponse([{ id: "c1", name: "propose_mutation", arguments: cancelArgs }]));
+      mocks.responsesCreate.mockResolvedValueOnce(toolCallResponse([{ id: "c1", name: "propose_mutation", arguments: cancelArgs }]));
 
       const result = await runConversationTurn(fakeSupabase, "user-1", "uh", "conv-1");
 
       expect(result).toMatchObject({ kind: "mutation_proposal", mutation: { cancelScope: "occurrence" } });
+    });
+  });
+
+  // Responses-API-specific behavior with no Chat-Completions analog -- these
+  // exist to catch the exact mistakes flagged as highest-risk during the
+  // migration from openai.chat.completions.create to openai.responses.create.
+  describe("Responses API loop mechanics", () => {
+    it("carries a reasoning item forward into the next iteration's input, not just the function call beside it", async () => {
+      mocks.responsesCreate.mockReset();
+      mocks.responsesCreate
+        .mockResolvedValueOnce({
+          output: [
+            { type: "reasoning", id: "r1", summary: [] },
+            {
+              type: "function_call",
+              id: "fc_call_1",
+              call_id: "call_1",
+              name: "get_schedule",
+              arguments: JSON.stringify({ window: "date", date: "2026-09-05" }),
+            },
+          ],
+        })
+        .mockResolvedValueOnce(
+          toolCallResponse([{ id: "call_2", name: "respond_to_user", arguments: { message: "Nothing scheduled.", needs_follow_up: false } }]),
+        );
+
+      await runConversationTurn(fakeSupabase, "user-1", "what's due on the 5th?", "conv-1");
+
+      // If the loop pushed only the filtered function calls (not the whole
+      // response.output array), this reasoning item would silently vanish --
+      // it would never surface as a type error, only as degraded model
+      // quality in production.
+      const secondCallInput = mocks.responsesCreate.mock.calls[1][0].input as Array<{ type: string; id?: string }>;
+      expect(secondCallInput.some((item) => item.type === "reasoning" && item.id === "r1")).toBe(true);
+    });
+
+    it("correlates each function_call_output by call_id, never by the output item's own (different) id", async () => {
+      mocks.responsesCreate.mockReset();
+      mocks.responsesCreate
+        .mockResolvedValueOnce(
+          toolCallResponse([
+            { id: "call_1", name: "get_schedule", arguments: { window: "date", date: "2026-09-05" } },
+            { id: "call_2", name: "get_personalization_suggestions", arguments: {} },
+          ]),
+        )
+        .mockResolvedValueOnce(toolCallResponse([{ id: "call_3", name: "respond_to_user", arguments: { message: "Done", needs_follow_up: false } }]));
+
+      await runConversationTurn(fakeSupabase, "user-1", "what's due, and check my suggestions", "conv-1");
+
+      const secondCallInput = mocks.responsesCreate.mock.calls[1][0].input as Array<{ type: string; call_id?: string }>;
+      const outputs = secondCallInput.filter((item) => item.type === "function_call_output");
+      expect(outputs.map((item) => item.call_id).sort()).toEqual(["call_1", "call_2"]);
+      // toolCallResponse deliberately sets each call's `id` to `fc_${call.id}`
+      // -- a `call_id` starting with "fc_" would mean the loop echoed back
+      // `.id` instead of `.call_id`, which OpenAI can't correlate.
+      expect(outputs.every((item) => !item.call_id?.startsWith("fc_"))).toBe(true);
+    });
+
+    // The literal capability this whole migration exists to unlock: tool
+    // calling and a real (non-"none") reasoning effort could never coexist
+    // on Chat Completions.
+    it("sends tools, tool_choice, and a real reasoning effort together in the same call", async () => {
+      mocks.responsesCreate.mockReset();
+      mocks.responsesCreate.mockResolvedValueOnce(
+        toolCallResponse([{ id: "call_1", name: "respond_to_user", arguments: { message: "ok", needs_follow_up: false } }]),
+      );
+
+      await runConversationTurn(fakeSupabase, "user-1", "what's due today?", "conv-1");
+
+      const [firstCallArgs] = mocks.responsesCreate.mock.calls[0];
+      expect(firstCallArgs.tools.length).toBeGreaterThan(0);
+      expect(firstCallArgs.tool_choice).toBe("required");
+      expect(firstCallArgs.reasoning).toEqual({ effort: "low" });
     });
   });
 });

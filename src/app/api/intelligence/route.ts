@@ -144,7 +144,7 @@ export async function POST() {
 
     const [completion, suggestionsResult] = await Promise.all([
       openai.chat.completions.create({
-        model: "gpt-4o-mini",
+        model: "gpt-5.6-luna",
         response_format: { type: "json_object" },
         messages: [
           { role: "system", content: INTELLIGENCE_SYSTEM_PROMPT },
