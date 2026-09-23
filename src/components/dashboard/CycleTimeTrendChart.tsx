@@ -9,21 +9,15 @@ type Props = {
 };
 
 const VIEW_WIDTH = 560;
-const VIEW_HEIGHT = 200;
+const VIEW_HEIGHT = 160;
 const PAD_X = 20;
 const TOP_Y = 16;
 const BASELINE_Y = 138;
-const LABEL_Y = 178;
 const GRIDLINE_FRACTIONS = [0, 0.5, 1];
+const LABEL_PAD_PCT = (PAD_X / VIEW_WIDTH) * 100;
 
 function formatShortDate(date: Date): string {
   return date.toLocaleDateString("en-US", { month: "2-digit", day: "2-digit" });
-}
-
-function textAnchorFor(index: number, count: number): "start" | "middle" | "end" {
-  if (index === 0) return "start";
-  if (index === count - 1) return "end";
-  return "middle";
 }
 
 /**
@@ -120,21 +114,31 @@ export function CycleTimeTrendChart({ points }: Props) {
           const isHovered = hoveredIndex === index;
           const hasData = point.count > 0;
           return (
-            <g key={point.date.toISOString()}>
-              <circle
-                cx={coord.x}
-                cy={coord.y}
-                r={isHovered ? 5 : hasData ? 3 : 2.5}
-                className={hasData ? "fill-accent-teal" : "fill-bg-void-elevated stroke-panel-border-hover"}
-                strokeWidth={hasData ? 0 : 1.5}
-              />
-              <text x={coord.x} y={LABEL_Y} textAnchor={textAnchorFor(index, points.length)} className={`font-mono text-[9px] ${index === points.length - 1 ? "fill-text-primary" : "fill-text-secondary"}`}>
-                {formatShortDate(point.date)}
-              </text>
-            </g>
+            <circle
+              key={point.date.toISOString()}
+              cx={coord.x}
+              cy={coord.y}
+              r={isHovered ? 5 : hasData ? 3 : 2.5}
+              className={hasData ? "fill-accent-teal" : "fill-bg-void-elevated stroke-panel-border-hover"}
+              strokeWidth={hasData ? 0 : 1.5}
+            />
           );
         })}
       </svg>
+
+      <div
+        className="mt-1.5 flex justify-between font-mono text-[10px] leading-none text-text-secondary"
+        style={{ paddingLeft: `${LABEL_PAD_PCT}%`, paddingRight: `${LABEL_PAD_PCT}%` }}
+      >
+        {points.map((point, index) => (
+          <span
+            key={point.date.toISOString()}
+            className={index === points.length - 1 ? "text-text-primary" : undefined}
+          >
+            {formatShortDate(point.date)}
+          </span>
+        ))}
+      </div>
     </div>
   );
 }
