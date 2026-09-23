@@ -3,14 +3,14 @@
 import { useState } from "react";
 import Link from "next/link";
 import { GlassPanel } from "@/components/ui/GlassPanel";
+import { CycleTimeTrendChart } from "@/components/dashboard/CycleTimeTrendChart";
 import { buildUpcomingItems } from "@/lib/dashboard/upcoming-items";
 import {
-  buildCompletionTrend,
   buildCompletedThisWeek,
   buildCycleTimeStats,
   buildOnTimeCompletionRate,
   buildNetBacklogDelta,
-  buildCycleTimeSparkline,
+  buildCycleTimeTrendPoints,
   type CompletedItem,
 } from "@/lib/dashboard/completion-trend";
 import { formatRelativeTime } from "@/lib/format-relative-time";
@@ -28,12 +28,6 @@ const KIND_LABEL: Record<CompletedItem["kind"], string> = {
   task: "Task",
 };
 
-const SPARKLINE_WIDTH = 140;
-const SPARKLINE_HEIGHT = 40;
-const SPARKLINE_PAD = 4;
-const SPARKLINE_TOP = 4;
-const SPARKLINE_BASELINE = 36;
-
 /**
  * "Focus hours remaining" until the nearest upcoming Deadline or Task with a
  * due date. Course-meeting time isn't factored in: meeting_pattern has no
@@ -47,22 +41,12 @@ export function MomentumCard({ deadlines, tasks }: Props) {
   const nearestItem = buildUpcomingItems({ deadlines, tasks }).find((item) => item.at.getTime() > now.getTime());
   const hoursRemaining = nearestItem ? Math.round((nearestItem.at.getTime() - now.getTime()) / 3_600_000) : null;
 
-  const completedThisWeek = buildCompletionTrend(deadlines, tasks).reduce((sum, value) => sum + value, 0);
+  const trendPoints = buildCycleTimeTrendPoints(deadlines, tasks);
+  const completedThisWeek = trendPoints.reduce((sum, point) => sum + point.count, 0);
   const completedItems = buildCompletedThisWeek(deadlines, tasks);
   const cycleTime = buildCycleTimeStats(deadlines, tasks);
   const onTime = buildOnTimeCompletionRate(deadlines, tasks);
   const backlog = buildNetBacklogDelta(deadlines, tasks);
-
-  const sparklineTrend = buildCycleTimeSparkline(deadlines, tasks);
-  const max = Math.max(1, ...sparklineTrend);
-  const step = sparklineTrend.length > 1 ? (SPARKLINE_WIDTH - SPARKLINE_PAD * 2) / (sparklineTrend.length - 1) : 0;
-  const points = sparklineTrend
-    .map((value, index) => {
-      const x = SPARKLINE_PAD + index * step;
-      const y = SPARKLINE_BASELINE - (value / max) * (SPARKLINE_BASELINE - SPARKLINE_TOP);
-      return `${x},${y}`;
-    })
-    .join(" ");
 
   const cycleTimeArrow = cycleTime.deltaDays === null ? "" : cycleTime.deltaDays < 0 ? "↓" : cycleTime.deltaDays > 0 ? "↑" : "→";
   const backlogLabel = `${backlog.delta >= 0 ? "+" : ""}${backlog.delta}`;
@@ -113,9 +97,7 @@ export function MomentumCard({ deadlines, tasks }: Props) {
       </div>
 
       <div>
-        <svg viewBox={`0 0 ${SPARKLINE_WIDTH} ${SPARKLINE_HEIGHT}`} aria-hidden="true" className="h-10 w-full">
-          <polyline points={points} fill="none" className="stroke-accent-teal" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
+        <CycleTimeTrendChart points={trendPoints} />
         <p className="mt-1 font-mono text-xs text-text-secondary">
           {completedThisWeek} resolved this week
           {cycleTime.thisWeekAvgDays !== null && ` · avg ${cycleTime.thisWeekAvgDays.toFixed(1)}d cycle time`}

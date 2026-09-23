@@ -1,11 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
-  buildCompletionTrend,
   buildCompletedThisWeek,
   buildCycleTimeStats,
   buildOnTimeCompletionRate,
   buildNetBacklogDelta,
-  buildCycleTimeSparkline,
+  buildCycleTimeTrendPoints,
 } from "../completion-trend";
 import { makeDeadline, makeTask } from "./fixtures";
 
@@ -14,43 +13,6 @@ function daysAgoISO(daysAgo: number): string {
   date.setDate(date.getDate() - daysAgo);
   return date.toISOString();
 }
-
-describe("buildCompletionTrend", () => {
-  it("buckets completed deadlines and done tasks by day, oldest first", () => {
-    const trend = buildCompletionTrend(
-      [makeDeadline({ status: "Completed", completed_at: daysAgoISO(0) })],
-      [makeTask({ status: "Done", completed_at: daysAgoISO(0) })],
-      7,
-    );
-    expect(trend).toHaveLength(7);
-    expect(trend[6]).toBe(2);
-  });
-
-  it("places yesterday's completion one bucket before today's", () => {
-    const trend = buildCompletionTrend([makeDeadline({ status: "Completed", completed_at: daysAgoISO(1) })], [], 7);
-    expect(trend[5]).toBe(1);
-    expect(trend[6]).toBe(0);
-  });
-
-  it("ignores items outside the trailing window", () => {
-    const trend = buildCompletionTrend([makeDeadline({ status: "Completed", completed_at: daysAgoISO(30) })], [], 7);
-    expect(trend.reduce((sum, value) => sum + value, 0)).toBe(0);
-  });
-
-  it("ignores non-terminal statuses", () => {
-    const trend = buildCompletionTrend(
-      [makeDeadline({ status: "In Progress", completed_at: null })],
-      [makeTask({ status: "Open", completed_at: null })],
-      7,
-    );
-    expect(trend.reduce((sum, value) => sum + value, 0)).toBe(0);
-  });
-
-  it("ignores terminal-status rows with no completed_at (unbackfilled batch-write rows)", () => {
-    const trend = buildCompletionTrend([makeDeadline({ status: "Completed", completed_at: null })], [makeTask({ status: "Done", completed_at: null })], 7);
-    expect(trend.reduce((sum, value) => sum + value, 0)).toBe(0);
-  });
-});
 
 describe("buildCompletedThisWeek", () => {
   it("returns the actual completed rows within the window, most-recent-first", () => {
@@ -191,20 +153,21 @@ describe("buildNetBacklogDelta", () => {
   });
 });
 
-describe("buildCycleTimeSparkline", () => {
-  it("places a single completion's cycle time in its day's bucket", () => {
-    const sparkline = buildCycleTimeSparkline(
+describe("buildCycleTimeTrendPoints", () => {
+  it("places a single completion's cycle time and count in its day's bucket", () => {
+    const points = buildCycleTimeTrendPoints(
       [makeDeadline({ status: "Completed", created_at: daysAgoISO(3), completed_at: daysAgoISO(0) })],
       [],
       7,
     );
-    expect(sparkline).toHaveLength(7);
-    expect(sparkline[6]).toBeCloseTo(3, 0);
-    expect(sparkline.slice(0, 6).every((value) => value === 0)).toBe(true);
+    expect(points).toHaveLength(7);
+    expect(points[6].avgDays).toBeCloseTo(3, 0);
+    expect(points[6].count).toBe(1);
+    expect(points.slice(0, 6).every((point) => point.avgDays === null && point.count === 0)).toBe(true);
   });
 
   it("averages same-day completions instead of summing them", () => {
-    const sparkline = buildCycleTimeSparkline(
+    const points = buildCycleTimeTrendPoints(
       [
         makeDeadline({ id: "d-1", status: "Completed", created_at: daysAgoISO(2), completed_at: daysAgoISO(0) }),
         makeDeadline({ id: "d-2", status: "Completed", created_at: daysAgoISO(4), completed_at: daysAgoISO(0) }),
@@ -212,11 +175,46 @@ describe("buildCycleTimeSparkline", () => {
       [],
       7,
     );
-    expect(sparkline[6]).toBeCloseTo(3, 0);
+    expect(points[6].avgDays).toBeCloseTo(3, 0);
+    expect(points[6].count).toBe(2);
+  });
+
+  it("places yesterday's completion one bucket before today's", () => {
+    const points = buildCycleTimeTrendPoints(
+      [makeDeadline({ status: "Completed", created_at: daysAgoISO(1), completed_at: daysAgoISO(1) })],
+      [],
+      7,
+    );
+    expect(points[5].count).toBe(1);
+    expect(points[6].count).toBe(0);
+  });
+
+  it("ignores items outside the trailing window", () => {
+    const points = buildCycleTimeTrendPoints([makeDeadline({ status: "Completed", completed_at: daysAgoISO(30) })], [], 7);
+    expect(points.reduce((sum, point) => sum + point.count, 0)).toBe(0);
+  });
+
+  it("ignores non-terminal statuses and unbackfilled rows with no completed_at", () => {
+    const points = buildCycleTimeTrendPoints(
+      [
+        makeDeadline({ id: "d-open", status: "In Progress", completed_at: null }),
+        makeDeadline({ id: "d-unbackfilled", status: "Completed", completed_at: null }),
+      ],
+      [makeTask({ status: "Open", completed_at: null })],
+      7,
+    );
+    expect(points.reduce((sum, point) => sum + point.count, 0)).toBe(0);
+  });
+
+  it("assigns each bucket its own calendar date, oldest first", () => {
+    const points = buildCycleTimeTrendPoints([], [], 7);
+    const todayKey = new Date().toDateString();
+    expect(points[6].date.toDateString()).toBe(todayKey);
+    expect(points[0].date.getTime()).toBeLessThan(points[6].date.getTime());
   });
 
   it("always returns exactly `days` buckets", () => {
-    expect(buildCycleTimeSparkline([], [], 7)).toHaveLength(7);
-    expect(buildCycleTimeSparkline([], [], 14)).toHaveLength(14);
+    expect(buildCycleTimeTrendPoints([], [], 7)).toHaveLength(7);
+    expect(buildCycleTimeTrendPoints([], [], 14)).toHaveLength(14);
   });
 });

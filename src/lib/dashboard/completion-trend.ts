@@ -6,36 +6,6 @@ function startOfDay(date: Date): number {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
 }
 
-/**
- * Daily counts of resolved Deadlines/Tasks over the trailing `days` window
- * (oldest first, today last), derived from `completed_at` (set once, only on
- * the guarded transition into Done/Completed — see 0036_task_deadline_completed_at.sql
- * — so later edits like a board reorder can never move it). Rows completed
- * before that migration and left unbackfilled (ambiguous batch-write
- * timestamp) have `completed_at: null` and are excluded rather than guessed
- * at. Feeds MomentumCard's sparkline; grounded in real fetched data, not
- * fabricated.
- */
-export function buildCompletionTrend(deadlines: DeadlineRow[], tasks: TaskRow[], days = 7): number[] {
-  const todayStart = startOfDay(new Date());
-  const buckets = new Array(days).fill(0) as number[];
-
-  const record = (completedAt: string) => {
-    const diffDays = Math.round((todayStart - startOfDay(new Date(completedAt))) / DAY_MS);
-    const index = days - 1 - diffDays;
-    if (index >= 0 && index < days) buckets[index] += 1;
-  };
-
-  for (const deadline of deadlines) {
-    if (deadline.status === "Completed" && deadline.completed_at) record(deadline.completed_at);
-  }
-  for (const task of tasks) {
-    if (task.status === "Done" && task.completed_at) record(task.completed_at);
-  }
-
-  return buckets;
-}
-
 export interface CompletedItem {
   id: string;
   kind: "deadline" | "task";
@@ -45,9 +15,9 @@ export interface CompletedItem {
 }
 
 /**
- * The actual rows behind buildCompletionTrend's counts, most-recent-first —
- * feeds MomentumCard's "what got done" breakdown list. Same trailing-window
- * and completed_at logic as buildCompletionTrend.
+ * The actual rows behind buildCycleTimeTrendPoints' per-day counts,
+ * most-recent-first — feeds MomentumCard's "what got done" breakdown list.
+ * Same trailing-window and completed_at logic as buildCycleTimeTrendPoints.
  */
 export function buildCompletedThisWeek(deadlines: DeadlineRow[], tasks: TaskRow[], days = 7): CompletedItem[] {
   const todayStart = startOfDay(new Date());
@@ -77,8 +47,8 @@ function cycleTimeDays(createdAt: string, completedAt: string): number {
 }
 
 /** Terminal-status + trailing-window predicate shared by every stat below —
- * same rule buildCompletionTrend/buildCompletedThisWeek already encode,
- * factored out so it isn't repeated four more times. Rows without a
+ * same rule buildCompletedThisWeek already encodes, factored out so it
+ * isn't repeated four more times. Rows without a
  * completed_at (pre-migration batch-write rows left unbackfilled) never
  * match any window — excluded, not guessed at. */
 function isCompletedWithin(
@@ -105,7 +75,7 @@ export interface CycleTimeStats {
  * Avg time from created_at to completed_at, for items completed this
  * trailing window vs. the window immediately before it — the actual
  * "faster or slower" signal MomentumCard's headline stat needs, as opposed
- * to buildCompletionTrend's raw activity count.
+ * to buildCycleTimeTrendPoints' per-day breakdown.
  */
 export function buildCycleTimeStats(deadlines: DeadlineRow[], tasks: TaskRow[], days = 7): CycleTimeStats {
   const todayStart = startOfDay(new Date());
@@ -203,13 +173,24 @@ export function buildNetBacklogDelta(deadlines: DeadlineRow[], tasks: TaskRow[],
   return { delta: completedCount - createdCount, completedCount, createdCount };
 }
 
+export interface CycleTimeTrendPoint {
+  /** Local midnight for this bucket's day. */
+  date: Date;
+  /** Avg cycle-time-in-days of items completed that day; null (not 0) when nothing completed, so the chart can render "no data" distinctly from "instant turnaround". */
+  avgDays: number | null;
+  /** Raw count of items completed that day — also this trend's contribution to "resolved this week" when summed. */
+  count: number;
+}
+
 /**
- * Same trailing-window/day-bucket contract as buildCompletionTrend, but each
- * bucket holds the avg cycle-time-in-days of items completed that day (0
- * when nothing completed) instead of a raw count — feeds MomentumCard's
- * sparkline once it plots speed instead of activity volume.
+ * Daily cycle-time averages (plus the underlying count and calendar date)
+ * over the trailing `days` window, oldest first, today last — feeds
+ * MomentumCard's trend chart. Supersedes the old count-only/cycle-time-only
+ * bucket pair: everything the chart needs (what day, how fast, how many)
+ * comes from one pass over the same completed_at-gated rows so the numbers
+ * can never drift apart from each other.
  */
-export function buildCycleTimeSparkline(deadlines: DeadlineRow[], tasks: TaskRow[], days = 7): number[] {
+export function buildCycleTimeTrendPoints(deadlines: DeadlineRow[], tasks: TaskRow[], days = 7): CycleTimeTrendPoint[] {
   const todayStart = startOfDay(new Date());
   const sums = new Array(days).fill(0) as number[];
   const counts = new Array(days).fill(0) as number[];
@@ -230,5 +211,9 @@ export function buildCycleTimeSparkline(deadlines: DeadlineRow[], tasks: TaskRow
     if (task.status === "Done" && task.completed_at) record(task.created_at, task.completed_at);
   }
 
-  return sums.map((sum, index) => (counts[index] === 0 ? 0 : sum / counts[index]));
+  return counts.map((count, index) => ({
+    date: new Date(todayStart - (days - 1 - index) * DAY_MS),
+    avgDays: count === 0 ? null : sums[index] / count,
+    count,
+  }));
 }
