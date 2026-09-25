@@ -200,6 +200,56 @@ describe("buildUpcomingItems", () => {
     expect(items.map((item) => item.id)).toEqual(["e-planned"]);
   });
 
+  it("projects a recurring Event to its real next occurrence instead of the stale recurrence_start_date stand-in (regression: showed as permanently PAST DUE)", () => {
+    // Block covers the whole day, every day, starting at midnight — for
+    // "today" that start time has already passed (unless the test runs at
+    // exactly 00:00), so the next real occurrence rolls to tomorrow, same
+    // as it would for any meeting whose time-of-day has already gone by.
+    const now = new Date();
+    const tomorrowMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0);
+    const items = buildUpcomingItems({
+      deadlines: [],
+      tasks: [],
+      appointments: [
+        makeAppointment({
+          id: "a-recurring",
+          category: "Personal",
+          session_status: null,
+          event_status: "planned",
+          deadline_id: null,
+          date: "2026-08-24", // stale stand-in: the recurrence's start date, long past
+          time: null,
+          meeting_blocks: [{ days: [0, 1, 2, 3, 4, 5, 6], startMinutes: 0, endMinutes: 23 * 60 + 59 }],
+          recurrence_start_date: "2026-08-24",
+          recurrence_end_date: null,
+        }),
+      ],
+    });
+    const item = items.find((i) => i.id === "a-recurring");
+    expect(item?.at).toEqual(tomorrowMidnight);
+    expect(item?.urgent).toBe(false);
+  });
+
+  it("drops a recurring Event with no more occurrences (recurrence_end_date has passed)", () => {
+    const items = buildUpcomingItems({
+      deadlines: [],
+      tasks: [],
+      appointments: [
+        makeAppointment({
+          id: "a-ended",
+          category: "Personal",
+          session_status: null,
+          event_status: "planned",
+          deadline_id: null,
+          meeting_blocks: [{ days: [0, 1, 2, 3, 4, 5, 6], startMinutes: 0, endMinutes: 23 * 60 + 59 }],
+          recurrence_start_date: "2020-01-01",
+          recurrence_end_date: "2020-01-31",
+        }),
+      ],
+    });
+    expect(items.find((i) => i.id === "a-ended")).toBeUndefined();
+  });
+
   it("flags an Event overlapping a passed-in course's meeting block with courseConflict: true, and leaves a non-overlapping one false", () => {
     const items = buildUpcomingItems({
       deadlines: [],

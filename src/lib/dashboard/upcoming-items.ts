@@ -1,7 +1,7 @@
 import type { AppointmentRow, CourseRow, DeadlineRow, DeadlineStatus, TaskRow, TaskStatus, ReminderRow, PersonRow } from "@/lib/api/entity-types";
 import { findConflictingAppointmentIds } from "@/lib/appointments/conflicts";
 import { findCourseConflictingAppointmentIds } from "@/lib/appointments/course-conflicts";
-import { parseTimeToMinutes } from "@/lib/calendar/recurrence";
+import { getNextOccurrence, parseTimeToMinutes } from "@/lib/calendar/recurrence";
 
 export type UpcomingItemKind = "deadline" | "task" | "reminder" | "session" | "appointment";
 
@@ -160,6 +160,43 @@ export function buildUpcomingItems({
     }
 
     if (appointment.event_status !== "planned") continue;
+
+    // Recurring event: `date` is only a stand-in (the client sends
+    // recurrence_start_date, or today, purely to satisfy the NOT NULL
+    // column — see 0035_appointment_recurrence.sql). A recurrence started
+    // in the past — the normal case when adding a meeting you'd already
+    // been attending — must NOT be read as a literal due date, or every
+    // such event shows as permanently "PAST DUE" here. Project forward to
+    // the real next occurrence instead; getNextOccurrence never returns a
+    // slot before `now`, so these are never urgent. No occurrence left
+    // (recurrence_end_date has passed) means nothing left to act on.
+    if (appointment.meeting_blocks.length > 0) {
+      const occurrence = getNextOccurrence(
+        appointment.meeting_blocks,
+        new Date(now),
+        appointment.recurrence_start_date,
+        appointment.recurrence_end_date,
+      );
+      if (!occurrence) continue;
+      const at = new Date(
+        occurrence.date.getFullYear(),
+        occurrence.date.getMonth(),
+        occurrence.date.getDate(),
+        0,
+        occurrence.startMinutes,
+      );
+      items.push({
+        id: appointment.id,
+        kind: "appointment",
+        title: appointment.title,
+        at,
+        href: "/calendar",
+        urgent: false,
+        conflict: conflictingAppointmentIds.has(appointment.id),
+        courseConflict: courseConflictingAppointmentIds.has(appointment.id),
+      });
+      continue;
+    }
 
     const structuredMinutes = parseTimeToMinutes(appointment.time);
     const at =
