@@ -40,15 +40,33 @@ describe("sanitizeEmailHtml", () => {
     expect(result).toContain("<p>Hello");
   });
 
-  it("neutralizes a remote background-image url() in an inline style attribute (tracking-pixel bypass of img blocking)", () => {
+  it("blocks a remote background-image url() in an inline style attribute (tracking-pixel bypass of img blocking)", () => {
     const result = sanitizeEmailHtml('<div style="background-image:url(https://tracker.example.com/pixel.gif)">x</div>');
-    expect(result).toContain('style="background-image:url()"');
+    expect(result).not.toMatch(/\sstyle="/);
     expect(result).toContain('data-original-style="background-image:url(https://tracker.example.com/pixel.gif)"');
   });
 
-  it("neutralizes a protocol-relative url() in an inline style attribute", () => {
+  it("blocks a protocol-relative url() in an inline style attribute", () => {
     const result = sanitizeEmailHtml('<div style="background:url(//tracker.example.com/pixel.gif)">x</div>');
-    expect(result).toContain('style="background:url()"');
+    expect(result).not.toMatch(/\sstyle="/);
+  });
+
+  it("blocks the whole style value (not just the url() span) when a remote url() shares it with other rules, but preserves the full original for later restore", () => {
+    const result = sanitizeEmailHtml('<div style="color:red;background:url(https://tracker.example.com/pixel.gif);font-weight:bold">x</div>');
+    expect(result).not.toMatch(/\sstyle="/);
+    expect(result).toContain('data-original-style="color:red;background:url(https://tracker.example.com/pixel.gif);font-weight:bold"');
+  });
+
+  it("blocks a remote url() hidden behind a CSS comment splitting the token", () => {
+    const result = sanitizeEmailHtml('<div style="background:url(/**/https://tracker.example.com/pixel.gif)">x</div>');
+    expect(result).not.toMatch(/\sstyle="/);
+    expect(result).toContain("data-original-style=");
+  });
+
+  it("blocks a remote url() hidden behind CSS backslash-hex escapes in the function/scheme name", () => {
+    const result = sanitizeEmailHtml('<div style="background:ur\\6c(https://tracker.example.com/pixel.gif)">x</div>');
+    expect(result).not.toMatch(/\sstyle="/);
+    expect(result).toContain("data-original-style=");
   });
 
   it("leaves data: URIs in style attributes untouched (no network request triggered)", () => {
@@ -78,13 +96,38 @@ describe("sanitizeEmailHtml", () => {
     const unrelated = sanitizeEmailHtml("<p>plain</p>");
     expect(unrelated).toBe("<p>plain</p>");
   });
+
+  it("strips a sender-forged data-original-src instead of trusting it (reveal-blocked-images.ts restores these unconditionally on the client)", () => {
+    const result = sanitizeEmailHtml('<img data-original-src="javascript:alert(document.domain)">');
+    expect(result).not.toContain("data-original-src");
+  });
+
+  it("strips a sender-forged data-original-style instead of trusting it", () => {
+    const result = sanitizeEmailHtml('<div data-original-style="background:url(https://tracker.example.com/pixel.gif)">x</div>');
+    expect(result).not.toContain("data-original-style");
+  });
+
+  it("strips sender-forged data-original-href/xlink-href/background", () => {
+    const result = sanitizeEmailHtml(
+      '<svg><image data-original-href="https://tracker.example.com/a.gif" data-original-xlink-href="https://tracker.example.com/b.gif"></image></svg>' +
+        '<table data-original-background="https://tracker.example.com/c.gif"><tr><td>x</td></tr></table>',
+    );
+    expect(result).not.toContain("data-original-href");
+    expect(result).not.toContain("data-original-xlink-href");
+    expect(result).not.toContain("data-original-background");
+  });
+
+  it("still allows ordinary data-* attributes unrelated to the trust boundary", () => {
+    const result = sanitizeEmailHtml('<div data-testid="foo">x</div>');
+    expect(result).toContain('data-testid="foo"');
+  });
 });
 
 describe("sanitizePlainTextAsEmailHtml", () => {
   it("escapes HTML-special characters and converts newlines to <br>", () => {
     const result = sanitizePlainTextAsEmailHtml("Hi <there>\nSecond line & more");
     expect(result).toContain("&lt;there&gt;");
-    expect(result).toContain("<br>");
+    expect(result).toContain("<br");
     expect(result).toContain("&amp;");
   });
 
