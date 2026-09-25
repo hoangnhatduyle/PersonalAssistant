@@ -66,6 +66,13 @@ body {
 .scrollbar-hide { scrollbar-width: none; -ms-overflow-style: none; }
 .scrollbar-hide::-webkit-scrollbar { display: none; }
 
+/* BoardColumn's per-list card scroll region — a slim themed thumb instead of
+   the default OS scrollbar, only visible once a list's cards overflow it. */
+.board-column-scroll { scrollbar-width: thin; scrollbar-color: var(--panel-border-hover) transparent; }
+.board-column-scroll::-webkit-scrollbar { width: 6px; }
+.board-column-scroll::-webkit-scrollbar-track { background: transparent; }
+.board-column-scroll::-webkit-scrollbar-thumb { background-color: var(--panel-border-hover); border-radius: 9999px; }
+
 /* Board — editorial stripe. See tokens.css for the --board-* values this
    pulls from. BoardColumn/BoardCard render plain divs with these classes
    instead of GlassPanel: the solid card fill and priority stripe are a

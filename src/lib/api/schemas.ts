@@ -412,3 +412,8 @@ export const voiceSpeakSchema = z.object({
   stream: z.boolean().optional(),
 });
 export type VoiceSpeakPayload = z.infer<typeof voiceSpeakSchema>;
+
+// Email-triage dashboard Phase 1 (read-only inbox viewer) — the only two
+// connected-mailbox providers this app supports.
+export const mailProviderSchema = z.enum(["google", "microsoft"]);
+export type MailProviderParam = z.infer<typeof mailProviderSchema>;

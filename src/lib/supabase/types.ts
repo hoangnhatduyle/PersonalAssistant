@@ -7,11 +7,6 @@ export type Json =
   | Json[]
 
 export type Database = {
-  // Allows to automatically instantiate createClient with right options
-  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
-  __InternalSupabase: {
-    PostgrestVersion: "14.5"
-  }
   graphql_public: {
     Tables: {
       [_ in never]: never
@@ -1205,6 +1200,79 @@ export type Database = {
           },
         ]
       }
+      mail_accounts: {
+        Row: {
+          created_at: string
+          id: string
+          provider: string
+          provider_email: string
+          refresh_token_auth_tag: string
+          refresh_token_ciphertext: string
+          refresh_token_iv: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          provider: string
+          provider_email: string
+          refresh_token_auth_tag: string
+          refresh_token_ciphertext: string
+          refresh_token_iv: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          provider?: string
+          provider_email?: string
+          refresh_token_auth_tag?: string
+          refresh_token_ciphertext?: string
+          refresh_token_iv?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "mail_accounts_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      mail_api_requests: {
+        Row: {
+          created_at: string
+          id: string
+          provider: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          provider: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          provider?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "mail_api_requests_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       notes: {
         Row: {
           body: string
@@ -1727,8 +1795,8 @@ export type Database = {
           email_reminders_enabled: boolean
           hands_free_voice_enabled: boolean
           id: string
-          quiet_hours_end: string | null
           owner_color: string | null
+          quiet_hours_end: string | null
           quiet_hours_start: string | null
           speak_suggestions_aloud: boolean
           timezone: string
@@ -1742,8 +1810,8 @@ export type Database = {
           email_reminders_enabled?: boolean
           hands_free_voice_enabled?: boolean
           id?: string
-          quiet_hours_end?: string | null
           owner_color?: string | null
+          quiet_hours_end?: string | null
           quiet_hours_start?: string | null
           speak_suggestions_aloud?: boolean
           timezone?: string
@@ -1757,8 +1825,8 @@ export type Database = {
           email_reminders_enabled?: boolean
           hands_free_voice_enabled?: boolean
           id?: string
-          quiet_hours_end?: string | null
           owner_color?: string | null
+          quiet_hours_end?: string | null
           quiet_hours_start?: string | null
           speak_suggestions_aloud?: boolean
           timezone?: string
@@ -2869,10 +2937,28 @@ export type Database = {
       }
     }
     Functions: {
-      cancel_deadline_series: { Args: { p_deadline_id: string }; Returns: number }
+      cancel_deadline_series: {
+        Args: { p_deadline_id: string }
+        Returns: number
+      }
       complete_knowledge_import: {
         Args: { p_chunks: Json; p_raw_content: string; p_source_id: string }
         Returns: boolean
+      }
+      delete_expired_mail_api_requests: {
+        Args: never
+        Returns: {
+          created_at: string
+          id: string
+          provider: string
+          user_id: string
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "mail_api_requests"
+          isOneToOne: false
+          isSetofReturn: true
+        }
       }
       delete_expired_voice_conversations: {
         Args: never
@@ -2976,19 +3062,22 @@ export type Database = {
         }
         Returns: {
           chunk_text: string
-          // Generator gap: RETURNS TABLE columns aren't introspected for
-          // nullability the way a real table's columns are, so codegen
-          // reports this as non-null even though knowledge_sources.origin_url
-          // has no NOT NULL constraint and pasted_text sources leave it null
-          // (src/lib/knowledge/retrieval.ts's ChunkCitation.originUrl is
-          // `string | null`, matching real data) — corrected by hand.
-          origin_url: string | null
+          origin_url: string
           similarity: number
           source_id: string
           source_type: Database["public"]["Enums"]["knowledge_source_type"]
           title: string
           user_id: string
         }[]
+      }
+      next_deadline_occurrence_due_at: {
+        Args: {
+          p_days: number[]
+          p_due_at: string
+          p_end_date: string
+          p_timezone: string
+        }
+        Returns: string
       }
       reap_stuck_knowledge_imports: { Args: never; Returns: number }
       retry_knowledge_import: {
@@ -3005,7 +3094,6 @@ export type Database = {
           suggestions_dismissed: number
         }[]
       }
-      spawn_due_deadline_occurrences: { Args: never; Returns: number }
       soft_delete_deadline_cascade: {
         Args: { p_deadline_id: string }
         Returns: {
@@ -3054,6 +3142,11 @@ export type Database = {
           items_affected: number
         }[]
       }
+      spawn_deadline_successor: {
+        Args: { p_deadline_id: string }
+        Returns: string
+      }
+      spawn_due_deadline_occurrences: { Args: never; Returns: number }
       start_knowledge_import: {
         Args: { p_source_id: string }
         Returns: boolean
@@ -3123,12 +3216,12 @@ export type Tables<
   DefaultSchemaTableNameOrOptions extends
     | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends (DefaultSchemaTableNameOrOptions extends {
+  TableName extends DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
         DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
-    : never) = never,
+    : never = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -3152,11 +3245,11 @@ export type TablesInsert<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends (DefaultSchemaTableNameOrOptions extends {
+  TableName extends DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never) = never,
+    : never = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -3177,11 +3270,11 @@ export type TablesUpdate<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends (DefaultSchemaTableNameOrOptions extends {
+  TableName extends DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never) = never,
+    : never = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -3202,11 +3295,11 @@ export type Enums<
   DefaultSchemaEnumNameOrOptions extends
     | keyof DefaultSchema["Enums"]
     | { schema: keyof DatabaseWithoutInternals },
-  EnumName extends (DefaultSchemaEnumNameOrOptions extends {
+  EnumName extends DefaultSchemaEnumNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
-    : never) = never,
+    : never = never,
 > = DefaultSchemaEnumNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -3219,11 +3312,11 @@ export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
     | keyof DefaultSchema["CompositeTypes"]
     | { schema: keyof DatabaseWithoutInternals },
-  CompositeTypeName extends (PublicCompositeTypeNameOrOptions extends {
+  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
-    : never) = never,
+    : never = never,
 > = PublicCompositeTypeNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }

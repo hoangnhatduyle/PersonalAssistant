@@ -133,7 +133,7 @@ export function SessionsSection({ deadlineId }: Props) {
       ) : (
         <>
           {progress && (
-            <div className="flex flex-col gap-1.5">
+            <div className="flex flex-col gap-1.5 rounded-control border border-panel-border bg-white/5 p-3">
               <div className="flex items-baseline justify-between gap-2">
                 <span className="text-sm text-text-secondary">Session progress</span>
                 <span className="font-mono text-xs text-text-secondary">
@@ -144,9 +144,9 @@ export function SessionsSection({ deadlineId }: Props) {
             </div>
           )}
 
-          <ul className="flex flex-col divide-y divide-panel-border">
+          <ul className="flex flex-col divide-y divide-panel-border pt-1">
             {sessions.map((session) => (
-              <li key={session.id} className="flex items-start justify-between gap-3 py-2.5 first:pt-0 last:pb-0">
+              <li key={session.id} className="flex items-start justify-between gap-3 py-2.5 last:pb-0">
                 <div className="flex min-w-0 flex-col gap-1.5">
                   <div className="flex items-center gap-2">
                     <p className="truncate text-sm text-text-primary">{session.title}</p>

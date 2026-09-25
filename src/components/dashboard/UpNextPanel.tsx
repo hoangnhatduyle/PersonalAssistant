@@ -17,6 +17,7 @@ import { formatRingCountdown, ringFillFraction } from "@/lib/dashboard/countdown
 import { DEADLINE_STATUS_TONE, EVENT_STATUS_TONE, SESSION_STATUS_TONE, TASK_STATUS_TONE, type StatusTone } from "@/lib/status-colors";
 import { ITEM_KIND_BG_CLASS, ITEM_KIND_LABEL, ITEM_KIND_STROKE_CLASS } from "@/lib/dashboard/item-kind";
 import { EventTransitionButtons } from "@/components/calendar/EventTransitionButtons";
+import { MailInboxCard } from "@/components/dashboard/MailInboxCard";
 import type { AppointmentRow, CourseRow, DeadlineRow, PersonRow, TaskRow, TodoListRow } from "@/lib/api/entity-types";
 
 type Props = {
@@ -164,206 +165,218 @@ export function UpNextPanel({ deadlines, tasks, people, todoLists, courses, appo
   const heroItem = ringItems[0] ?? null;
 
   return (
-    <GlassPanel variant="glow-ok" className="flex flex-col gap-6 p-6 lg:flex-row lg:items-stretch">
-      {/* Countdown rings — 40% width on lg. Each ring is one of the top 5 upcoming
-          items, innermost = most urgent, filling toward solid as its due time
-          closes in over a fixed 24h window (see countdown-rings.ts) so fill level
-          is comparable across items regardless of how long ago each was created. */}
-      <div className="flex flex-col items-center justify-center gap-3 lg:w-2/5">
-        <svg viewBox="0 0 300 300" aria-hidden="true" className="h-64 w-64">
-          {now &&
-            ringItems.map((item, index) => {
-              const radius = ringRadius(index, ringItems.length);
-              const circumference = 2 * Math.PI * radius;
-              const fill = ringFillFraction(item.at, now, item.urgent);
-              const strokeClass = item.urgent ? "stroke-status-urgent" : ITEM_KIND_STROKE_CLASS[item.kind];
+    <GlassPanel variant="glow-ok" className="flex flex-col gap-6 p-6">
+      <div className="flex h-full flex-col gap-6 lg:flex-row lg:items-stretch">
+        {/* Countdown rings — 40% width on lg. Each ring is one of the top 5 upcoming
+            items, innermost = most urgent, filling toward solid as its due time
+            closes in over a fixed 24h window (see countdown-rings.ts) so fill level
+            is comparable across items regardless of how long ago each was created. */}
+        <div className="flex flex-col items-center justify-center gap-3 lg:w-2/5">
+          <svg viewBox="0 0 300 300" aria-hidden="true" className="h-64 w-64">
+            {now &&
+              ringItems.map((item, index) => {
+                const radius = ringRadius(index, ringItems.length);
+                const circumference = 2 * Math.PI * radius;
+                const fill = ringFillFraction(item.at, now, item.urgent);
+                const strokeClass = item.urgent ? "stroke-status-urgent" : ITEM_KIND_STROKE_CLASS[item.kind];
 
-              const isHovered = hoveredRing?.item.kind === item.kind && hoveredRing?.item.id === item.id;
+                const isHovered = hoveredRing?.item.kind === item.kind && hoveredRing?.item.id === item.id;
 
-              return (
-                <g key={`${item.kind}-${item.id}`}>
-                  <circle
-                    cx={CENTER}
-                    cy={CENTER}
-                    r={radius}
-                    className={`fill-none stroke-panel-border/50 ${isHovered ? "stroke-panel-border" : ""}`}
-                    strokeWidth={RING_STROKE_WIDTH}
-                  />
-                  {fill > 0 && (
+                return (
+                  <g key={`${item.kind}-${item.id}`}>
                     <circle
                       cx={CENTER}
                       cy={CENTER}
                       r={radius}
-                      className={`fill-none ${strokeClass} transition-[stroke-dashoffset] duration-500 ease-out`}
+                      className={`fill-none stroke-panel-border/50 ${isHovered ? "stroke-panel-border" : ""}`}
                       strokeWidth={RING_STROKE_WIDTH}
-                      strokeLinecap="round"
-                      strokeDasharray={circumference}
-                      strokeDashoffset={circumference * (1 - fill)}
-                      transform={`rotate(-90 ${CENTER} ${CENTER})`}
                     />
-                  )}
-                  {/* Wide, invisible hit area — the visible stroke is too thin to hover reliably. Hover/focus both open the same tooltip. */}
-                  <circle
-                    cx={CENTER}
-                    cy={CENTER}
-                    r={radius}
-                    fill="none"
-                    stroke="transparent"
-                    strokeWidth={RING_STROKE_WIDTH + 16}
-                    style={{ pointerEvents: "stroke" }}
-                    className="cursor-pointer focus:outline-none"
-                    tabIndex={0}
-                    role="button"
-                    aria-label={`${ITEM_KIND_LABEL[item.kind]}: ${item.title}, ${formatRingCountdown(item.at, now, item.urgent)}`}
-                    onMouseEnter={(e) => showRingTooltip(item, e.currentTarget)}
-                    onMouseLeave={hideRingTooltip}
-                    onFocus={(e) => showRingTooltip(item, e.currentTarget)}
-                    onBlur={hideRingTooltip}
-                  />
-                </g>
-              );
-            })}
+                    {fill > 0 && (
+                      <circle
+                        cx={CENTER}
+                        cy={CENTER}
+                        r={radius}
+                        className={`fill-none ${strokeClass} transition-[stroke-dashoffset] duration-500 ease-out`}
+                        strokeWidth={RING_STROKE_WIDTH}
+                        strokeLinecap="round"
+                        strokeDasharray={circumference}
+                        strokeDashoffset={circumference * (1 - fill)}
+                        transform={`rotate(-90 ${CENTER} ${CENTER})`}
+                      />
+                    )}
+                    {/* Wide, invisible hit area — the visible stroke is too thin to hover reliably. Hover/focus both open the same tooltip. */}
+                    <circle
+                      cx={CENTER}
+                      cy={CENTER}
+                      r={radius}
+                      fill="none"
+                      stroke="transparent"
+                      strokeWidth={RING_STROKE_WIDTH + 16}
+                      style={{ pointerEvents: "stroke" }}
+                      className="cursor-pointer focus:outline-none"
+                      tabIndex={0}
+                      role="button"
+                      aria-label={`${ITEM_KIND_LABEL[item.kind]}: ${item.title}, ${formatRingCountdown(item.at, now, item.urgent)}`}
+                      onMouseEnter={(e) => showRingTooltip(item, e.currentTarget)}
+                      onMouseLeave={hideRingTooltip}
+                      onFocus={(e) => showRingTooltip(item, e.currentTarget)}
+                      onBlur={hideRingTooltip}
+                    />
+                  </g>
+                );
+              })}
 
-          {heroItem && now && (
-            <g>
-              <text x={CENTER} y={CENTER - 6} textAnchor="middle" dominantBaseline="middle" className="fill-text-primary font-display text-2xl font-semibold">
-                {formatRingCountdown(heroItem.at, now, heroItem.urgent)}
-              </text>
-              <text
-                x={CENTER}
-                y={CENTER + 20}
-                textAnchor="middle"
-                dominantBaseline="middle"
-                className="fill-text-secondary font-mono text-[10px] uppercase tracking-wide"
-              >
-                {truncate(heroItem.title, 20)}
-              </text>
-            </g>
-          )}
-        </svg>
-
-        {hoveredRing && now && (
-          <RingTooltip hovered={hoveredRing} now={now} resolveStatus={resolveItemStatus} />
-        )}
-
-        {ringItems.length > 0 && (
-          <ul className="flex w-full max-w-[220px] flex-col gap-1">
-            {ringItems.map((item) => (
-              <li key={`${item.kind}-${item.id}-legend`} className="flex items-center gap-2 font-mono text-[10px]">
-                <span
-                  className={`h-2 w-2 shrink-0 rounded-full ${item.urgent ? "bg-status-urgent" : ITEM_KIND_BG_CLASS[item.kind]}`}
-                  aria-hidden="true"
-                />
-                <span className="min-w-0 flex-1 truncate text-text-secondary">{item.title}</span>
-                <span className={item.urgent ? "text-status-urgent" : "text-text-eyebrow"}>
-                  {now ? formatRingCountdown(item.at, now, item.urgent) : ""}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-
-      {/* Divider: a hairline on narrow screens where the two blocks stack,
-          a full-height rule on lg where they sit side by side — the two
-          blocks read as one fused card without it. */}
-      <div className="h-px w-full bg-panel-border lg:h-auto lg:w-px lg:self-stretch" aria-hidden="true" />
-
-      {/* Filterable queue */}
-      {/* Queue — 60% width on lg */}
-      <div className="flex min-w-0 flex-col gap-3 pt-2 lg:w-3/5 lg:pt-0 lg:pl-2">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-            <p className="font-mono text-xs uppercase tracking-wide text-text-eyebrow">Up Next</p>
-            {allQueueItems.some((item) => item.kind === "appointment") && (
-              <p className="flex items-center gap-1.5 font-mono text-[10px]" title="Quick actions on event rows">
-                <span className="text-status-ok">✓ Done</span>
-                <span className="text-text-eyebrow">·</span>
-                <span className="text-status-urgent">✕ Missed</span>
-                {allQueueItems.some((item) => item.kind === "appointment" && item.courseConflict) && (
-                  <>
-                    <span className="text-text-eyebrow">·</span>
-                    <span className="text-accent-indigo">Blue = suggested</span>
-                  </>
-                )}
-              </p>
-            )}
-          </div>
-          <div role="group" aria-label="Filter by due date" className="flex flex-wrap items-center gap-2">
-            {TIME_WINDOW_FILTERS.map((filter) => {
-              const isActive = timeWindow === filter.value;
-              return (
-                <button
-                  key={filter.value}
-                  type="button"
-                  aria-pressed={isActive}
-                  onClick={() => setTimeWindow(filter.value)}
-                  className={`font-mono text-xs uppercase tracking-wide transition-colors ${
-                    isActive ? "rounded-full bg-status-urgent px-2.5 py-1 text-white" : "text-text-secondary hover:text-text-primary"
-                  }`}
+            {heroItem && now && (
+              <g>
+                <text x={CENTER} y={CENTER - 6} textAnchor="middle" dominantBaseline="middle" className="fill-text-primary font-display text-2xl font-semibold">
+                  {formatRingCountdown(heroItem.at, now, heroItem.urgent)}
+                </text>
+                <text
+                  x={CENTER}
+                  y={CENTER + 20}
+                  textAnchor="middle"
+                  dominantBaseline="middle"
+                  className="fill-text-secondary font-mono text-[10px] uppercase tracking-wide"
                 >
-                  {filter.label}
-                </button>
-              );
-            })}
-          </div>
+                  {truncate(heroItem.title, 20)}
+                </text>
+              </g>
+            )}
+          </svg>
+
+          {hoveredRing && now && (
+            <RingTooltip hovered={hoveredRing} now={now} resolveStatus={resolveItemStatus} />
+          )}
+
+          {ringItems.length > 0 && (
+            <ul className="flex w-full max-w-[220px] flex-col gap-1">
+              {ringItems.map((item) => (
+                <li key={`${item.kind}-${item.id}-legend`} className="flex items-center gap-2 font-mono text-[10px]">
+                  <span
+                    className={`h-2 w-2 shrink-0 rounded-full ${item.urgent ? "bg-status-urgent" : ITEM_KIND_BG_CLASS[item.kind]}`}
+                    aria-hidden="true"
+                  />
+                  <span className="min-w-0 flex-1 truncate text-text-secondary">{item.title}</span>
+                  <span className={item.urgent ? "text-status-urgent" : "text-text-eyebrow"}>
+                    {now ? formatRingCountdown(item.at, now, item.urgent) : ""}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
 
-        {queueItems.length === 0 ? (
-          <EmptyState title={emptyCopy.title} description={emptyCopy.description} />
-        ) : (
-          <ul className="flex max-h-[28rem] flex-col divide-y divide-panel-border overflow-y-auto pr-1">
-            {queueItems.map((item) => {
-              const { status, tone } = resolveItemStatus(item);
-              const showPastDueTag = item.urgent && item.kind !== "deadline";
-              const taskListInfo = item.kind === "task" ? taskListLabelMap.get(item.id) : undefined;
-              const kindLabel = ITEM_KIND_LABEL[item.kind];
+        {/* Divider: a hairline on narrow screens where the two blocks stack,
+            a full-height rule on lg where they sit side by side — the two
+            blocks read as one fused card without it. */}
+        <div className="h-px w-full bg-panel-border lg:h-auto lg:w-px lg:self-stretch" aria-hidden="true" />
 
-              const listName = taskListInfo?.listName;
-              const courseName = taskListInfo?.courseName;
-              const taskTags = item.kind === "task" ? taskById.get(item.id)?.tags ?? [] : [];
+        {/* Filterable queue */}
+        {/* Queue — 60% width on lg */}
+        <div className="flex min-w-0 flex-col gap-3 pt-2 lg:w-3/5 lg:pt-0 lg:pl-2">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+              <p className="font-mono text-xs uppercase tracking-wide text-text-eyebrow">Up Next</p>
+              {allQueueItems.some((item) => item.kind === "appointment") && (
+                <p className="flex items-center gap-1.5 font-mono text-[10px]" title="Quick actions on event rows">
+                  <span className="text-status-ok">✓ Done</span>
+                  <span className="text-text-eyebrow">·</span>
+                  <span className="text-status-urgent">✕ Missed</span>
+                  {allQueueItems.some((item) => item.kind === "appointment" && item.courseConflict) && (
+                    <>
+                      <span className="text-text-eyebrow">·</span>
+                      <span className="text-accent-indigo">Blue = suggested</span>
+                    </>
+                  )}
+                </p>
+              )}
+            </div>
+            <div role="group" aria-label="Filter by due date" className="flex flex-wrap items-center gap-2">
+              {TIME_WINDOW_FILTERS.map((filter) => {
+                const isActive = timeWindow === filter.value;
+                return (
+                  <button
+                    key={filter.value}
+                    type="button"
+                    aria-pressed={isActive}
+                    onClick={() => setTimeWindow(filter.value)}
+                    className={`font-mono text-xs uppercase tracking-wide transition-colors ${
+                      isActive ? "rounded-full bg-status-urgent px-2.5 py-1 text-white" : "text-text-secondary hover:text-text-primary"
+                    }`}
+                  >
+                    {filter.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
 
-              return (
-                <li key={`${item.kind}-${item.id}`} className="flex items-start justify-between gap-3 py-2.5 first:pt-0 last:pb-0">
-                  <div className="flex min-w-0 flex-col gap-1">
-                    {item.href ? (
-                      <Link href={item.href} className="truncate text-sm text-text-primary hover:underline">
-                        {item.title}
-                      </Link>
-                    ) : (
-                      <span className="truncate text-sm text-text-primary">{item.title}</span>
-                    )}
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <span className="font-mono text-xs text-text-secondary">
-                        {kindLabel} · {now ? formatRelativeTime(item.at, now) : ""}
-                      </span>
-                      {/* A Board List named after its own course (e.g. "Machine Learning" list under a "Machine Learning" course) would otherwise show the same text twice. */}
-                      {listName && listName !== courseName && <Badge tone="neutral">{listName}</Badge>}
-                      {courseName && <Badge tone="accent">{courseName}</Badge>}
-                      {item.kind === "task" && item.personId && <Badge tone="accent">For {item.personLabel}</Badge>}
-                      {taskTags.map((tag) => (
-                        <Badge key={tag} tone="neutral">{tag}</Badge>
-                      ))}
-                      {item.kind === "appointment" && item.conflict && <Badge tone="urgent">Conflict</Badge>}
-                      {item.kind === "appointment" && item.courseConflict && <Badge tone="purple">Course Conflict</Badge>}
+          {queueItems.length === 0 ? (
+            <EmptyState title={emptyCopy.title} description={emptyCopy.description} />
+          ) : (
+            <ul className="flex max-h-[20rem] flex-col divide-y divide-panel-border overflow-y-auto pr-1">
+              {queueItems.map((item) => {
+                const { status, tone } = resolveItemStatus(item);
+                const showPastDueTag = item.urgent && item.kind !== "deadline";
+                const taskListInfo = item.kind === "task" ? taskListLabelMap.get(item.id) : undefined;
+                const kindLabel = ITEM_KIND_LABEL[item.kind];
+
+                const listName = taskListInfo?.listName;
+                const courseName = taskListInfo?.courseName;
+                const taskTags = item.kind === "task" ? taskById.get(item.id)?.tags ?? [] : [];
+
+                return (
+                  <li key={`${item.kind}-${item.id}`} className="flex items-start justify-between gap-3 py-2.5 first:pt-0 last:pb-0">
+                    <div className="flex min-w-0 flex-col gap-1">
+                      {item.href ? (
+                        <Link href={item.href} className="truncate text-sm text-text-primary hover:underline">
+                          {item.title}
+                        </Link>
+                      ) : (
+                        <span className="truncate text-sm text-text-primary">{item.title}</span>
+                      )}
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="font-mono text-xs text-text-secondary">
+                          {kindLabel} · {now ? formatRelativeTime(item.at, now) : ""}
+                        </span>
+                        {/* A Board List named after its own course (e.g. "Machine Learning" list under a "Machine Learning" course) would otherwise show the same text twice. */}
+                        {listName && listName !== courseName && <Badge tone="neutral">{listName}</Badge>}
+                        {courseName && <Badge tone="accent">{courseName}</Badge>}
+                        {item.kind === "task" && item.personId && <Badge tone="accent">For {item.personLabel}</Badge>}
+                        {taskTags.map((tag) => (
+                          <Badge key={tag} tone="neutral">{tag}</Badge>
+                        ))}
+                        {item.kind === "appointment" && item.conflict && <Badge tone="urgent">Conflict</Badge>}
+                        {item.kind === "appointment" && item.courseConflict && <Badge tone="purple">Course Conflict</Badge>}
+                      </div>
                     </div>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-2">
-                    {showPastDueTag && (
-                      <span className="rounded-full bg-status-urgent/15 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide text-status-urgent">
-                        Past due
-                      </span>
-                    )}
-                    {status && tone && <StatusPill status={status} tone={tone} />}
-                    {item.kind === "appointment" && (
-                      <EventTransitionButtons appointment={appointmentById.get(item.id)!} suggestMissed={item.courseConflict} compact />
-                    )}
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        )}
+                    <div className="flex shrink-0 items-center gap-2">
+                      {showPastDueTag && (
+                        <span className="rounded-full bg-status-urgent/15 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide text-status-urgent">
+                          Past due
+                        </span>
+                      )}
+                      {status && tone && <StatusPill status={status} tone={tone} />}
+                      {item.kind === "appointment" && (
+                        <EventTransitionButtons appointment={appointmentById.get(item.id)!} suggestMissed={item.courseConflict} compact />
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+
+          {/* Mail lives below the queue, inside its own column — not the
+              full card width — so it stays on the "Up Next" side, next to
+              (not under) the countdown rings. mt-auto pins it (and its
+              divider) to the bottom of this column when the card is
+              stretched taller than its content (e.g. to match MomentumCard's
+              height) — the slack collects as a gap above the divider instead
+              of as dead space below Mail. */}
+          <div className="mt-auto h-px w-full bg-panel-border" aria-hidden="true" />
+          <MailInboxCard />
+        </div>
       </div>
     </GlassPanel>
   );

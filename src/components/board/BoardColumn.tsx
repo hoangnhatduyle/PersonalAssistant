@@ -67,9 +67,9 @@ export function BoardColumn({
 
   return (
     <div
-      className={`board-column flex w-72 shrink-0 flex-col gap-3 rounded-panel border p-3 transition-colors ${isOver ? "ring-2 ring-accent-indigo" : ""}`}
+      className={`board-column flex h-full w-72 min-h-0 shrink-0 flex-col gap-3 rounded-panel border p-3 transition-colors ${isOver ? "ring-2 ring-accent-indigo" : ""}`}
     >
-      <div className="board-column-head flex items-start justify-between gap-2">
+      <div className="board-column-head flex shrink-0 items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
           {courseName && (
             <p className="truncate font-mono text-[10px] uppercase tracking-wide text-text-eyebrow">
@@ -143,7 +143,10 @@ export function BoardColumn({
         items={tasks.map((task) => task.id)}
         strategy={verticalListSortingStrategy}
       >
-        <div ref={setNodeRef} className="flex min-h-16 flex-col gap-2">
+        <div
+          ref={setNodeRef}
+          className="board-column-scroll flex min-h-16 flex-1 flex-col gap-2 overflow-y-auto pr-1"
+        >
           {tasks.map((task) => (
             <BoardCard
               key={task.id}
@@ -157,7 +160,13 @@ export function BoardColumn({
         </div>
       </SortableContext>
 
-      <Button type="button" variant="secondary" size="sm" onClick={onAddCard}>
+      <Button
+        type="button"
+        variant="secondary"
+        size="sm"
+        onClick={onAddCard}
+        className="shrink-0"
+      >
         + Add card
       </Button>
     </div>

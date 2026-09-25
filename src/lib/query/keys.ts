@@ -84,6 +84,13 @@ export const personalizationSuggestionKeys = {
   list: (filters?: object) => [...personalizationSuggestionKeys.all, "list", filters ?? {}] as const,
 };
 
+export const mailKeys = {
+  all: ["mail"] as const,
+  accounts: () => [...mailKeys.all, "accounts"] as const,
+  messages: (provider: string) => [...mailKeys.all, "messages", provider] as const,
+  messageDetail: (provider: string, id: string) => [...mailKeys.all, "messageDetail", provider, id] as const,
+};
+
 export const libraryKeys = {
   all: ["library"] as const,
   posts: (filters?: object) => [...libraryKeys.all, "posts", filters ?? {}] as const,
