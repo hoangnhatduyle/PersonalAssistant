@@ -12,20 +12,24 @@ type Props = {
 const UNASSIGNED_LABEL = "No course";
 
 function groupByCourse(deadlines: DeadlineRow[], courseNameById?: Map<string, string>) {
-  const groups = new Map<string, { courseName: string; deadlines: DeadlineRow[] }>();
+  const groups = new Map<string, { courseId: string; courseName: string; deadlines: DeadlineRow[] }>();
   for (const deadline of deadlines) {
     const courseName = courseNameById?.get(deadline.course_id) ?? UNASSIGNED_LABEL;
     const group = groups.get(deadline.course_id);
     if (group) {
       group.deadlines.push(deadline);
     } else {
-      groups.set(deadline.course_id, { courseName, deadlines: [deadline] });
+      groups.set(deadline.course_id, { courseId: deadline.course_id, courseName, deadlines: [deadline] });
     }
   }
+  // Course names aren't unique -- two real courses can share a name, and
+  // every course still awaiting courseNameById (deadlines usually resolves
+  // before courses) reads as "No course" -- so the comparator falls back to
+  // courseId for a stable, total order instead of tying on name.
   return [...groups.values()].sort((a, b) => {
-    if (a.courseName === UNASSIGNED_LABEL) return 1;
-    if (b.courseName === UNASSIGNED_LABEL) return -1;
-    return a.courseName.localeCompare(b.courseName);
+    if (a.courseName === UNASSIGNED_LABEL && b.courseName !== UNASSIGNED_LABEL) return 1;
+    if (b.courseName === UNASSIGNED_LABEL && a.courseName !== UNASSIGNED_LABEL) return -1;
+    return a.courseName.localeCompare(b.courseName) || a.courseId.localeCompare(b.courseId);
   });
 }
 
@@ -38,7 +42,7 @@ export function DeadlineList({ deadlines, courseNameById, sessionProgressByDeadl
     <div className="flex flex-col gap-6">
       {groups.map((group, index) => (
         <div
-          key={group.courseName}
+          key={group.courseId}
           className={`flex flex-col gap-3 ${index > 0 ? "border-t border-panel-border pt-6" : ""}`}
         >
           <h2 className="font-mono text-xs uppercase tracking-wide text-text-eyebrow">{group.courseName}</h2>
