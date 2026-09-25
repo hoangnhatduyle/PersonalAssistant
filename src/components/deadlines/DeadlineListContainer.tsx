@@ -10,6 +10,7 @@ import { Dialog } from "@/components/ui/Dialog";
 import { Button } from "@/components/ui/Button";
 import { Select } from "@/components/ui/Select";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { Switch } from "@/components/ui/Switch";
 import { useToast } from "@/components/ui/Toast";
 import { buildSessionProgress } from "@/lib/deadlines/session-progress";
 import type { DeadlinePayload } from "@/lib/api/schemas";
@@ -17,6 +18,9 @@ import type { DeadlinePayload } from "@/lib/api/schemas";
 export function DeadlineListContainer() {
   const [courseFilter, setCourseFilter] = useState("");
   const [isCreateOpen, setCreateOpen] = useState(false);
+  // Hidden by default so the list opens on what's still actionable; a
+  // completed deadline stays a click away via the switch.
+  const [showCompleted, setShowCompleted] = useState(false);
   const { data: courses } = useCourses({ personId: "me" });
   const { data, isLoading } = useDeadlines({ personId: "me", ...(courseFilter ? { courseId: courseFilter } : {}) });
   // limit reuses AppointmentsTimeline's existing cap — a known v1 scaling
@@ -25,6 +29,11 @@ export function DeadlineListContainer() {
   const { data: appointments } = useAppointments({ limit: 100 });
   const createDeadline = useCreateDeadline();
   const { showToast } = useToast();
+
+  const visibleDeadlines = useMemo(
+    () => (data?.rows ?? []).filter((deadline) => showCompleted || deadline.status !== "Completed"),
+    [data, showCompleted],
+  );
 
   const courseNameById = useMemo(() => new Map((courses?.rows ?? []).map((course) => [course.id, course.name])), [courses]);
   const sessionProgressByDeadlineId = useMemo(
@@ -49,7 +58,8 @@ export function DeadlineListContainer() {
           <p className="font-mono text-xs uppercase tracking-wide text-text-eyebrow">Deadlines</p>
           <h1 className="mt-1 font-display text-2xl font-semibold text-text-primary">Due dates</h1>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-3">
+          <Switch checked={showCompleted} onCheckedChange={setShowCompleted} label="Show completed" />
           <Select value={courseFilter} onChange={(event) => setCourseFilter(event.target.value)} className="w-48">
             <option value="">All courses</option>
             {(courses?.rows ?? []).map((course) => (
@@ -71,7 +81,7 @@ export function DeadlineListContainer() {
           ))}
         </div>
       ) : (
-        <DeadlineList deadlines={data?.rows ?? []} courseNameById={courseNameById} sessionProgressByDeadlineId={sessionProgressByDeadlineId} />
+        <DeadlineList deadlines={visibleDeadlines} courseNameById={courseNameById} sessionProgressByDeadlineId={sessionProgressByDeadlineId} />
       )}
 
       <Dialog open={isCreateOpen} onClose={() => setCreateOpen(false)} title="New deadline">
