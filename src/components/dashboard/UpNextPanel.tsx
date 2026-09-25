@@ -172,7 +172,7 @@ export function UpNextPanel({ deadlines, tasks, people, todoLists, courses, appo
             closes in over a fixed 24h window (see countdown-rings.ts) so fill level
             is comparable across items regardless of how long ago each was created. */}
         <div className="flex flex-col items-center justify-center gap-3 lg:w-2/5">
-          <svg viewBox="0 0 300 300" aria-hidden="true" className="h-64 w-64">
+          <svg viewBox="0 0 300 300" aria-hidden="true" className="aspect-square h-auto w-full max-w-[26rem]">
             {now &&
               ringItems.map((item, index) => {
                 const radius = ringRadius(index, ringItems.length);
