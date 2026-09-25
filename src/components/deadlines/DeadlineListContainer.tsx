@@ -60,14 +60,16 @@ export function DeadlineListContainer() {
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <Switch checked={showCompleted} onCheckedChange={setShowCompleted} label="Show completed" />
-          <Select value={courseFilter} onChange={(event) => setCourseFilter(event.target.value)} className="w-48">
-            <option value="">All courses</option>
-            {(courses?.rows ?? []).map((course) => (
-              <option key={course.id} value={course.id}>
-                {course.name}
-              </option>
-            ))}
-          </Select>
+          <div className="w-48">
+            <Select value={courseFilter} onChange={(event) => setCourseFilter(event.target.value)}>
+              <option value="">All courses</option>
+              {(courses?.rows ?? []).map((course) => (
+                <option key={course.id} value={course.id}>
+                  {course.name}
+                </option>
+              ))}
+            </Select>
+          </div>
           <Button onClick={() => setCreateOpen(true)} className="shrink-0 whitespace-nowrap">
             New deadline
           </Button>
