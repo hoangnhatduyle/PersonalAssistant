@@ -32,6 +32,7 @@ import { CreateTodoListDialog } from "@/components/board/CreateTodoListDialog";
 import { TaskForm } from "@/components/board/TaskForm";
 import { Dialog } from "@/components/ui/Dialog";
 import { Button } from "@/components/ui/Button";
+import { Switch } from "@/components/ui/Switch";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
@@ -116,6 +117,8 @@ export function BoardContainer() {
 
   const [activeId, setActiveId] = useState<string | null>(null);
   const dragStartSnapshotRef = useRef<ColumnsState | null>(null);
+
+  const [showCompleted, setShowCompleted] = useState(false);
 
   const [isCreateListOpen, setCreateListOpen] = useState(false);
   const [createCardListId, setCreateCardListId] = useState<
@@ -289,6 +292,15 @@ export function BoardContainer() {
     }
   };
 
+  const visibleColumns = useMemo(() => {
+    if (showCompleted) return columns;
+    const filtered: ColumnsState = {};
+    for (const [colId, tasks] of Object.entries(columns)) {
+      filtered[colId] = tasks.filter((task) => task.status === "Open");
+    }
+    return filtered;
+  }, [columns, showCompleted]);
+
   const isLoading = tasksLoading || todoListsLoading;
   const activeTask = activeId
     ? Object.values(columns)
@@ -307,11 +319,18 @@ export function BoardContainer() {
             Your cards, organized
           </h1>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="secondary" onClick={() => setCreateCardListId(null)}>
-            + New card
-          </Button>
-          <Button onClick={() => setCreateListOpen(true)}>+ New list</Button>
+        <div className="flex items-center gap-4">
+          <Switch
+            checked={showCompleted}
+            onCheckedChange={setShowCompleted}
+            label="Show completed"
+          />
+          <div className="flex items-center gap-2">
+            <Button variant="secondary" onClick={() => setCreateCardListId(null)}>
+              + New card
+            </Button>
+            <Button onClick={() => setCreateListOpen(true)}>+ New list</Button>
+          </div>
         </div>
       </div>
 
@@ -350,7 +369,7 @@ export function BoardContainer() {
                       ? courseNameById.get(list.course_id)
                       : undefined
                   }
-                  tasks={columns[list.id] ?? []}
+                  tasks={visibleColumns[list.id] ?? []}
                   peopleById={peopleById}
                   isUnsorted={false}
                   onAddCard={() => setCreateCardListId(list.id)}
@@ -364,7 +383,7 @@ export function BoardContainer() {
               <BoardColumn
                 id={UNSORTED_ID}
                 name="Miscellaneous"
-                tasks={columns[UNSORTED_ID] ?? []}
+                tasks={visibleColumns[UNSORTED_ID] ?? []}
                 peopleById={peopleById}
                 isUnsorted
                 onAddCard={() => setCreateCardListId(null)}
