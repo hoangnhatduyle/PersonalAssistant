@@ -71,6 +71,12 @@ export function useDeleteAppointment(id: string) {
   });
 }
 
+export interface AppointmentTransitionInput {
+  event: SessionTransitionEvent | EventTransitionEvent;
+  /** Required only when transitioning a RECURRING event (meeting_blocks non-empty) — see POST /api/appointments/[id]/transition. */
+  occurrenceDate?: string | null;
+}
+
 /**
  * The only way an appointment's session_status (Deadline Sessions) or
  * event_status (general Events) may change (NC-API-002), mirroring
@@ -82,8 +88,8 @@ export function useDeleteAppointment(id: string) {
 export function useTransitionAppointment(id: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (event: SessionTransitionEvent | EventTransitionEvent) =>
-      (await apiFetch<AppointmentRow>(`/api/appointments/${id}/transition`, { method: "POST", body: { event } })).data,
+    mutationFn: async (input: AppointmentTransitionInput) =>
+      (await apiFetch<AppointmentRow>(`/api/appointments/${id}/transition`, { method: "POST", body: input })).data,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: appointmentKeys.all });
       queryClient.invalidateQueries({ queryKey: reminderKeys.all });

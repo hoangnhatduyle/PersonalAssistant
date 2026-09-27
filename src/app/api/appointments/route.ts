@@ -20,9 +20,13 @@ export async function GET(request: NextRequest) {
   const { page, limit, from, to } = parsePagination(searchParams);
   const includeDeleted = wantsIncludeDeleted(searchParams);
 
+  // Embeds appointment_occurrence_status alongside the row (one round trip,
+  // not a second batch fetch) so the client can resolve a recurring
+  // appointment's per-occurrence status (src/lib/appointments/occurrence-status.ts)
+  // without an N+1 query per row.
   let query = supabase
     .from("appointments")
-    .select("*", { count: "exact" })
+    .select("*, appointment_occurrence_status(occurrence_date, status)", { count: "exact" })
     .eq("user_id", user.id)
     .order("date", { ascending: true })
     .range(from, to);

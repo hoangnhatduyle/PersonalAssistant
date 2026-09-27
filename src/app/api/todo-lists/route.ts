@@ -4,7 +4,7 @@ import { parsePagination, wantsIncludeDeleted } from "@/lib/api/pagination";
 import { todoListPayloadSchema } from "@/lib/api/schemas";
 import { successResponse, notFoundResponse, validationErrorResponse, serverErrorResponse } from "@/lib/api/response";
 
-/** GET /api/todo-lists — list, scoped to the caller. `courseId` filters to one Course's list. */
+/** GET /api/todo-lists — list, scoped to the caller. `courseId` filters to one Course's list; `courseId=none` returns only freestanding/personal lists (used by the global Board). */
 export async function GET(request: NextRequest) {
   const ctx = await requireAuthenticatedContext();
   if (!("supabase" in ctx)) return ctx;
@@ -23,7 +23,8 @@ export async function GET(request: NextRequest) {
   if (!includeDeleted) query = query.is("deleted_at", null);
 
   const courseId = searchParams.get("courseId");
-  if (courseId) query = query.eq("course_id", courseId);
+  if (courseId === "none") query = query.is("course_id", null);
+  else if (courseId) query = query.eq("course_id", courseId);
 
   const { data, count, error } = await query;
   if (error) return serverErrorResponse("todo lists list failed", error);

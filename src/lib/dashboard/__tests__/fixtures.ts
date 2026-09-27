@@ -100,6 +100,7 @@ export function makeAppointment(overrides: Partial<AppointmentRow> = {}): Appoin
     meeting_blocks: [],
     recurrence_start_date: null,
     recurrence_end_date: null,
+    appointment_occurrence_status: [],
     created_at: "2026-01-01T00:00:00Z",
     updated_at: "2026-01-01T00:00:00Z",
     deleted_at: null,

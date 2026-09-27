@@ -1,6 +1,7 @@
 import type { AppointmentRow, CourseRow, DeadlineRow, DeadlineStatus, TaskRow, TaskStatus, ReminderRow, PersonRow } from "@/lib/api/entity-types";
 import { findConflictingAppointmentIds } from "@/lib/appointments/conflicts";
 import { findCourseConflictingAppointmentIds } from "@/lib/appointments/course-conflicts";
+import { buildOccurrenceStatusMap, resolveDisplayedEventStatus } from "@/lib/appointments/occurrence-status";
 import { getNextOccurrence, parseTimeToMinutes } from "@/lib/calendar/recurrence";
 
 export type UpcomingItemKind = "deadline" | "task" | "reminder" | "session" | "appointment";
@@ -135,11 +136,12 @@ export function buildUpcomingItems({
   // Every other category is a general Appointment/Event (AppointmentForm on
   // /calendar) — conflicts (against other appointments, and against a
   // Course's recurring meeting blocks) are computed once up front and
-  // surfaced per item below. Only "planned" event_status items are
+  // surfaced per item below. Only a "planned" resolved status is
   // actionable/upcoming here, same convention as Sessions above — a
   // done/missed Event has nothing left to act on.
   const conflictingAppointmentIds = findConflictingAppointmentIds(appointments);
   const courseConflictingAppointmentIds = findCourseConflictingAppointmentIds(appointments, courses);
+  const occurrenceStatusByKey = buildOccurrenceStatusMap(appointments);
   for (const appointment of appointments) {
     if (appointment.category === "Session") {
       if (appointment.session_status !== "planned") continue;
@@ -159,8 +161,6 @@ export function buildUpcomingItems({
       continue;
     }
 
-    if (appointment.event_status !== "planned") continue;
-
     // Recurring event: `date` is only a stand-in (the client sends
     // recurrence_start_date, or today, purely to satisfy the NOT NULL
     // column — see 0035_appointment_recurrence.sql). A recurrence started
@@ -170,6 +170,13 @@ export function buildUpcomingItems({
     // the real next occurrence instead; getNextOccurrence never returns a
     // slot before `now`, so these are never urgent. No occurrence left
     // (recurrence_end_date has passed) means nothing left to act on.
+    //
+    // Gated per-occurrence (via appointment_occurrence_status), NOT via this
+    // row's own event_status column — that column is frozen at 'planned' for
+    // a recurring row and never reflects any occurrence's real completion
+    // (see resolveDisplayedEventStatus). This is the actual bug fix: before
+    // this table existed, marking one occurrence "Done" wrote event_status
+    // directly and permanently dropped the entire series out of Up Next.
     if (appointment.meeting_blocks.length > 0) {
       const occurrence = getNextOccurrence(
         appointment.meeting_blocks,
@@ -178,6 +185,8 @@ export function buildUpcomingItems({
         appointment.recurrence_end_date,
       );
       if (!occurrence) continue;
+      const resolvedStatus = resolveDisplayedEventStatus(appointment, occurrenceStatusByKey, new Date(now));
+      if (resolvedStatus !== "planned") continue;
       const at = new Date(
         occurrence.date.getFullYear(),
         occurrence.date.getMonth(),
@@ -197,6 +206,8 @@ export function buildUpcomingItems({
       });
       continue;
     }
+
+    if (appointment.event_status !== "planned") continue;
 
     const structuredMinutes = parseTimeToMinutes(appointment.time);
     const at =

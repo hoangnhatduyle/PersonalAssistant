@@ -3,6 +3,10 @@
 import { useMemo, useState } from "react";
 import { useCourses, useCreateCourse } from "@/hooks/useCourses";
 import { usePeople } from "@/hooks/usePeople";
+import { useDeadlines } from "@/hooks/useDeadlines";
+import { useTasks } from "@/hooks/useTasks";
+import { useTodoLists } from "@/hooks/useTodoLists";
+import { buildCourseWorkloadPreviews, sortCoursesByWorkloadUrgency } from "@/lib/courses/course-workload";
 import { CourseList } from "@/components/courses/CourseList";
 import { CourseForm } from "@/components/courses/CourseForm";
 import { Dialog } from "@/components/ui/Dialog";
@@ -32,6 +36,11 @@ export function CourseListContainer() {
   const [showPast, setShowPast] = useState(false);
   const { data, isLoading } = useCourses();
   const { data: people, isLoading: peopleLoading } = usePeople();
+  // Fetched once for the whole roster (not per-card) to avoid N+1 — same
+  // "fetch all, group client-side" pattern BoardContainer/CourseDetailContainer use.
+  const { data: deadlinesData, isLoading: deadlinesLoading } = useDeadlines({ limit: 100 });
+  const { data: tasksData, isLoading: tasksLoading } = useTasks({ limit: 100 });
+  const { data: todoListsData, isLoading: todoListsLoading } = useTodoLists({ limit: 100 });
   const { data: settings } = useSettings();
   const createCourse = useCreateCourse();
   const { showToast } = useToast();
@@ -48,9 +57,19 @@ export function CourseListContainer() {
   const todayDate = useMemo(() => new Date().toISOString().slice(0, 10), []);
   const isPastCourse = (course: CourseRow) => !!course.recurrence_end_date && course.recurrence_end_date < todayDate;
 
-  const courses = (data?.rows ?? []).filter(
+  const visibleCourses = (data?.rows ?? []).filter(
     (course) => matchesFilter(course.person_id) && (showPast || !isPastCourse(course)),
   );
+
+  const workloadPreviewByCourseId = buildCourseWorkloadPreviews(
+    visibleCourses,
+    deadlinesData?.rows ?? [],
+    tasksData?.rows ?? [],
+    todoListsData?.rows ?? [],
+  );
+  // Urgent-first so the courses needing attention aren't buried below a
+  // long, alphabetically-sorted (or creation-order) roster.
+  const courses = sortCoursesByWorkloadUrgency(visibleCourses, workloadPreviewByCourseId);
 
   const handleCreate = async (values: CoursePayload) => {
     try {
@@ -90,14 +109,14 @@ export function CourseListContainer() {
         </div>
       )}
 
-      {isLoading || peopleLoading ? (
+      {isLoading || peopleLoading || deadlinesLoading || tasksLoading || todoListsLoading ? (
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {[1, 2, 3].map((n) => (
             <Skeleton key={n} className="h-28 w-full" />
           ))}
         </div>
       ) : (
-        <CourseList courses={courses} people={people?.rows ?? []} ownerColor={ownerColor} />
+        <CourseList courses={courses} people={people?.rows ?? []} ownerColor={ownerColor} previewByCourseId={workloadPreviewByCourseId} />
       )}
 
       <Dialog open={isCreateOpen} onClose={() => setCreateOpen(false)} title="New course" size="xl">

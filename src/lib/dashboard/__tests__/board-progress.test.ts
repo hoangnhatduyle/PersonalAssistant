@@ -11,7 +11,7 @@ describe("buildBoardProgress", () => {
         makeTask({ id: "t-2", list_id: "list-1", status: "Open" }),
       ],
     );
-    expect(result).toEqual([{ listId: "list-1", listName: "Reading", done: 1, total: 2, ratio: 0.5 }]);
+    expect(result).toEqual([{ listId: "list-1", listName: "Reading", courseId: "c-1", done: 1, total: 2, ratio: 0.5 }]);
   });
 
   it("includes freestanding lists with no course_id, unlike buildCourseProgress", () => {
@@ -19,7 +19,7 @@ describe("buildBoardProgress", () => {
       [makeTodoList({ id: "list-personal", name: "Personal", course_id: null })],
       [makeTask({ id: "t-1", list_id: "list-personal", status: "Done" })],
     );
-    expect(result).toEqual([{ listId: "list-personal", listName: "Personal", done: 1, total: 1, ratio: 1 }]);
+    expect(result).toEqual([{ listId: "list-personal", listName: "Personal", courseId: null, done: 1, total: 1, ratio: 1 }]);
   });
 
   it("excludes cancelled tasks from both done and total", () => {

@@ -5,7 +5,8 @@ import type { TodoListPatch, TodoListPayload } from "@/lib/api/schemas";
 import type { TodoListRow } from "@/lib/api/entity-types";
 
 export interface TodoListListFilters {
-  courseId?: string;
+  /** A course id scopes to that course's list; `"none"` scopes to freestanding/personal lists only (used by the global Board). */
+  courseId?: string | "none";
   includeDeleted?: boolean;
   page?: number;
   limit?: number;

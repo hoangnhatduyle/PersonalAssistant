@@ -21,7 +21,6 @@ import {
   useDeleteTodoList,
   useTodoLists,
 } from "@/hooks/useTodoLists";
-import { useCourses } from "@/hooks/useCourses";
 import { usePeople } from "@/hooks/usePeople";
 import { apiFetch } from "@/lib/http/client";
 import { taskKeys } from "@/lib/query/keys";
@@ -51,9 +50,15 @@ function groupTasksByColumn(tasks: TaskWithLabels[], listIds: string[]): Columns
 
   const byPosition = (a: TaskWithLabels, b: TaskWithLabels) => a.position - b.position;
   for (const task of [...tasks].sort(byPosition)) {
-    const key =
-      task.list_id && task.list_id in columns ? task.list_id : UNSORTED_ID;
-    columns[key].push(task);
+    if (!task.list_id) {
+      columns[UNSORTED_ID].push(task);
+      continue;
+    }
+    // A list_id that isn't one of ours belongs to a course-scoped list (the
+    // global Board only fetches personal lists) — its cards live on the
+    // course's own detail page, not here, so they're dropped rather than
+    // falling into Miscellaneous.
+    if (task.list_id in columns) columns[task.list_id].push(task);
   }
   return columns;
 }
@@ -73,8 +78,8 @@ export function BoardContainer() {
   const { data: tasksData, isLoading: tasksLoading } = useTasks({ limit: 100 });
   const { data: todoListsData, isLoading: todoListsLoading } = useTodoLists({
     limit: 100,
+    courseId: "none",
   });
-  const { data: coursesData } = useCourses({ limit: 100 });
   const { data: peopleData } = usePeople();
   const createTask = useCreateTask();
   const createTodoList = useCreateTodoList();
@@ -87,13 +92,6 @@ export function BoardContainer() {
   // still loading), defeating that memo and looping the render-phase
   // setColumns sync below forever.
   const lists = useMemo(() => todoListsData?.rows ?? [], [todoListsData]);
-  const courseNameById = useMemo(
-    () =>
-      new Map(
-        coursesData?.rows.map((course) => [course.id, course.name]) ?? [],
-      ),
-    [coursesData],
-  );
   const peopleById = useMemo(
     () =>
       new Map(peopleData?.rows.map((person) => [person.id, person.name]) ?? []),
@@ -364,11 +362,6 @@ export function BoardContainer() {
                   key={list.id}
                   id={list.id}
                   name={list.name}
-                  courseName={
-                    list.course_id
-                      ? courseNameById.get(list.course_id)
-                      : undefined
-                  }
                   tasks={visibleColumns[list.id] ?? []}
                   peopleById={peopleById}
                   isUnsorted={false}

@@ -18,7 +18,8 @@ import { Switch } from "@/components/ui/Switch";
 import { findConflictingAppointmentIds } from "@/lib/appointments/conflicts";
 import { findCourseConflictingAppointmentIds } from "@/lib/appointments/course-conflicts";
 import { formatAppointmentDate, isPastAppointment, matchesSearch, paginate } from "@/lib/appointments/list-view";
-import { formatBlocksSummary } from "@/lib/calendar/recurrence";
+import { buildOccurrenceStatusMap, resolveDisplayedEventStatus } from "@/lib/appointments/occurrence-status";
+import { formatBlocksSummary, getRelevantOccurrenceDateKey } from "@/lib/calendar/recurrence";
 import { EVENT_STATUS_TONE } from "@/lib/status-colors";
 import type { AppointmentRow } from "@/lib/api/entity-types";
 import type { AppointmentPayload } from "@/lib/api/schemas";
@@ -47,6 +48,10 @@ export function AppointmentsTimeline() {
   const deletingAppointment = appointments.find((item) => item.id === deletingId);
   const conflictingIds = findConflictingAppointmentIds(appointments);
   const courseConflictingIds = findCourseConflictingAppointmentIds(appointments, coursesData?.rows ?? []);
+  // Same batching pattern as the conflict sets above — one flatten of the
+  // embedded appointment_occurrence_status relation for the whole list,
+  // rather than per row.
+  const occurrenceStatusByKey = buildOccurrenceStatusMap(appointments);
 
   // Conflicts above are computed over the full set on purpose — a hidden past
   // or non-matching appointment can still be what a visible one conflicts with.
@@ -138,7 +143,13 @@ export function AppointmentsTimeline() {
         />
       ) : (
         <ul className="flex flex-col divide-y divide-panel-border">
-          {currentPage.items.map((appointment) => (
+          {currentPage.items.map((appointment) => {
+            const isRecurring = appointment.meeting_blocks.length > 0;
+            const occurrenceDate = isRecurring
+              ? getRelevantOccurrenceDateKey(appointment.meeting_blocks, now, appointment.recurrence_start_date, appointment.recurrence_end_date)
+              : null;
+            const resolvedStatus = resolveDisplayedEventStatus(appointment, occurrenceStatusByKey, now);
+            return (
             <li
               key={appointment.id}
               className="flex flex-col gap-2 py-3 first:pt-0 last:pb-0 sm:flex-row sm:items-start sm:justify-between sm:gap-3"
@@ -147,10 +158,8 @@ export function AppointmentsTimeline() {
                 <div className="flex flex-wrap items-center gap-2">
                   <p className="truncate text-sm text-text-primary">{appointment.title}</p>
                   <Badge tone="neutral">{appointment.category}</Badge>
-                  {appointment.meeting_blocks.length > 0 && <Badge tone="purple">Recurring</Badge>}
-                  {appointment.event_status && (
-                    <Badge tone={EVENT_STATUS_TONE[appointment.event_status]}>{appointment.event_status}</Badge>
-                  )}
+                  {isRecurring && <Badge tone="purple">Recurring</Badge>}
+                  {resolvedStatus && <Badge tone={EVENT_STATUS_TONE[resolvedStatus]}>{resolvedStatus}</Badge>}
                   {conflictingIds.has(appointment.id) && <Badge tone="urgent">Conflict</Badge>}
                   {courseConflictingIds.has(appointment.id) && <Badge tone="purple">Course Conflict</Badge>}
                 </div>
@@ -162,7 +171,12 @@ export function AppointmentsTimeline() {
                       }`}
                   {appointment.location ? ` · ${appointment.location}` : ""}
                 </span>
-                <EventTransitionButtons appointment={appointment} suggestMissed={courseConflictingIds.has(appointment.id)} />
+                <EventTransitionButtons
+                  appointmentId={appointment.id}
+                  status={resolvedStatus}
+                  occurrenceDate={occurrenceDate}
+                  suggestMissed={courseConflictingIds.has(appointment.id)}
+                />
               </div>
               <div className="flex shrink-0 gap-1 self-end sm:self-start">
                 <Button variant="ghost" size="sm" onClick={() => openEdit(appointment)}>
@@ -173,7 +187,8 @@ export function AppointmentsTimeline() {
                 </Button>
               </div>
             </li>
-          ))}
+            );
+          })}
         </ul>
       )}
 

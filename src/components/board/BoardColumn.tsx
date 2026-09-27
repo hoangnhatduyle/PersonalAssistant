@@ -16,7 +16,6 @@ import type { TaskWithLabels } from "@/lib/api/entity-types";
 type Props = {
   id: string;
   name: string;
-  courseName?: string;
   tasks: TaskWithLabels[];
   peopleById: Map<string, string>;
   isUnsorted: boolean;
@@ -30,7 +29,6 @@ type Props = {
 export function BoardColumn({
   id,
   name,
-  courseName,
   tasks,
   peopleById,
   isUnsorted,
@@ -71,11 +69,6 @@ export function BoardColumn({
     >
       <div className="board-column-head flex shrink-0 items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
-          {courseName && (
-            <p className="truncate font-mono text-[10px] uppercase tracking-wide text-text-eyebrow">
-              {courseName}
-            </p>
-          )}
           {isUnsorted ? (
             <h3 className="truncate font-display text-sm font-semibold text-text-primary">
               {name}

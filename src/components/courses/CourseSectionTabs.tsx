@@ -6,16 +6,23 @@ import { usePathname } from "next/navigation";
 const TABS = [
   { href: "/courses", label: "Courses" },
   { href: "/courses/deadlines", label: "Deadlines" },
+  { href: "/board", label: "Boards" },
 ];
 
-/** Segmented tab switcher for the Courses section — styling mirrors PersonFilterToggle's pill-button treatment. */
+const matchesTab = (pathname: string, href: string) => pathname === href || pathname.startsWith(`${href}/`);
+
+/** Segmented tab switcher for the Workload section — styling mirrors PersonFilterToggle's pill-button treatment. */
 export function CourseSectionTabs() {
   const pathname = usePathname();
+  // Longest matching href wins so /courses/deadlines doesn't also light up
+  // the /courses tab (segment-boundary matching alone can't tell those apart
+  // since /courses/deadlines starts with "/courses/").
+  const activeHref = [...TABS].sort((a, b) => b.href.length - a.href.length).find((tab) => matchesTab(pathname, tab.href))?.href;
 
   return (
-    <div role="tablist" aria-label="Courses section" className="inline-flex gap-1 rounded-full border border-panel-border bg-panel p-1">
+    <div role="tablist" aria-label="Workload section" className="inline-flex gap-1 rounded-full border border-panel-border bg-panel p-1">
       {TABS.map((tab) => {
-        const isActive = tab.href === "/courses" ? pathname === "/courses" : pathname.startsWith(tab.href);
+        const isActive = tab.href === activeHref;
         return (
           <Link
             key={tab.href}

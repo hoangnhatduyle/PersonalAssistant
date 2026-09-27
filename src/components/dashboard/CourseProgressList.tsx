@@ -57,7 +57,7 @@ export function CourseProgressList({ courses, deadlines, tasks, todoLists }: Pro
           done: list.done,
           total: list.total,
           ratio: list.ratio,
-          href: "/board",
+          href: list.courseId ? `/courses/${list.courseId}` : "/board",
         }));
 
   const visible = rows.slice(0, ROW_LIMIT);

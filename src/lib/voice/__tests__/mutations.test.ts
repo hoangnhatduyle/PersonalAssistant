@@ -13,6 +13,7 @@ import {
   type TestUser,
 } from "../../../../supabase/tests/helpers";
 import { executePendingMutation, MutationTargetNotFoundError, type PendingMutation } from "../mutations";
+import { getRelevantOccurrenceDateKey, type MeetingBlock } from "@/lib/calendar/recurrence";
 
 describe("executePendingMutation", () => {
   const admin = adminClient();
@@ -536,6 +537,84 @@ describe("executePendingMutation", () => {
           event: "user_marks_event_done",
         }),
       ).rejects.toThrow(/not an event/);
+    });
+
+    // Traces: supabase/migrations/0049_appointment_occurrence_status.sql,
+    // Part 1 Phase 3's decided voice behavior: applies to whatever
+    // getRelevantOccurrenceDateKey resolves as current at call time, no
+    // explicit refusal.
+    describe("recurring event (meeting_blocks non-empty)", () => {
+      const ALL_DAY_EVERY_DAY: MeetingBlock[] = [{ days: [0, 1, 2, 3, 4, 5, 6], startMinutes: 0, endMinutes: 23 * 60 + 59 }];
+
+      it("transitions the currently-relevant occurrence, leaving the row's own event_status untouched", async () => {
+        const eventId = await createAppointment(admin, userId, {
+          time: null,
+          duration_minutes: null,
+          meeting_blocks: ALL_DAY_EVERY_DAY,
+        });
+        const occurrenceDate = getRelevantOccurrenceDateKey(ALL_DAY_EVERY_DAY, new Date(), null, null);
+
+        const result = await executePendingMutation(user.client, userId, {
+          targetType: "event",
+          operation: "transition",
+          targetId: eventId,
+          event: "user_marks_event_done",
+        });
+        expect((result.data as { event_status: string }).event_status).toBe("planned");
+
+        const { data: occurrenceRow } = await admin
+          .from("appointment_occurrence_status")
+          .select("status")
+          .eq("appointment_id", eventId)
+          .eq("occurrence_date", occurrenceDate as string)
+          .single();
+        expect(occurrenceRow?.status).toBe("done");
+      });
+
+      it("leaves a different occurrence's pre-existing status untouched by marking today's occurrence done", async () => {
+        const eventId = await createAppointment(admin, userId, {
+          time: null,
+          duration_minutes: null,
+          meeting_blocks: ALL_DAY_EVERY_DAY,
+        });
+        const otherOccurrenceDate = "2099-01-01";
+        await admin
+          .from("appointment_occurrence_status")
+          .insert({ appointment_id: eventId, occurrence_date: otherOccurrenceDate, status: "missed" });
+
+        await executePendingMutation(user.client, userId, {
+          targetType: "event",
+          operation: "transition",
+          targetId: eventId,
+          event: "user_marks_event_done",
+        });
+
+        const { data: otherRow } = await admin
+          .from("appointment_occurrence_status")
+          .select("status")
+          .eq("appointment_id", eventId)
+          .eq("occurrence_date", otherOccurrenceDate)
+          .single();
+        expect(otherRow?.status).toBe("missed");
+      });
+
+      it("throws when a recurring appointment has no more occurrences (recurrence_end_date has passed)", async () => {
+        const eventId = await createAppointment(admin, userId, {
+          time: null,
+          duration_minutes: null,
+          meeting_blocks: ALL_DAY_EVERY_DAY,
+          recurrence_start_date: "2020-01-01",
+          recurrence_end_date: "2020-01-31",
+        });
+        await expect(
+          executePendingMutation(user.client, userId, {
+            targetType: "event",
+            operation: "transition",
+            targetId: eventId,
+            event: "user_marks_event_done",
+          }),
+        ).rejects.toThrow(/no more occurrences/);
+      });
     });
   });
 

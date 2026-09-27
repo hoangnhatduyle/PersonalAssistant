@@ -4,7 +4,7 @@ import { useTransitionAppointment } from "@/hooks/useAppointments";
 import { getValidEventEvents, type EventTransitionEvent } from "@/lib/api/transitions";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
-import type { AppointmentRow } from "@/lib/api/entity-types";
+import type { EventStatus } from "@/lib/api/entity-types";
 
 const EVENT_LABELS: Record<EventTransitionEvent, string> = {
   user_marks_event_done: "Mark Done",
@@ -25,30 +25,45 @@ const EVENT_ICONS: Record<EventTransitionEvent, string> = {
  * Course Conflict — the user structurally couldn't attend, but the status
  * change still requires their own click.
  *
+ * `status` and `occurrenceDate` are resolved by the parent (via
+ * resolveDisplayedEventStatus/resolveAppointmentOccurrence, src/lib/appointments/occurrence-status.ts)
+ * rather than read from `appointment.event_status` directly here — for a
+ * recurring appointment, that column is frozen at 'planned' and never
+ * reflects any occurrence's real status, so gating on it directly would let
+ * every occurrence show both buttons forever regardless of what's already
+ * been marked. `occurrenceDate` is non-null only for a recurring
+ * appointment's resolved occurrence, and is threaded straight into the
+ * transition mutation — the API route requires it for exactly that case
+ * (POST /api/appointments/[id]/transition).
+ *
  * `compact` swaps the labeled buttons for icon-only ones (for dense list
  * rows like UpNextPanel) — full text still reaches screen readers and
  * hover via aria-label/title.
  */
 export function EventTransitionButtons({
-  appointment,
+  appointmentId,
+  status,
+  occurrenceDate = null,
   suggestMissed = false,
   size = "sm",
   compact = false,
 }: {
-  appointment: AppointmentRow;
+  appointmentId: string;
+  status: EventStatus | null;
+  occurrenceDate?: string | null;
   suggestMissed?: boolean;
   size?: "sm" | "lg";
   compact?: boolean;
 }) {
-  const events = appointment.event_status ? getValidEventEvents(appointment.event_status) : [];
-  const transition = useTransitionAppointment(appointment.id);
+  const events = status ? getValidEventEvents(status) : [];
+  const transition = useTransitionAppointment(appointmentId);
   const { showToast } = useToast();
 
   if (events.length === 0) return null;
 
   const handleTransition = async (event: EventTransitionEvent) => {
     try {
-      await transition.mutateAsync(event);
+      await transition.mutateAsync({ event, occurrenceDate });
       showToast("Event updated", "success");
     } catch {
       showToast("Could not update event", "error");

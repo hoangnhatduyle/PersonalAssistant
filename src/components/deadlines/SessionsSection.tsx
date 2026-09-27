@@ -53,7 +53,7 @@ export function SessionTransitionButtons({
 
   const handleTransition = async (event: SessionTransitionEvent) => {
     try {
-      await transition.mutateAsync(event);
+      await transition.mutateAsync({ event });
       showToast("Session updated", "success");
     } catch {
       showToast("Could not update session", "error");

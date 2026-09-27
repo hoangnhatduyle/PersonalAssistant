@@ -2,12 +2,12 @@ import type { ReactNode } from "react";
 import { CourseSectionTabs } from "@/components/courses/CourseSectionTabs";
 
 /**
- * Route group (board), not a URL segment: wraps the Courses list and its
+ * Route group (workload), not a URL segment: wraps the Courses list and its
  * Deadlines sub-tab (/courses, /courses/deadlines) with the tab switcher,
  * while /courses/[id]'s detail page — a sibling outside this group — stays
  * unwrapped, since a per-course detail view has nothing to switch between.
  */
-export default function CoursesBoardLayout({ children }: { children: ReactNode }) {
+export default function CoursesWorkloadLayout({ children }: { children: ReactNode }) {
   return (
     <div className="flex flex-col gap-4">
       <CourseSectionTabs />

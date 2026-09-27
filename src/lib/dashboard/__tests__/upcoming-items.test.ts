@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { buildUpcomingItems, filterUpcomingItemsByTimeWindow, isOpenDeadline, isOpenTask } from "../upcoming-items";
 import type { UpcomingItem } from "../upcoming-items";
 import { makeAppointment, makeCourse, makeDeadline, makePerson, makeReminder, makeTask } from "./fixtures";
+import { toDateOnly } from "@/lib/calendar/recurrence";
 
 describe("isOpenDeadline / isOpenTask", () => {
   it("excludes terminal deadline statuses", () => {
@@ -248,6 +249,55 @@ describe("buildUpcomingItems", () => {
       ],
     });
     expect(items.find((i) => i.id === "a-ended")).toBeUndefined();
+  });
+
+  // supabase/migrations/0049_appointment_occurrence_status.sql's whole reason
+  // for existing: before this table, marking one occurrence "Done" wrote
+  // appointment.event_status directly, which permanently dropped this
+  // recurring appointment out of Up Next for every future occurrence too.
+  it("keeps a recurring Event in the queue when a DIFFERENT occurrence has been marked done (regression: used to drop the whole series forever)", () => {
+    const now = new Date();
+    const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+    const farOccurrenceKey = toDateOnly(new Date(now.getFullYear(), now.getMonth(), now.getDate() + 30));
+    const items = buildUpcomingItems({
+      deadlines: [],
+      tasks: [],
+      appointments: [
+        makeAppointment({
+          id: "a-recurring-other-done",
+          category: "Personal",
+          session_status: null,
+          event_status: "planned",
+          deadline_id: null,
+          meeting_blocks: [{ days: [0, 1, 2, 3, 4, 5, 6], startMinutes: 0, endMinutes: 23 * 60 + 59 }],
+          appointment_occurrence_status: [{ occurrence_date: farOccurrenceKey, status: "done" }],
+        }),
+      ],
+    });
+    const item = items.find((i) => i.id === "a-recurring-other-done");
+    expect(item).toBeDefined();
+    expect(item?.at).toEqual(tomorrow);
+  });
+
+  it("drops a recurring Event from the queue when its OWN current occurrence has been marked done", () => {
+    const now = new Date();
+    const tomorrowKey = toDateOnly(new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1));
+    const items = buildUpcomingItems({
+      deadlines: [],
+      tasks: [],
+      appointments: [
+        makeAppointment({
+          id: "a-recurring-self-done",
+          category: "Personal",
+          session_status: null,
+          event_status: "planned",
+          deadline_id: null,
+          meeting_blocks: [{ days: [0, 1, 2, 3, 4, 5, 6], startMinutes: 0, endMinutes: 23 * 60 + 59 }],
+          appointment_occurrence_status: [{ occurrence_date: tomorrowKey, status: "done" }],
+        }),
+      ],
+    });
+    expect(items.find((i) => i.id === "a-recurring-self-done")).toBeUndefined();
   });
 
   it("flags an Event overlapping a passed-in course's meeting block with courseConflict: true, and leaves a non-overlapping one false", () => {

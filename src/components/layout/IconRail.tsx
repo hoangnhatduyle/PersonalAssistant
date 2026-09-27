@@ -9,6 +9,8 @@ type NavItem = {
   href: string;
   label: string;
   icon: ReactNode;
+  /** Extra path prefixes that should also light up this item (e.g. /board for the merged Workload item). */
+  activePrefixes?: string[];
 };
 
 type Props = {
@@ -28,11 +30,6 @@ const icons = {
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} className="h-5 w-5">
       <path d="M4 6a2 2 0 0 1 2-2h11a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H6a2 2 0 0 1-2-2z" />
       <path d="M4 6v12a2 2 0 0 0 2 2h11" />
-    </svg>
-  ),
-  tasks: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} className="h-5 w-5">
-      <path d="m5 12 4 4 10-10" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   ),
   calendar: (
@@ -71,8 +68,7 @@ const icons = {
 
 const NAV_ITEMS: NavItem[] = [
   { href: "/", label: "Today", icon: icons.today },
-  { href: "/courses", label: "Courses", icon: icons.courses },
-  { href: "/board", label: "Board", icon: icons.tasks },
+  { href: "/courses", label: "Workload", icon: icons.courses, activePrefixes: ["/board"] },
   { href: "/library", label: "Library", icon: icons.library },
   { href: "/calendar", label: "Calendar", icon: icons.calendar },
   { href: "/assistant", label: "Assistant", icon: icons.assistant },
@@ -140,8 +136,9 @@ export function IconRail({ email }: Props) {
         </div>
         {NAV_ITEMS.map((item) => {
           // Segment boundary, not a bare prefix — a future sibling route like
-          // /board-archive must not falsely highlight the /board nav item.
-          const isActive = item.href === "/" ? pathname === "/" : pathname === item.href || pathname.startsWith(`${item.href}/`);
+          // /courses-archive must not falsely highlight the Workload nav item.
+          const matchesPrefix = (prefix: string) => pathname === prefix || pathname.startsWith(`${prefix}/`);
+          const isActive = item.href === "/" ? pathname === "/" : matchesPrefix(item.href) || (item.activePrefixes?.some(matchesPrefix) ?? false);
           return (
             <Link
               key={item.href}

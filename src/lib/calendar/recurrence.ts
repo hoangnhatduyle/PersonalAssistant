@@ -28,7 +28,7 @@ export interface RecurrenceFormFields {
 
 const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
-function toDateOnly(date: Date): string {
+export function toDateOnly(date: Date): string {
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
@@ -169,6 +169,23 @@ export function getNextOccurrence(
     }
   }
   return null;
+}
+
+/**
+ * Just the date key ("YYYY-MM-DD") of getNextOccurrence's result, for read
+ * sites (src/lib/appointments/occurrence-status.ts) that only need to know
+ * WHICH occurrence is currently relevant — to key into a per-occurrence
+ * status map — not its time window. A thin wrapper so the day-scanning
+ * algorithm itself stays defined only in getNextOccurrence.
+ */
+export function getRelevantOccurrenceDateKey(
+  blocks: MeetingBlock[],
+  referenceDate: Date,
+  rangeStart: string | null,
+  rangeEnd: string | null,
+): string | null {
+  const occurrence = getNextOccurrence(blocks, referenceDate, rangeStart, rangeEnd);
+  return occurrence ? toDateOnly(occurrence.date) : null;
 }
 
 /** "Every Monday and Wednesday, from 9:00 AM to 10:15 AM." — one sentence per block, joined. Empty array -> "No recurrence configured yet." */

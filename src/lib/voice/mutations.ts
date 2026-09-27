@@ -17,6 +17,8 @@ import type {
 import { syncReminderForTarget } from "@/lib/api/reminders";
 import { cancelDeadlineSeries } from "@/lib/api/deadline-recurrence";
 import { cascadeDeleteCourse, cascadeDeleteTask, cascadeDeleteTodoList } from "@/lib/api/cascade";
+import { applyRecurringEventTransition } from "@/lib/api/appointment-occurrence-transition";
+import { getRelevantOccurrenceDateKey, type MeetingBlock } from "@/lib/calendar/recurrence";
 import {
   resolveDeadlineTransition,
   resolveEventTransition,
@@ -627,7 +629,7 @@ async function executeEventMutation(
   // transition -- NC-API-002: mirrors POST /api/appointments/[id]/transition exactly.
   const { data: existing, error: fetchError } = await supabase
     .from("appointments")
-    .select("id, event_status")
+    .select("id, event_status, meeting_blocks, recurrence_start_date, recurrence_end_date")
     .eq("id", mutation.targetId)
     .eq("user_id", userId)
     .is("deleted_at", null)
@@ -635,6 +637,29 @@ async function executeEventMutation(
   if (fetchError) throw fetchError;
   if (!existing) throw new MutationTargetNotFoundError(`event ${mutation.targetId} not found or already deleted`);
   if (existing.event_status === null) throw new Error("This appointment is not an event");
+
+  // meeting_blocks is typed generically (Json) by the Supabase generator,
+  // same widening convention as schedule-loader.ts's own cast.
+  const meetingBlocks = (existing.meeting_blocks ?? []) as unknown as MeetingBlock[];
+
+  if (meetingBlocks.length > 0) {
+    // Recurring: per the decided behavior, applies to whatever occurrence
+    // getRelevantOccurrenceDateKey resolves as current at call time -- no
+    // explicit refusal or "which occurrence did you mean" turn, unlike the
+    // calendar UI which already has a specific occurrence on screen to act
+    // on. Never touches this row's own event_status column (frozen at
+    // 'planned' for a recurring row) -- appointment_occurrence_status is the
+    // authoritative store instead (0049_appointment_occurrence_status.sql).
+    const occurrenceDate = getRelevantOccurrenceDateKey(meetingBlocks, new Date(), existing.recurrence_start_date, existing.recurrence_end_date);
+    if (!occurrenceDate) throw new Error("This recurring appointment has no more occurrences");
+
+    const outcome = await applyRecurringEventTransition(supabase, mutation.targetId, occurrenceDate, mutation.event);
+    if (!outcome.applied) throw new Error(`Cannot apply "${mutation.event}" from status "${outcome.currentStatus}"`);
+
+    const { data: appointment, error } = await supabase.from("appointments").select("*").eq("id", mutation.targetId).single();
+    if (error) throw error;
+    return { summary: `Appointment marked ${outcome.status}.`, data: appointment };
+  }
 
   const nextStatus = resolveEventTransition(mutation.event, existing.event_status);
   if (!nextStatus) throw new Error(`Cannot apply "${mutation.event}" from status "${existing.event_status}"`);

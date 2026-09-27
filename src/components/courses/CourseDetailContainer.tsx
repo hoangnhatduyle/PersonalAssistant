@@ -9,8 +9,9 @@ import { useTasks } from "@/hooks/useTasks";
 import { CourseForm } from "@/components/courses/CourseForm";
 import { DeleteCourseButton } from "@/components/courses/DeleteCourseButton";
 import { DeadlineList } from "@/components/deadlines/DeadlineList";
+import { BoardCard } from "@/components/board/BoardCard";
+import { BoardCardDetailDialog } from "@/components/board/BoardCardDetailDialog";
 import { NotesForTarget } from "@/components/notes/NotesForTarget";
-import { ProgressBar } from "@/components/ui/ProgressBar";
 import { GlassPanel } from "@/components/ui/GlassPanel";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -19,7 +20,6 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { useToast } from "@/components/ui/Toast";
 import { formatBlocksSummary } from "@/lib/calendar/recurrence";
 import type { CoursePayload } from "@/lib/api/schemas";
-import type { TaskRow } from "@/lib/api/entity-types";
 import { formatLeadMinutes } from "@/lib/reminders/lead-time";
 
 type Props = {
@@ -36,19 +36,16 @@ export function CourseDetailContainer({ courseId }: Props) {
   const updateCourse = useUpdateCourse(courseId);
   const { showToast } = useToast();
   const [isEditing, setIsEditing] = useState(false);
+  const [openCardId, setOpenCardId] = useState<string | null>(null);
 
   if (isLoading) return <Skeleton className="h-64 w-full" />;
   if (!course) return <p className="text-sm text-text-secondary">Course not found.</p>;
 
-  const lists = todoLists?.rows ?? [];
-  const listIds = new Set(lists.map((list) => list.id));
-  const tasksByListId = new Map<string, TaskRow[]>();
-  for (const task of tasks?.rows ?? []) {
-    if (!task.list_id || !listIds.has(task.list_id)) continue;
-    const bucket = tasksByListId.get(task.list_id) ?? [];
-    bucket.push(task);
-    tasksByListId.set(task.list_id, bucket);
-  }
+  // A course has at most one live Board List (DB-enforced unique-per-course
+  // index) — any extras would only be legacy data predating that
+  // constraint, so ignore them defensively rather than rendering a grid.
+  const list = todoLists?.rows[0];
+  const openTasks = list ? (tasks?.rows ?? []).filter((task) => task.list_id === list.id && task.status === "Open") : [];
   const boardLoading = todoListsLoading || tasksLoading;
 
   const handleUpdate = async (values: CoursePayload) => {
@@ -102,37 +99,25 @@ export function CourseDetailContainer({ courseId }: Props) {
       </GlassPanel>
 
       <GlassPanel className="flex flex-col gap-3 p-6">
-        <div className="flex items-center justify-between">
-          <p className="font-mono text-xs uppercase tracking-wide text-text-eyebrow">Board</p>
-          <Link href="/board" className="text-xs text-accent-indigo hover:underline">
-            Open board
-          </Link>
-        </div>
+        <p className="font-mono text-xs uppercase tracking-wide text-text-eyebrow">Board</p>
         {boardLoading ? (
           <Skeleton className="h-24 w-full" />
-        ) : lists.length === 0 ? (
+        ) : !list ? (
           <EmptyState title="No Board List yet" description="Create one from the Board." />
+        ) : openTasks.length === 0 ? (
+          <EmptyState title="Nothing open" description="Every card on this list is done or cancelled." />
         ) : (
-          <div className="grid gap-3 sm:grid-cols-2">
-            {lists.map((list) => {
-              const listTasks = tasksByListId.get(list.id) ?? [];
-              const doneCount = listTasks.filter((task) => task.status === "Done").length;
-              const ratio = listTasks.length === 0 ? 0 : doneCount / listTasks.length;
-              return (
-                <div key={list.id} className="flex flex-col gap-1.5 rounded-control border border-panel-border p-3">
-                  <div className="flex items-baseline justify-between gap-2">
-                    <span className="truncate text-sm text-text-primary">{list.name}</span>
-                    <span className="font-mono text-xs text-text-secondary">
-                      {doneCount}/{listTasks.length}
-                    </span>
-                  </div>
-                  <ProgressBar value={ratio} label={`${list.name} progress`} />
-                </div>
-              );
-            })}
+          <div className="flex flex-col gap-2">
+            {openTasks.map((task) => (
+              // Course-scoped lists are owner-only (see /api/todo-lists POST) —
+              // person_id never gets set on these tasks, so no People fetch here.
+              <BoardCard key={task.id} task={task} personName={undefined} onOpenCard={setOpenCardId} />
+            ))}
           </div>
         )}
       </GlassPanel>
+
+      <BoardCardDetailDialog taskId={openCardId} onClose={() => setOpenCardId(null)} />
 
       <NotesForTarget targetType="course" targetId={course.id} />
     </div>

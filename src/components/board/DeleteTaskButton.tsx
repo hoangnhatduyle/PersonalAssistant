@@ -9,12 +9,14 @@ import { useToast } from "@/components/ui/Toast";
 
 type Props = {
   taskId: string;
-  /** Rendered inside BoardCardDetailDialog (embedded): closes the dialog instead of the standalone page's router.push("/board"), which would otherwise no-op (we're already on /board) and leave the dialog open showing "Card not found." */
+  /** Rendered inside BoardCardDetailDialog (embedded): closes the dialog instead of the standalone page's router.push(fallbackHref), which would otherwise no-op (we're already on that page) and leave the dialog open showing "Card not found." */
   onDeleted?: () => void;
+  /** Where the standalone page redirects to after delete (ignored when onDeleted is set). Defaults to "/board"; callers pass the owning course's page for a card filed under a course-scoped list, since that list no longer shows on /board. */
+  fallbackHref?: string;
 };
 
 /** Card delete does disclose `notesUnlinked` (it also cascades — clears linked_task_id on its Notes). */
-export function DeleteTaskButton({ taskId, onDeleted }: Props) {
+export function DeleteTaskButton({ taskId, onDeleted, fallbackHref = "/board" }: Props) {
   const [open, setOpen] = useState(false);
   const router = useRouter();
   const deleteTask = useDeleteTask(taskId);
@@ -31,7 +33,7 @@ export function DeleteTaskButton({ taskId, onDeleted }: Props) {
       );
       setOpen(false);
       if (onDeleted) onDeleted();
-      else router.push("/board");
+      else router.push(fallbackHref);
     } catch {
       showToast("Could not delete card", "error");
     }

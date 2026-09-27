@@ -12,13 +12,15 @@ import {
   type TimeWindowFilter,
   type UpcomingItem,
 } from "@/lib/dashboard/upcoming-items";
+import { buildOccurrenceStatusMap, occurrenceStatusMapKey } from "@/lib/appointments/occurrence-status";
+import { toDateOnly } from "@/lib/calendar/recurrence";
 import { formatRelativeTime } from "@/lib/format-relative-time";
 import { formatRingCountdown, ringFillFraction } from "@/lib/dashboard/countdown-rings";
 import { DEADLINE_STATUS_TONE, EVENT_STATUS_TONE, SESSION_STATUS_TONE, TASK_STATUS_TONE, type StatusTone } from "@/lib/status-colors";
 import { ITEM_KIND_BG_CLASS, ITEM_KIND_LABEL, ITEM_KIND_STROKE_CLASS } from "@/lib/dashboard/item-kind";
 import { EventTransitionButtons } from "@/components/calendar/EventTransitionButtons";
 import { MailInboxCard } from "@/components/dashboard/MailInboxCard";
-import type { AppointmentRow, CourseRow, DeadlineRow, PersonRow, TaskRow, TodoListRow } from "@/lib/api/entity-types";
+import type { AppointmentRow, CourseRow, DeadlineRow, EventStatus, PersonRow, TaskRow, TodoListRow } from "@/lib/api/entity-types";
 
 type Props = {
   deadlines: DeadlineRow[];
@@ -105,18 +107,38 @@ export function UpNextPanel({ deadlines, tasks, people, todoLists, courses, appo
   const deadlineById = new Map(deadlines.map((d) => [d.id, d]));
   const taskById = new Map(tasks.map((t) => [t.id, t]));
   const appointmentById = new Map(appointments.map((a) => [a.id, a]));
+  const occurrenceStatusByKey = useMemo(() => buildOccurrenceStatusMap(appointments), [appointments]);
+
+  /**
+   * Resolves an "appointment" item's displayed status + (for a recurring
+   * appointment) the occurrence date the transition buttons need — reusing
+   * `at`, the exact occurrence date buildUpcomingItems already resolved,
+   * rather than re-deriving "the current occurrence" a second time via
+   * getNextOccurrence, which (called at a different instant, however close)
+   * could in principle disagree at a day boundary. Shared by resolveItemStatus
+   * below and the EventTransitionButtons render call site.
+   */
+  function resolveAppointmentOccurrence(appointment: AppointmentRow, at: Date): { status: EventStatus | null; occurrenceDate: string | null } {
+    if (appointment.meeting_blocks.length === 0) {
+      return { status: appointment.event_status, occurrenceDate: null };
+    }
+    const occurrenceDate = toDateOnly(at);
+    const status = occurrenceStatusByKey.get(occurrenceStatusMapKey(appointment.id, occurrenceDate)) ?? "planned";
+    return { status, occurrenceDate };
+  }
 
   /** Shared by the countdown rings' hover tooltip and the queue rows below — one status/tone lookup per item kind. */
   function resolveItemStatus(item: UpcomingItem): { status?: string; tone?: StatusTone } {
+    const appointment = item.kind === "session" || item.kind === "appointment" ? appointmentById.get(item.id) : undefined;
     const status =
       item.kind === "deadline"
         ? deadlineById.get(item.id)?.status
         : item.kind === "task"
           ? taskById.get(item.id)?.status
           : item.kind === "session"
-            ? appointmentById.get(item.id)?.session_status
-            : item.kind === "appointment"
-              ? appointmentById.get(item.id)?.event_status
+            ? appointment?.session_status
+            : item.kind === "appointment" && appointment
+              ? resolveAppointmentOccurrence(appointment, item.at).status
               : undefined;
     const tone =
       item.kind === "deadline"
@@ -357,9 +379,20 @@ export function UpNextPanel({ deadlines, tasks, people, todoLists, courses, appo
                         </span>
                       )}
                       {status && tone && <StatusPill status={status} tone={tone} />}
-                      {item.kind === "appointment" && (
-                        <EventTransitionButtons appointment={appointmentById.get(item.id)!} suggestMissed={item.courseConflict} compact />
-                      )}
+                      {item.kind === "appointment" &&
+                        (() => {
+                          const appointment = appointmentById.get(item.id)!;
+                          const resolved = resolveAppointmentOccurrence(appointment, item.at);
+                          return (
+                            <EventTransitionButtons
+                              appointmentId={appointment.id}
+                              status={resolved.status}
+                              occurrenceDate={resolved.occurrenceDate}
+                              suggestMissed={item.courseConflict}
+                              compact
+                            />
+                          );
+                        })()}
                     </div>
                   </li>
                 );

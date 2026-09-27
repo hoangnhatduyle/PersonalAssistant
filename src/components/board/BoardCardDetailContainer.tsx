@@ -41,9 +41,13 @@ export function BoardCardDetailContainer({
   if (!task)
     return <p className="text-sm text-text-secondary">Card not found.</p>;
 
-  const listName = task.list_id
-    ? todoLists?.rows.find((list) => list.id === task.list_id)?.name
+  const list = task.list_id
+    ? todoLists?.rows.find((row) => row.id === task.list_id)
     : undefined;
+  const listName = list?.name;
+  // A card filed under a course-scoped list no longer shows on /board (Part
+  // 2 scopes it to personal lists) — redirect to the owning course instead.
+  const fallbackHref = list?.course_id ? `/courses/${list.course_id}` : "/board";
 
   const handleUpdate = async (values: TaskPayload) => {
     try {
@@ -66,7 +70,7 @@ export function BoardCardDetailContainer({
         >
           {isEditing ? "Cancel edit" : "Edit"}
         </Button>
-        <DeleteTaskButton taskId={task.id} onDeleted={onDeleted} />
+        <DeleteTaskButton taskId={task.id} onDeleted={onDeleted} fallbackHref={fallbackHref} />
       </div>
 
       {isEditing && (

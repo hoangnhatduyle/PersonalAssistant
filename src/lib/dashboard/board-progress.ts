@@ -3,6 +3,8 @@ import type { TaskRow, TodoListRow } from "@/lib/api/entity-types";
 export interface BoardProgress {
   listId: string;
   listName: string;
+  /** The list's course_id, or null for a freestanding/personal list — lets callers link course-scoped rows to /courses/{id} instead of the now course-lists-excluded /board. */
+  courseId: string | null;
   done: number;
   total: number;
   /** done / total, 0 when total is 0 (avoids NaN in the UI). */
@@ -33,7 +35,14 @@ export function buildBoardProgress(todoLists: TodoListRow[], tasks: TaskRow[]): 
   for (const list of todoLists) {
     const tally = tallyByListId.get(list.id);
     if (!tally || tally.total === 0) continue;
-    results.push({ listId: list.id, listName: list.name, done: tally.done, total: tally.total, ratio: tally.done / tally.total });
+    results.push({
+      listId: list.id,
+      listName: list.name,
+      courseId: list.course_id,
+      done: tally.done,
+      total: tally.total,
+      ratio: tally.done / tally.total,
+    });
   }
 
   return results.sort((a, b) => a.ratio - b.ratio);

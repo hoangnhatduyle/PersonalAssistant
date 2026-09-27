@@ -54,8 +54,18 @@ export type TaskWithLabels = TaskRow & {
 // meeting_blocks is typed as generic Json by the Supabase generator, same
 // reason as CourseRow's override above — overridden here with the precise
 // MeetingBlock[] shape (Course-style recurrence, supabase/migrations/0035_appointment_recurrence.sql).
+//
+// appointment_occurrence_status is the embedded relation GET /api/appointments
+// selects alongside the row (`*, appointment_occurrence_status(occurrence_date, status)`,
+// supabase/migrations/0049_appointment_occurrence_status.sql) so the list
+// endpoint stays one round trip — resolveDisplayedEventStatus
+// (src/lib/appointments/occurrence-status.ts) is the only place this should
+// be read. Optional: absent on any response that doesn't select it (e.g. the
+// POST/PATCH/DELETE routes' returned row), and empty for a recurring
+// appointment with no occurrence-status rows yet.
 export type AppointmentRow = Omit<Database["public"]["Tables"]["appointments"]["Row"], "meeting_blocks"> & {
   meeting_blocks: MeetingBlock[];
+  appointment_occurrence_status?: Array<{ occurrence_date: string; status: Database["public"]["Enums"]["event_status"] }>;
 };
 export type SessionStatus = Database["public"]["Enums"]["session_status"];
 export type EventStatus = Database["public"]["Enums"]["event_status"];
