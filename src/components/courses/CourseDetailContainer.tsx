@@ -105,35 +105,39 @@ export function CourseDetailContainer({ courseId }: Props) {
         {deadlinesLoading ? <Skeleton className="h-24 w-full" /> : <DeadlineList deadlines={deadlines?.rows ?? []} />}
       </GlassPanel>
 
-      <GlassPanel className="flex flex-col gap-3 p-6">
-        <div className="flex items-center justify-between">
-          <p className="font-mono text-xs uppercase tracking-wide text-text-eyebrow">Board</p>
-          {list && <Switch checked={showCompleted} onCheckedChange={setShowCompleted} label="Show completed" />}
-        </div>
-        {boardLoading ? (
-          <Skeleton className="h-24 w-full" />
-        ) : !list ? (
-          <EmptyState title="No Board List yet" description="Create one from the Board." />
-        ) : visibleTasks.length === 0 ? (
-          listTasks.length === 0 ? (
-            <EmptyState title="No cards yet" description="Add a card from the Board." />
-          ) : (
-            <EmptyState title="Nothing open" description="Every card on this list is done or cancelled." />
-          )
-        ) : (
-          <div className="flex flex-col gap-2">
-            {visibleTasks.map((task) => (
-              // Course-scoped lists are owner-only (see /api/todo-lists POST) —
-              // person_id never gets set on these tasks, so no People fetch here.
-              <BoardCard key={task.id} task={task} personName={undefined} onOpenCard={setOpenCardId} />
-            ))}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2 lg:items-start">
+        <GlassPanel className="flex min-w-0 flex-col gap-3 p-6">
+          <div className="flex items-center justify-between">
+            <p className="font-mono text-xs uppercase tracking-wide text-text-eyebrow">Board</p>
+            {list && <Switch checked={showCompleted} onCheckedChange={setShowCompleted} label="Show completed" />}
           </div>
-        )}
-      </GlassPanel>
+          {boardLoading ? (
+            <Skeleton className="h-24 w-full" />
+          ) : !list ? (
+            <EmptyState title="No Board List yet" description="Create one from the Board." />
+          ) : visibleTasks.length === 0 ? (
+            listTasks.length === 0 ? (
+              <EmptyState title="No cards yet" description="Add a card from the Board." />
+            ) : (
+              <EmptyState title="Nothing open" description="Every card on this list is done or cancelled." />
+            )
+          ) : (
+            <div className="flex flex-col gap-2">
+              {visibleTasks.map((task) => (
+                // Course-scoped lists are owner-only (see /api/todo-lists POST) —
+                // person_id never gets set on these tasks, so no People fetch here.
+                <BoardCard key={task.id} task={task} personName={undefined} onOpenCard={setOpenCardId} />
+              ))}
+            </div>
+          )}
+        </GlassPanel>
+
+        <div className="min-w-0">
+          <NotesForTarget targetType="course" targetId={course.id} />
+        </div>
+      </div>
 
       <BoardCardDetailDialog taskId={openCardId} onClose={() => setOpenCardId(null)} />
-
-      <NotesForTarget targetType="course" targetId={course.id} />
     </div>
   );
 }
