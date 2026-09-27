@@ -25,7 +25,7 @@ describe("buildStaleItems", () => {
   it("includes an overdue open item untouched past the tightest tier", () => {
     const items = buildStaleItems([makeDeadline({ status: "Not Started", updated_at: daysAgoISO(10) })], []);
     expect(items).toHaveLength(1);
-    expect(items[0]).toMatchObject({ kind: "deadline", daysSinceUpdate: 10 });
+    expect(items[0]).toMatchObject({ kind: "deadline", daysSinceUpdate: 10, neglectRatio: 10, dueAt: expect.any(Date) });
   });
 
   it("excludes an open item within its due-date-scaled threshold", () => {
@@ -51,6 +51,20 @@ describe("buildStaleItems", () => {
       [makeTask({ id: "t-oldest", status: "Open", updated_at: daysAgoISO(20) })],
     );
     expect(items.map((item) => item.id)).toEqual(["t-oldest", "d-recent"]);
+  });
+
+  it("ranks items at the same neglect ratio by nearer due date, not raw days untouched", () => {
+    const items = buildStaleItems(
+      [
+        // 4-14 day tier -> 5-day threshold; 10 days untouched -> ratio 2.0, but due date is far out.
+        makeDeadline({ id: "d-lenient", status: "Not Started", due_at: daysFromNowISO(12), updated_at: daysAgoISO(10) }),
+      ],
+      [
+        // Within-3-day tier -> 1-day threshold; 2 days untouched -> ratio 2.0, and due tomorrow.
+        makeTask({ id: "t-tight", status: "Open", due_at: daysFromNowISO(1), updated_at: daysAgoISO(2) }),
+      ],
+    );
+    expect(items.map((item) => item.id)).toEqual(["t-tight", "d-lenient"]);
   });
 
   describe("due-date-scaled tiers", () => {
@@ -149,6 +163,40 @@ describe("buildStaleItems", () => {
       const items = buildStaleItems(
         [makeDeadline({ status: "Not Started", updated_at: daysAgoISO(10), acknowledged_at: daysAgoISO(30) })],
         [],
+      );
+      expect(items).toHaveLength(1);
+      expect(items[0].daysSinceUpdate).toBe(10);
+    });
+  });
+
+  describe("taskActivity (checklist/attachment/note last-touch)", () => {
+    it("resets a Task's clock when child activity is newer than updated_at", () => {
+      const items = buildStaleItems(
+        [],
+        [makeTask({ id: "t-1", status: "Open", updated_at: daysAgoISO(30) })],
+        [],
+        new Map([["t-1", new Date()]]),
+      );
+      expect(items).toHaveLength(0);
+    });
+
+    it("has no effect when child activity is older than updated_at", () => {
+      const items = buildStaleItems(
+        [],
+        [makeTask({ id: "t-1", status: "Open", updated_at: daysAgoISO(10) })],
+        [],
+        new Map([["t-1", new Date(daysAgoISO(30))]]),
+      );
+      expect(items).toHaveLength(1);
+      expect(items[0].daysSinceUpdate).toBe(10);
+    });
+
+    it("has no effect on a Deadline (taskActivity is keyed by task id only)", () => {
+      const items = buildStaleItems(
+        [makeDeadline({ id: "d-1", status: "Not Started", updated_at: daysAgoISO(10) })],
+        [],
+        [],
+        new Map([["d-1", new Date()]]),
       );
       expect(items).toHaveLength(1);
       expect(items[0].daysSinceUpdate).toBe(10);

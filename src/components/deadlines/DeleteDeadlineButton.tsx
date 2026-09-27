@@ -9,10 +9,12 @@ import { useToast } from "@/components/ui/Toast";
 
 type Props = {
   deadlineId: string;
+  /** A recurring deadline is one row per occurrence (see deadline-recurrence-gate.ts) — deleting this id only ever removes this one occurrence, never the series. The dialog copy says so explicitly so it doesn't read as ambiguous with the Cancel action's occurrence/series choice. */
+  isRecurring?: boolean;
 };
 
 /** Discloses `sessionsAffected` from the cascade result, mirroring how DeleteTaskButton discloses `notesUnlinked`. */
-export function DeleteDeadlineButton({ deadlineId }: Props) {
+export function DeleteDeadlineButton({ deadlineId, isRecurring = false }: Props) {
   const [open, setOpen] = useState(false);
   const router = useRouter();
   const deleteDeadline = useDeleteDeadline(deadlineId);
@@ -44,7 +46,11 @@ export function DeleteDeadlineButton({ deadlineId }: Props) {
         onClose={() => setOpen(false)}
         onConfirm={handleConfirm}
         title="Delete this deadline?"
-        description="This cannot be undone. Any planned sessions will be removed too."
+        description={
+          isRecurring
+            ? "This deletes only this occurrence — the rest of the series is not affected. Any sessions planned for this occurrence will be removed too. This cannot be undone."
+            : "This cannot be undone. Any sessions planned for it will be removed too."
+        }
         confirmLabel="Delete"
         isConfirming={deleteDeadline.isPending}
       />

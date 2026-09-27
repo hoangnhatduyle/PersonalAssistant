@@ -61,7 +61,7 @@ export function DeadlineDetailContainer({ deadlineId }: Props) {
           <Button variant="secondary" size="sm" onClick={() => setIsEditing((value) => !value)}>
             {isEditing ? "Cancel edit" : "Edit"}
           </Button>
-          <DeleteDeadlineButton deadlineId={deadline.id} />
+          <DeleteDeadlineButton deadlineId={deadline.id} isRecurring={deadline.recurrence_days.length > 0} />
         </div>
 
         {isEditing && (

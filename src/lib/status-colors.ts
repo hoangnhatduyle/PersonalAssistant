@@ -46,7 +46,7 @@ export const DEADLINE_STATUS_TONE: Record<DeadlineStatus, StatusTone> = {
   Submitted: "warn",
   Overdue: "urgent",
   Completed: "ok",
-  Cancelled: "neutral",
+  Cancelled: "urgent",
 };
 
 export const TASK_STATUS_TONE: Record<TaskStatus, StatusTone> = {

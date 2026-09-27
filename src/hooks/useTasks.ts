@@ -4,6 +4,7 @@ import { noteKeys, reminderKeys, taskKeys } from "@/lib/query/keys";
 import type { TaskPatch, TaskPayload } from "@/lib/api/schemas";
 import type { TaskRow, TaskWithLabels } from "@/lib/api/entity-types";
 import type { TaskTransitionEvent } from "@/lib/api/transitions";
+import type { TaskActivityEntry } from "@/app/api/tasks/activity/route";
 
 export interface TaskListFilters {
   includeDeleted?: boolean;
@@ -25,6 +26,13 @@ export function useTasks(filters?: TaskListFilters) {
       const { data, meta } = await apiFetch<TaskWithLabels[]>(`/api/tasks${toQueryString(filters ?? {})}`);
       return { rows: data, meta };
     },
+  });
+}
+
+export function useTaskActivity() {
+  return useQuery({
+    queryKey: taskKeys.activity(),
+    queryFn: async () => (await apiFetch<TaskActivityEntry[]>("/api/tasks/activity")).data,
   });
 }
 

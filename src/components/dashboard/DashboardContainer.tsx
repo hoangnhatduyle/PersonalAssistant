@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import { useDeadlines } from "@/hooks/useDeadlines";
-import { useTasks } from "@/hooks/useTasks";
+import { useTasks, useTaskActivity } from "@/hooks/useTasks";
 import { useTodoLists } from "@/hooks/useTodoLists";
 import { useCourses } from "@/hooks/useCourses";
 import { useAppointments } from "@/hooks/useAppointments";
@@ -29,6 +29,13 @@ export function DashboardContainer() {
   const { data: courses } = useCourses({ limit: 100 });
   const { data: appointments } = useAppointments({ limit: 100 });
   const { data: people, isLoading: peopleLoading } = usePeople();
+  const { data: taskActivity } = useTaskActivity();
+
+  const taskActivityMap = useMemo(() => {
+    const map = new Map<string, Date>();
+    for (const entry of taskActivity ?? []) map.set(entry.taskId, new Date(entry.lastActivityAt));
+    return map;
+  }, [taskActivity]);
 
   const isLoading = deadlinesLoading || tasksLoading || peopleLoading;
 
@@ -76,7 +83,12 @@ export function DashboardContainer() {
           </div>
 
           <div className="grid grid-cols-[minmax(0,1fr)] gap-6 md:grid-cols-2">
-            <StaleItemsCard deadlines={deadlines?.rows ?? []} tasks={mineOnlyTasks} appointments={appointments?.rows ?? []} />
+            <StaleItemsCard
+              deadlines={deadlines?.rows ?? []}
+              tasks={mineOnlyTasks}
+              appointments={appointments?.rows ?? []}
+              taskActivity={taskActivityMap}
+            />
             <CourseProgressList courses={courses?.rows ?? []} deadlines={deadlines?.rows ?? []} tasks={mineOnlyTasks} todoLists={todoLists?.rows ?? []} />
           </div>
         </>

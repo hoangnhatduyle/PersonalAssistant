@@ -19,7 +19,8 @@ export function DeadlineListContainer() {
   const [courseFilter, setCourseFilter] = useState("");
   const [isCreateOpen, setCreateOpen] = useState(false);
   // Hidden by default so the list opens on what's still actionable; a
-  // completed deadline stays a click away via the switch.
+  // completed or cancelled deadline (both terminal, both in the past) stays
+  // a click away via the switch.
   const [showCompleted, setShowCompleted] = useState(false);
   const { data: courses } = useCourses({ personId: "me" });
   const { data, isLoading } = useDeadlines({ personId: "me", ...(courseFilter ? { courseId: courseFilter } : {}) });
@@ -31,7 +32,7 @@ export function DeadlineListContainer() {
   const { showToast } = useToast();
 
   const visibleDeadlines = useMemo(
-    () => (data?.rows ?? []).filter((deadline) => showCompleted || deadline.status !== "Completed"),
+    () => (data?.rows ?? []).filter((deadline) => showCompleted || (deadline.status !== "Completed" && deadline.status !== "Cancelled")),
     [data, showCompleted],
   );
 
