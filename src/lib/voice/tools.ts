@@ -161,9 +161,14 @@ const MUTATION_FIELD_PROPERTIES_BASE = {
   operation: { type: "string", enum: ["create", "update", "delete", "acknowledge", "transition"] },
   target_id: {
     type: ["string", "null"],
-    description: "An id from the provided entity context (deadlines/tasks/sessions/todoLists/appointments lists as appropriate). Null only for a create.",
+    description:
+      "An id from the provided entity context (deadlines/tasks/sessions/todoLists/appointments lists as appropriate). Null for a create, and also allowed null on a Deadline series cancel (cancel_scope \"series\") when the occurrence is not yet chosen.",
   },
-  course_id: { type: ["string", "null"], description: "A course id from the entity context. Used by a Deadline create and, optionally, a Board List create." },
+  course_id: {
+    type: ["string", "null"],
+    description:
+      "A course id from the entity context. Create-only for a Deadline — never send it on a Deadline update (a Deadline's course cannot be changed after create; if the user asks to move one, explain that via respond_to_user). Optional on a Board List create.",
+  },
   title: { type: ["string", "null"], description: "Deadline/Task title, a new Deadline Session's title, or a general Event/Appointment's title." },
   due_at: { type: ["string", "null"], description: "Deadline/Task due date-time. ISO 8601 datetime with a UTC offset." },
   body: { type: ["string", "null"], description: "Note body." },
@@ -264,7 +269,17 @@ const MUTATION_FIELD_PROPERTIES = {
   },
 } as const;
 
-const MUTATION_FIELD_NAMES = Object.keys(MUTATION_FIELD_PROPERTIES) as (keyof typeof MUTATION_FIELD_PROPERTIES)[];
+export const MUTATION_FIELD_NAMES = Object.keys(MUTATION_FIELD_PROPERTIES) as (keyof typeof MUTATION_FIELD_PROPERTIES)[];
+
+/** save_mutation_draft advertises the same fields except additional_steps, which is always null on a draft. */
+const DRAFT_MUTATION_FIELD_PROPERTIES = {
+  ...MUTATION_FIELD_PROPERTIES_BASE,
+  additional_steps: {
+    type: "null" as const,
+    description: "Always null on a draft — a draft is incomplete, so it cannot yet have fully-resolved future steps.",
+  },
+};
+const DRAFT_MUTATION_FIELD_NAMES = Object.keys(DRAFT_MUTATION_FIELD_PROPERTIES) as (keyof typeof DRAFT_MUTATION_FIELD_PROPERTIES)[];
 
 export interface SaveMutationDraftArgs {
   question: string;
@@ -275,7 +290,7 @@ export const CONVERSATION_TOOLS = [
     type: "function",
     name: "get_schedule",
     description:
-      'Look up the user\'s Deadlines, Tasks (including ones filed under a Board List), Course meeting/class occurrences, planned Deadline work Sessions, and personal Appointments/Events due or happening within a time window. Returns structured data already grouped by day and sorted by priority -- narrate it yourself in prose, never invent your own ordering, and never re-rank it. Also returns overdueItems: still-open Deadlines/Tasks already past their due day, already ranked by priority then by how long overdue (longest first) -- when non-empty, always narrate these before anything in the day-grouped data. Always empty for window: "date" (a single specific day never pulls in unrelated overdue items from other days). An Appointment/Event\'s context may note a scheduling conflict with another appointment -- always relay that plainly. Today\'s schedule (window: "date", date: today) is already provided to you in the system prompt -- do not call this tool for today again. Call it with window: "date" for any other single day (resolve "yesterday", "tomorrow", "3 days ago", "next Tuesday", etc. into a YYYY-MM-DD date yourself first, the same way you resolve due_at for a mutation), or window: "week"/"unscoped" for a range.',
+      'Look up the user\'s Deadlines, Tasks (including ones filed under a Board List), Course meeting/class occurrences, planned Deadline work Sessions, and personal Appointments/Events due or happening within a time window. Returns structured data already grouped by day and sorted by priority -- narrate it yourself in prose, never invent your own ordering, and never re-rank it. Also returns overdueItems: still-open Deadlines/Tasks already past their due day, already ranked by priority then by how long overdue (longest first) -- when non-empty, always narrate these before anything in the day-grouped data. Always empty for window: "date" (a single specific day never pulls in unrelated overdue items from other days). An Appointment/Event\'s context may note a scheduling conflict with another appointment -- always relay that plainly. Today\'s schedule (window: "date", date: today) is already provided to you in the turn context -- do not call this tool for today again. Call it with window: "date" for any other single day (resolve "yesterday", "tomorrow", "3 days ago", "next Tuesday", etc. into a YYYY-MM-DD date yourself first, the same way you resolve due_at for a mutation), or window: "week"/"unscoped" for a range.',
     strict: true,
     parameters: {
       type: "object",
@@ -412,9 +427,9 @@ export const CONVERSATION_TOOLS = [
       type: "object",
       properties: {
         question: { type: "string", description: "The natural spoken question asking the user for exactly the missing information, to be spoken back to them." },
-        ...MUTATION_FIELD_PROPERTIES,
+        ...DRAFT_MUTATION_FIELD_PROPERTIES,
       },
-      required: ["question", ...MUTATION_FIELD_NAMES],
+      required: ["question", ...DRAFT_MUTATION_FIELD_NAMES],
       additionalProperties: false,
     },
   },

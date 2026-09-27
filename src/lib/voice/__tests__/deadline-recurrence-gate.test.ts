@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { getValidDeadlineEvents } from "@/lib/api/transitions";
 import { mutationDraftSchema, type RawMutation } from "@/lib/voice/intent";
 import {
   CANCEL_SCOPE_QUESTION,
@@ -9,6 +10,23 @@ import {
 
 const COURSE_ID = "11111111-1111-4111-8111-111111111111";
 const TARGET_ID = "22222222-2222-4222-8222-222222222222";
+
+/**
+ * An entity-context deadline row. validEvents comes from the real transition
+ * table rather than a literal, so a change to the state machine surfaces here
+ * instead of leaving the fixture describing events the status no longer allows.
+ */
+function contextDeadline(overrides: { id: string; title?: string; recurring?: boolean }) {
+  return {
+    title: "Weekly quiz",
+    course_id: COURSE_ID,
+    due_at: "2026-09-21T22:00:00.000Z",
+    status: "Not Started" as const,
+    recurring: true,
+    validEvents: getValidDeadlineEvents("Not Started"),
+    ...overrides,
+  };
+}
 
 function deadline(overrides: Record<string, unknown> = {}): RawMutation {
   return mutationDraftSchema.parse({
@@ -65,7 +83,13 @@ describe("gateDeadlineRecurrence", () => {
   });
 
   it("asks on an update only to fill in missing days when the user asked it to repeat", () => {
-    const update = deadline({ operation: "update", target_id: TARGET_ID, recurring: true, recurrence_days: [] });
+    const update = deadline({
+      operation: "update",
+      target_id: TARGET_ID,
+      course_id: null,
+      recurring: true,
+      recurrence_days: [],
+    });
     expect(gateDeadlineRecurrence(update, null, NO_DEADLINES)).toEqual({ kind: "ask", question: RECURRENCE_DAYS_QUESTION, mutation: update });
   });
 
@@ -88,7 +112,7 @@ describe("gateDeadlineRecurrence", () => {
   });
 
   describe("cancelling a repeating deadline", () => {
-    const REPEATING = { id: TARGET_ID, title: "Weekly quiz", course_id: COURSE_ID, due_at: "2026-09-21T22:00:00.000Z", status: "Not Started" as const, recurring: true };
+    const REPEATING = contextDeadline({ id: TARGET_ID });
     const ONE_OFF = { ...REPEATING, recurring: false };
     const cancel = (overrides: Record<string, unknown> = {}) =>
       mutationDraftSchema.parse({
@@ -129,6 +153,26 @@ describe("gateDeadlineRecurrence", () => {
       const raw = cancel({ event: "user_marks_in_progress" });
       expect(gateDeadlineRecurrence(raw, null, { deadlines: [REPEATING] })).toEqual({ kind: "proceed", mutation: raw });
     });
+
+    it("fills target_id from the unique matching recurring title when a series cancel omits it", () => {
+      const raw = cancel({ target_id: null, title: "Weekly quiz", cancel_scope: "series" });
+      expect(gateDeadlineRecurrence(raw, null, { deadlines: [REPEATING] })).toEqual({
+        kind: "proceed",
+        mutation: { ...raw, target_id: TARGET_ID },
+      });
+    });
+
+    it("asks which series when two recurring titles could match a series cancel without target_id", () => {
+      const OTHER = contextDeadline({ id: "33333333-3333-4333-8333-333333333333", title: "Lab writeup" });
+      const raw = cancel({ target_id: null, title: null, cancel_scope: "series" });
+      const result = gateDeadlineRecurrence(raw, null, { deadlines: [REPEATING, OTHER] });
+      expect(result.kind).toBe("ask");
+      if (result.kind === "ask") {
+        expect(result.question).toMatch(/Weekly quiz/);
+        expect(result.question).toMatch(/Lab writeup/);
+        expect(result.question).not.toMatch(/September|due /);
+      }
+    });
   });
 
   describe("the already-asked guard only applies to the same deadline", () => {
@@ -153,7 +197,7 @@ describe("gateDeadlineRecurrence", () => {
 
     it("asks the cancel-scope question again for a different repeating deadline", () => {
       const OTHER_ID = "33333333-3333-4333-8333-333333333333";
-      const repeating = (id: string) => ({ id, title: "Quiz", course_id: COURSE_ID, due_at: "2026-09-21T22:00:00.000Z", status: "Not Started" as const, recurring: true });
+      const repeating = (id: string) => contextDeadline({ id, title: "Quiz" });
       const cancel = (id: string) =>
         mutationDraftSchema.parse({ target_type: "deadline", operation: "transition", target_id: id, course_id: null, title: null, due_at: null, priority: null, event: "user_cancels" });
       const result = gateDeadlineRecurrence(cancel(OTHER_ID), draftAsking(CANCEL_SCOPE_QUESTION, cancel(TARGET_ID)), {

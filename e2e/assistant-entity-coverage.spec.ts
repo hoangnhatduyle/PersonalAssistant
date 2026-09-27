@@ -142,36 +142,18 @@ test.describe("assistant: Deadlines (full transition chain + update fields)", ()
     expect(renamed?.title.toLowerCase()).toContain("final term paper");
   });
 
-  // FINDING (pre-existing, not caused by this migration): deadlinePatchSchema
-  // (src/lib/api/schemas.ts) deliberately omits course_id -- a Deadline's
-  // course is immutable after creation, by the same design as a Session's
-  // deadline_id. But propose_mutation's tool schema exposes course_id
-  // unconditionally on every operation including "update", with nothing
-  // telling the model it's create-only. Asked to "move" a deadline to a
-  // different course, gpt-5.6-luna correctly matched the target course and
-  // even spoke a confirmation naming both courses ("move it from HIST 100 to
-  // HIST 200") -- but the actual update silently dropped course_id (the app
-  // layer enforcing its own invariant), so the executed change was only the
-  // title. The confirmation prompt over-promised what actually happened,
-  // which a user has no way to notice from the UI alone. Worth either
-  // exposing course reassignment as a real supported update, or narrowing
-  // the tool schema/system prompt so the model never proposes it in the
-  // first place.
-  test("a 'move to a different course' request is accepted and confirmed, but the course silently does not change (documents a real gap)", async ({ page }) => {
+  test("a request to move a deadline to a different course is refused and the course does not change", async ({ page }) => {
     const user = await createUserAndSignIn(page);
     const courseA = await seedCourse(user.userId, "HIST 300");
-    const courseB = await seedCourse(user.userId, "HIST 400");
+    await seedCourse(user.userId, "HIST 400");
     const id = await createDeadline(admin, user.userId, courseA, { title: "Book Review" });
     await openAssistant(page);
 
-    const { prompt } = await runMutation(page, "Move my Book Review deadline to my HIST 400 course");
-    expect(prompt.toLowerCase()).toMatch(/hist 400/);
+    const answer = await askAssistant(page, "Move my Book Review deadline to my HIST 400 course");
+    await expect(page.getByRole("button", { name: "Confirm", exact: true })).toHaveCount(0);
+    expect(answer.toLowerCase()).not.toMatch(/\b(moved|i'll move|i will move|reassigned)\b/);
 
     const { data } = await admin.from("deadlines").select("course_id").eq("id", id).single();
-    // Documents current (unintended-looking) behavior, not desired behavior --
-    // see the FINDING comment above. If this assertion ever starts failing
-    // because course_id actually changed, the finding above is resolved and
-    // this test should be rewritten to assert the successful move instead.
     expect(data?.course_id).toBe(courseA);
   });
 });

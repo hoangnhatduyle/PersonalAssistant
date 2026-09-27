@@ -6,6 +6,12 @@ import { getFirstOccurrenceEndOfDay } from "@/lib/deadlines/recurrence";
 import { localEndOfTodayUtc } from "@/lib/voice/schedule-time-window";
 import { MAX_REMINDER_LEAD_MINUTES } from "@/lib/reminders/lead-time";
 import { MAX_APPOINTMENT_DURATION_MINUTES } from "@/lib/appointments/types";
+import {
+  getValidDeadlineEvents,
+  getValidEventEvents,
+  getValidSessionEvents,
+  getValidTaskEvents,
+} from "@/lib/api/transitions";
 
 // Shared across the deadline/task mutation variants below — mirrors
 // supabase/migrations/0021_item_priority.sql's item_priority enum. A bare
@@ -176,13 +182,23 @@ export const mutationSchema = mutationSchemaBase.superRefine((value, ctx) => {
       return;
     }
     case "deadline": {
-      requireTargetIdUnlessCreate(value, ctx);
+      const seriesCancel = value.operation === "transition" && value.event === "user_cancels" && value.cancel_scope === "series";
+      // Whole-series cancel does not need a specific occurrence: the gate
+      // fills target_id from the unique matching series, or asks which series.
+      if (!seriesCancel) requireTargetIdUnlessCreate(value, ctx);
       // due_at is intentionally NOT required here (unlike course_id/title) --
       // toPendingMutation defaults a create's missing due_at to end-of-today
       // in the user's timezone, so a deadline with no date given still
       // resolves to a real instant instead of failing validation.
       if (value.operation === "create" && (!value.course_id || !value.title)) {
         ctx.addIssue({ code: "custom", message: "course_id and title are required to create a deadline", path: ["title"] });
+      }
+      if (value.operation === "update" && value.course_id) {
+        ctx.addIssue({
+          code: "custom",
+          message: "course_id cannot be changed on a deadline update — a Deadline's course is fixed at create time",
+          path: ["course_id"],
+        });
       }
       if (value.operation === "transition" && !value.event) {
         ctx.addIssue({ code: "custom", message: "event is required for a transition operation", path: ["event"] });
@@ -288,6 +304,21 @@ export const additionalStepsSchema = z.array(queuedMutationStepSchema).max(20).n
  */
 export const mutationDraftSchema = mutationSchemaBase;
 
+/**
+ * The transition events that are legal from an entity's CURRENT status,
+ * derived from src/lib/api/transitions.ts -- the same tables the API route and
+ * the DB guard trigger enforce, and the same helpers the UI uses to gate its
+ * status dropdown.
+ *
+ * Listed per entity rather than left to the model to infer from the prompt's
+ * prose. `event`'s tool-schema enum can only be the union of every
+ * target_type's vocabulary (a flat JSON schema cannot discriminate on
+ * target_type, let alone on a row's status), so without this the model had no
+ * way to tell that "mark done" is unreachable from "Not Started" -- and
+ * reliably proposed it anyway at 0.97+ confidence.
+ */
+type ValidEvents = { validEvents: string[] };
+
 export interface EntityContext {
   // code is what a student says out loud ("PHYS 6540"); the name alone never
   // matches a spoken code, which once made a deadline create unresolvable.
@@ -295,11 +326,13 @@ export interface EntityContext {
   // due_at/status/recurring: every occurrence of a repeating deadline is its
   // own row with the SAME title, so due date (and status) is what tells them
   // apart; `recurring` drives the cancel-scope question.
-  deadlines: Array<{ id: string; title: string; course_id: string; due_at: string; status: Database["public"]["Enums"]["deadline_status"]; recurring: boolean }>;
+  deadlines: Array<
+    { id: string; title: string; course_id: string; due_at: string; status: Database["public"]["Enums"]["deadline_status"]; recurring: boolean } & ValidEvents
+  >;
   // list_id (board merge, 0029_board_merge.sql) -- lets the model match "the
   // task in my grocery list" against the right Task when a title alone is
   // ambiguous, the same way a deadline's course_id disambiguates it.
-  tasks: Array<{ id: string; title: string; list_id: string | null }>;
+  tasks: Array<{ id: string; title: string; list_id: string | null; status: Database["public"]["Enums"]["task_status"] } & ValidEvents>;
   // Board Lists (todo_lists, 0015_course_todos.sql) -- for resolving a
   // Task's list_id, or an existing list's id by name, the same "id from the
   // entity context, never invented" pattern as deadlines/tasks above.
@@ -307,12 +340,14 @@ export interface EntityContext {
   // Deadline Sessions (0025_deadline_sessions.sql) -- appointments rows
   // tagged category "Session", for resolving an existing session's id to
   // delete/mark done/mark skipped.
-  sessions: Array<{ id: string; title: string; deadline_id: string | null }>;
+  sessions: Array<{ id: string; title: string; deadline_id: string | null; status: Database["public"]["Enums"]["session_status"] } & ValidEvents>;
   // General Appointments/Events (appointments rows, category != "Session")
   // -- for matching an existing one by title on an update/delete/transition,
   // the same "id from the entity context, never invented" pattern as
   // deadlines/tasks/sessions above.
-  appointments: Array<{ id: string; title: string; date: string; time: string | null }>;
+  appointments: Array<
+    { id: string; title: string; date: string; time: string | null; status: Database["public"]["Enums"]["event_status"] } & ValidEvents
+  >;
   // Bug fix: without this, mutation-vs-read-only classification had zero
   // visibility into what the user's knowledge base actually contains, so a
   // request naming a saved source by its own title/topic (e.g. "test the
@@ -354,12 +389,12 @@ export async function loadEntityContext(supabase: SupabaseClient<Database>, user
   ] = await Promise.all([
     supabase.from("courses").select("id, code, name").eq("user_id", userId).is("person_id", null).is("deleted_at", null),
     supabase.from("deadlines").select("id, title, course_id, due_at, status, recurrence_days").eq("user_id", userId).is("person_id", null).is("deleted_at", null),
-    supabase.from("tasks").select("id, title, list_id").eq("user_id", userId).is("person_id", null).is("deleted_at", null),
+    supabase.from("tasks").select("id, title, list_id, status").eq("user_id", userId).is("person_id", null).is("deleted_at", null),
     supabase.from("todo_lists").select("id, name, course_id").eq("user_id", userId).is("deleted_at", null),
-    supabase.from("appointments").select("id, title, deadline_id").eq("user_id", userId).eq("category", "Session").is("deleted_at", null),
+    supabase.from("appointments").select("id, title, deadline_id, session_status").eq("user_id", userId).eq("category", "Session").is("deleted_at", null),
     // Same owner-only, not-deleted filter schedule-loader.ts's loadSchedule
     // already applies for the general-Events branch of this same table.
-    supabase.from("appointments").select("id, title, date, time").eq("user_id", userId).neq("category", "Session").is("deleted_at", null),
+    supabase.from("appointments").select("id, title, date, time, event_status").eq("user_id", userId).neq("category", "Session").is("deleted_at", null),
     supabase.from("knowledge_sources").select("id, title").eq("user_id", userId).eq("status", "Ready"),
     supabase.from("people").select("id, name, relationship").eq("user_id", userId).is("deleted_at", null),
   ]);
@@ -371,11 +406,24 @@ export async function loadEntityContext(supabase: SupabaseClient<Database>, user
     // exactly as before.
     deadlines: (deadlines ?? [])
       .filter((deadline) => deadline.recurrence_days.length === 0 || (deadline.status !== "Completed" && deadline.status !== "Cancelled"))
-      .map(({ recurrence_days, ...deadline }) => ({ ...deadline, recurring: recurrence_days.length > 0 })),
-    tasks: tasks ?? [],
+      .map(({ recurrence_days, ...deadline }) => ({
+        ...deadline,
+        recurring: recurrence_days.length > 0,
+        validEvents: getValidDeadlineEvents(deadline.status),
+      })),
+    tasks: (tasks ?? []).map((task) => ({ ...task, validEvents: getValidTaskEvents(task.status) })),
     todoLists: todoLists ?? [],
-    sessions: sessions ?? [],
-    appointments: appointments ?? [],
+    // session_status/event_status are nullable columns on the shared
+    // appointments table; a row that has never transitioned reads as "planned",
+    // which is what both guard triggers treat null as.
+    sessions: (sessions ?? []).map(({ session_status, ...session }) => {
+      const status = session_status ?? "planned";
+      return { ...session, status, validEvents: getValidSessionEvents(status) };
+    }),
+    appointments: (appointments ?? []).map(({ event_status, ...appointment }) => {
+      const status = event_status ?? "planned";
+      return { ...appointment, status, validEvents: getValidEventEvents(status) };
+    }),
     knowledgeSources: knowledgeSources ?? [],
     people: people ?? [],
   };

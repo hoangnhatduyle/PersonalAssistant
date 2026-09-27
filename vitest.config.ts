@@ -12,7 +12,10 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     globals: true,
-    exclude: ["e2e/**", "node_modules/**", ".next/**"],
+    // evals/** is a live assistant eval: it needs a real OPENAI_API_KEY and a
+    // running local Supabase, and costs money per run. Excluded here so the
+    // ordinary unit-test run stays hermetic -- run it via `bash evals/run.sh`.
+    exclude: ["e2e/**", "evals/**", "node_modules/**", ".next/**"],
     setupFiles: ["./vitest.setup.ts"],
   },
 });

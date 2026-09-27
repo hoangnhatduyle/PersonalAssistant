@@ -61,14 +61,36 @@ import { loadDraftMutation } from "@/lib/voice/conversation-memory";
 import { CANCEL_SCOPE_QUESTION, RECURRENCE_DAYS_QUESTION, RECURRENCE_QUESTION } from "@/lib/voice/deadline-recurrence-gate";
 import { runSuggestionsLookup } from "@/lib/voice/suggestions-lookup";
 import { runDeadlineProgressLookup } from "@/lib/voice/deadline-progress-lookup";
-import { loadEntityContext, loadUserTimezone, mutationDraftSchema } from "@/lib/voice/intent";
-import { runConversationTurn } from "../conversation-core";
+import { loadEntityContext, loadUserTimezone, mutationDraftSchema, type EntityContext } from "@/lib/voice/intent";
+import { getValidDeadlineEvents } from "@/lib/api/transitions";
+import { CONVERSATION_SYSTEM_PROMPT, runConversationTurn } from "../conversation-core";
 
 const VALID_TARGET_ID = "11111111-1111-4111-8111-111111111111";
 const PERSON_ID = "22222222-2222-4222-8222-222222222222";
 const UNKNOWN_PERSON_ID = "33333333-3333-4333-8333-333333333333";
 const DEADLINE_ID = "44444444-4444-4444-8444-444444444444";
 const fakeSupabase = {} as SupabaseClient<Database>;
+
+/**
+ * An entity-context deadline row. validEvents comes from the real transition
+ * table rather than a literal, so a change to the state machine surfaces here
+ * instead of leaving the fixture quietly describing a status that no longer
+ * permits those events.
+ */
+function contextDeadline(
+  overrides: Partial<EntityContext["deadlines"][number]> & { id: string },
+): EntityContext["deadlines"][number] {
+  const status = overrides.status ?? "Not Started";
+  return {
+    title: "Homework 1",
+    course_id: "course-1",
+    due_at: "2026-09-25T22:00:00.000Z",
+    recurring: false,
+    ...overrides,
+    status,
+    validEvents: getValidDeadlineEvents(status),
+  };
+}
 
 interface FakeToolCall {
   id: string;
@@ -400,13 +422,19 @@ describe("runConversationTurn", () => {
 
     expect(loadSchedule).toHaveBeenCalledWith(fakeSupabase, "user-1", "today", expect.any(Date));
     const [firstCallArgs] = mocks.responsesCreate.mock.calls[0];
-    expect(firstCallArgs.instructions).toContain("Submit form");
+    expect(firstCallArgs.instructions).toBe(CONVERSATION_SYSTEM_PROMPT);
+    expect(firstCallArgs.instructions).not.toContain("Current time:");
     expect(firstCallArgs.instructions).toContain("never call get_schedule for today again");
+    expect(firstCallArgs.instructions).toContain("rank 1–3 items and say what has to slip");
     // Regression guard for a real observed hallucination: the model carried
     // a recurring class forward from an earlier turn's answer into a day it
     // didn't actually meet on. Just asserts the guarding instruction is
     // present in the built prompt -- LLM behavior itself isn't unit-testable.
     expect(firstCallArgs.instructions).toContain("never add an item that isn't actually present in the specific result");
+    const turnContext = (firstCallArgs.input as Array<{ role: string; content?: string }>)[0];
+    expect(turnContext.role).toBe("developer");
+    expect(turnContext.content).toContain("Submit form");
+    expect(turnContext.content).toContain("Current time:");
     expect(result).toEqual({ kind: "answer", message: "Submit form is due today.", needsFollowUp: false, conversationId: "conv-1" });
     expect(mocks.responsesCreate).toHaveBeenCalledTimes(1);
     expect(firstCallArgs.reasoning.effort).toBe("low");
@@ -447,7 +475,10 @@ describe("runConversationTurn", () => {
   });
 
   describe("spoken-input handling", () => {
-    async function systemPromptFor(courses: Array<{ id: string; code: string | null; name: string }>): Promise<string> {
+    async function promptPartsFor(courses: Array<{ id: string; code: string | null; name: string }>): Promise<{
+      instructions: string;
+      turnContext: string;
+    }> {
       vi.mocked(loadEntityContext).mockResolvedValueOnce({
         courses,
         deadlines: [],
@@ -463,7 +494,11 @@ describe("runConversationTurn", () => {
         toolCallResponse([{ id: "call_1", name: "respond_to_user", arguments: { message: "ok", needs_follow_up: false } }]),
       );
       await runConversationTurn(fakeSupabase, "user-1", "hello", "conv-1");
-      return mocks.responsesCreate.mock.calls[0][0].instructions as string;
+      const args = mocks.responsesCreate.mock.calls[0][0];
+      return {
+        instructions: args.instructions as string,
+        turnContext: (args.input as Array<{ content?: string }>)[0].content ?? "",
+      };
     }
 
     // The live model once resolved "Friday" to Thursday the 24th from a bare ISO timestamp -- weekday
@@ -473,12 +508,12 @@ describe("runConversationTurn", () => {
       vi.setSystemTime(new Date("2026-09-22T02:37:00Z")); // 10:37 PM Monday in New York
       try {
         vi.mocked(loadUserTimezone).mockResolvedValueOnce("America/New_York");
-        const prompt = await systemPromptFor([]);
-        expect(prompt).toContain("Monday, September 21, 2026");
-        expect(prompt).toContain("Friday 2026-09-25");
-        expect(prompt).toContain("Wednesday 2026-09-23");
-        expect(prompt).toContain("Sunday 2026-10-04");
-        expect(prompt).not.toContain("2026-10-05");
+        const { turnContext } = await promptPartsFor([]);
+        expect(turnContext).toContain("Monday, September 21, 2026");
+        expect(turnContext).toContain("Friday 2026-09-25");
+        expect(turnContext).toContain("Wednesday 2026-09-23");
+        expect(turnContext).toContain("Sunday 2026-10-04");
+        expect(turnContext).not.toContain("2026-10-05");
       } finally {
         vi.useRealTimers();
       }
@@ -505,12 +540,12 @@ describe("runConversationTurn", () => {
     });
 
     it("gives the model each course's code, so a spoken 'P H Y S six five four zero' can be matched to a real course id", async () => {
-      const prompt = await systemPromptFor([{ id: VALID_TARGET_ID, code: "PHYS 6540", name: "Structure, Defects and Diffusion" }]);
-      expect(prompt).toContain('"code":"PHYS 6540"');
+      const { turnContext } = await promptPartsFor([{ id: VALID_TARGET_ID, code: "PHYS 6540", name: "Structure, Defects and Diffusion" }]);
+      expect(turnContext).toContain('"code":"PHYS 6540"');
     });
 
     it("tells the model how to treat hesitations, pauses, self-corrections, and spelled-out codes in speech", async () => {
-      const prompt = await systemPromptFor([]);
+      const { instructions: prompt } = await promptPartsFor([]);
       expect(prompt).toMatch(/Spoken input/i);
       expect(prompt).toMatch(/um|uh|hmm/i);
       expect(prompt).toMatch(/self-correct|changes? (?:their|his|her) mind|corrects? themselves/i);
@@ -631,7 +666,7 @@ describe("runConversationTurn", () => {
     it("resolves a deadline_id present in the entity context and relays the lookup's message", async () => {
       vi.mocked(loadEntityContext).mockResolvedValueOnce({
         courses: [],
-        deadlines: [{ id: DEADLINE_ID, title: "Homework 1", course_id: "course-1", due_at: "2026-09-25T22:00:00.000Z", status: "Not Started" as const, recurring: false }],
+        deadlines: [contextDeadline({ id: DEADLINE_ID, title: "Homework 1" })],
         tasks: [],
         todoLists: [],
         sessions: [],
@@ -664,7 +699,7 @@ describe("runConversationTurn", () => {
     it("feeds a malformed (non-UUID) deadline_id back to the model as a tool error instead of crashing the turn", async () => {
       vi.mocked(loadEntityContext).mockResolvedValueOnce({
         courses: [],
-        deadlines: [{ id: DEADLINE_ID, title: "Homework 1", course_id: "course-1", due_at: "2026-09-25T22:00:00.000Z", status: "Not Started" as const, recurring: false }],
+        deadlines: [contextDeadline({ id: DEADLINE_ID, title: "Homework 1" })],
         tasks: [],
         todoLists: [],
         sessions: [],
@@ -689,7 +724,7 @@ describe("runConversationTurn", () => {
     it("rejects a deadline_id that is not in the entity context, without calling the lookup for it", async () => {
       vi.mocked(loadEntityContext).mockResolvedValueOnce({
         courses: [],
-        deadlines: [{ id: DEADLINE_ID, title: "Homework 1", course_id: "course-1", due_at: "2026-09-25T22:00:00.000Z", status: "Not Started" as const, recurring: false }],
+        deadlines: [contextDeadline({ id: DEADLINE_ID, title: "Homework 1" })],
         tasks: [],
         todoLists: [],
         sessions: [],
@@ -828,7 +863,7 @@ describe("runConversationTurn", () => {
       vi.mocked(loadDraftMutation).mockResolvedValue(null);
       vi.mocked(loadEntityContext).mockResolvedValue({
         courses: [],
-        deadlines: [{ id: REPEATING_ID, title: "Weekly quiz", course_id: "course-1", due_at: "2026-09-21T22:00:00.000Z", status: "Not Started", recurring: true }],
+        deadlines: [contextDeadline({ id: REPEATING_ID, title: "Weekly quiz", due_at: "2026-09-21T22:00:00.000Z", recurring: true })],
         tasks: [],
         todoLists: [],
         sessions: [],
@@ -844,6 +879,25 @@ describe("runConversationTurn", () => {
       const result = await runConversationTurn(fakeSupabase, "user-1", "cancel my weekly quiz", "conv-1");
 
       expect(result).toMatchObject({ kind: "answer", message: CANCEL_SCOPE_QUESTION, needsFollowUp: true, draftMutation: { question: CANCEL_SCOPE_QUESTION } });
+    });
+
+    it("fills target_id for a whole-series cancel that omitted the occurrence", async () => {
+      mocks.responsesCreate.mockResolvedValueOnce(
+        toolCallResponse([
+          {
+            id: "c1",
+            name: "propose_mutation",
+            arguments: { ...cancelArgs, target_id: null, title: "Weekly quiz", cancel_scope: "series" },
+          },
+        ]),
+      );
+
+      const result = await runConversationTurn(fakeSupabase, "user-1", "cancel the whole weekly quiz series", "conv-1");
+
+      expect(result).toMatchObject({
+        kind: "mutation_proposal",
+        mutation: { targetType: "deadline", operation: "transition", targetId: REPEATING_ID, event: "user_cancels", cancelScope: "series" },
+      });
     });
 
     it("proposes a whole-series cancel once the user chose it", async () => {
@@ -867,6 +921,55 @@ describe("runConversationTurn", () => {
 
       expect(result).toMatchObject({ kind: "mutation_proposal", mutation: { cancelScope: "occurrence" } });
     });
+  });
+
+  it("turns a high-confidence illegal deadline transition into a clarifying question instead of a proposal", async () => {
+    const HOMEWORK_ID = "77777777-7777-4777-8777-777777777777";
+    vi.mocked(loadEntityContext).mockResolvedValueOnce({
+      courses: [],
+      deadlines: [contextDeadline({ id: HOMEWORK_ID, title: "Homework 5", status: "Not Started" })],
+      tasks: [],
+      todoLists: [],
+      sessions: [],
+      appointments: [],
+      knowledgeSources: [],
+      people: [],
+    });
+    mocks.responsesCreate.mockReset();
+    mocks.responsesCreate.mockResolvedValueOnce(
+      toolCallResponse([
+        {
+          id: "c1",
+          name: "propose_mutation",
+          arguments: {
+            confidence: 0.99,
+            summary: "Mark Homework 5 as completed.",
+            target_type: "deadline",
+            operation: "transition",
+            target_id: HOMEWORK_ID,
+            course_id: null,
+            title: null,
+            due_at: null,
+            priority: null,
+            reminder_lead_minutes: null,
+            event: "user_confirms_done",
+            snooze_until: null,
+          },
+        },
+      ]),
+    );
+
+    const result = await runConversationTurn(fakeSupabase, "user-1", "mark homework 5 done", "conv-1");
+
+    expect(result.kind).toBe("answer");
+    expect(result).toMatchObject({
+      kind: "answer",
+      needsFollowUp: true,
+      draftMutation: { question: expect.stringMatching(/Homework 5 is currently Not Started/) },
+    });
+    if (result.kind === "answer") {
+      expect(result.message).toMatch(/mark it in progress/);
+    }
   });
 
   // Responses-API-specific behavior with no Chat-Completions analog -- these

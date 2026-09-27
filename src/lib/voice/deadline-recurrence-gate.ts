@@ -19,6 +19,7 @@ import type { DraftMutationRecord } from "@/lib/voice/conversation-memory";
 export const RECURRENCE_QUESTION = "Should this deadline repeat weekly? If so, tell me which days and until when.";
 export const RECURRENCE_DAYS_QUESTION = "Which days of the week should it repeat on, and until when?";
 export const CANCEL_SCOPE_QUESTION = "That deadline repeats. Should I cancel just this occurrence, or the whole series?";
+export const CANCEL_SERIES_WHICH_QUESTION = "Which repeating series should I cancel?";
 
 export type RecurrenceGateResult =
   | { kind: "ask"; question: string; mutation: RawMutation }
@@ -45,15 +46,50 @@ function alreadyAsked(draft: DraftMutationRecord | null, question: string, curre
   return draft?.question === question && isSameSubject(draft.mutation, current);
 }
 
+function seriesKey(deadline: EntityContext["deadlines"][number]): string {
+  return `${normalizeTitle(deadline.title)}::${deadline.course_id}`;
+}
+
+function uniqueSeries(deadlines: EntityContext["deadlines"]): EntityContext["deadlines"] {
+  const seen = new Set<string>();
+  const unique: EntityContext["deadlines"] = [];
+  for (const deadline of deadlines) {
+    const key = seriesKey(deadline);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(deadline);
+  }
+  return unique;
+}
+
+function whichSeriesQuestion(series: EntityContext["deadlines"], courses: EntityContext["courses"] = []): string {
+  const labels = series.map((deadline) => {
+    const course = courses.find((row) => row.id === deadline.course_id);
+    const courseLabel = course?.code || course?.name;
+    return courseLabel ? `${deadline.title} for ${courseLabel}` : deadline.title;
+  });
+  if (labels.length <= 1) return CANCEL_SERIES_WHICH_QUESTION;
+  if (labels.length === 2) return `Which repeating series should I cancel — ${labels[0]}, or ${labels[1]}?`;
+  return `Which repeating series should I cancel — ${labels.slice(0, -1).join(", ")}, or ${labels.at(-1)}?`;
+}
+
 export function gateDeadlineRecurrence(
   raw: RawMutation,
   openDraft: DraftMutationRecord | null,
-  context: Pick<EntityContext, "deadlines">,
+  context: Pick<EntityContext, "deadlines"> & Partial<Pick<EntityContext, "courses">>,
 ): RecurrenceGateResult {
   if (raw.target_type !== "deadline") return { kind: "proceed", mutation: raw };
 
   // Cancelling a repeating deadline: ask which scope once; unclear = just this occurrence (the least destructive).
   if (raw.operation === "transition") {
+    if (raw.event === "user_cancels" && raw.cancel_scope === "series" && !raw.target_id) {
+      const recurring = context.deadlines.filter((deadline) => deadline.recurring);
+      const titled = raw.title ? recurring.filter((deadline) => normalizeTitle(deadline.title) === normalizeTitle(raw.title)) : recurring;
+      const series = uniqueSeries(titled);
+      if (series.length === 1) return { kind: "proceed", mutation: { ...raw, target_id: series[0].id } };
+      if (series.length > 1) return { kind: "ask", question: whichSeriesQuestion(series, context.courses ?? []), mutation: raw };
+      return { kind: "proceed", mutation: raw };
+    }
     const target = context.deadlines.find((deadline) => deadline.id === raw.target_id);
     if (raw.event !== "user_cancels" || !target?.recurring || raw.cancel_scope !== null) return { kind: "proceed", mutation: raw };
     if (alreadyAsked(openDraft, CANCEL_SCOPE_QUESTION, raw)) return { kind: "proceed", mutation: { ...raw, cancel_scope: "occurrence" } };
@@ -64,7 +100,13 @@ export function gateDeadlineRecurrence(
 
   // Only ask on an otherwise-complete mutation; an incomplete one keeps
   // failing on its own missing field exactly as before.
-  const isComplete = mutationSchema.safeParse({ ...raw, recurring: false }).success;
+  // An update may still carry a leftover course_id; that field is rejected
+  // later by mutationSchema and must not skip the days question.
+  const isComplete = mutationSchema.safeParse({
+    ...raw,
+    recurring: false,
+    ...(raw.operation === "update" ? { course_id: null } : {}),
+  }).success;
   if (!isComplete) return { kind: "proceed", mutation: raw };
 
   // "Repeats" but no days resolved: ask which days, once.

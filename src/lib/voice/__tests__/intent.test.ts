@@ -24,6 +24,34 @@ describe("mutationSchema", () => {
     expect(result.success).toBe(true);
   });
 
+  it("rejects a deadline update that tries to change course_id", () => {
+    const result = mutationSchema.safeParse({
+      target_type: "deadline",
+      operation: "update",
+      target_id: VALID_TARGET_ID,
+      course_id: VALID_COURSE_ID,
+      title: "New title",
+      due_at: null,
+      priority: null,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts a whole-series cancel with a null target_id", () => {
+    const result = mutationSchema.safeParse({
+      target_type: "deadline",
+      operation: "transition",
+      target_id: null,
+      course_id: null,
+      title: "Weekly quiz",
+      due_at: null,
+      priority: null,
+      event: "user_cancels",
+      cancel_scope: "series",
+    });
+    expect(result.success).toBe(true);
+  });
+
   it("rejects update/delete with a null target_id (review finding: target_id was nullable regardless of operation)", () => {
     const result = mutationSchema.safeParse({
       target_type: "deadline",
