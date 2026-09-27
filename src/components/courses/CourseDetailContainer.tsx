@@ -17,6 +17,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { Switch } from "@/components/ui/Switch";
 import { useToast } from "@/components/ui/Toast";
 import { formatBlocksSummary } from "@/lib/calendar/recurrence";
 import type { CoursePayload } from "@/lib/api/schemas";
@@ -37,6 +38,9 @@ export function CourseDetailContainer({ courseId }: Props) {
   const { showToast } = useToast();
   const [isEditing, setIsEditing] = useState(false);
   const [openCardId, setOpenCardId] = useState<string | null>(null);
+  // Hidden by default, same convention as BoardContainer's own toggle — a
+  // finished card is clutter on the course page until this brings it back.
+  const [showCompleted, setShowCompleted] = useState(false);
 
   if (isLoading) return <Skeleton className="h-64 w-full" />;
   if (!course) return <p className="text-sm text-text-secondary">Course not found.</p>;
@@ -45,7 +49,10 @@ export function CourseDetailContainer({ courseId }: Props) {
   // index) — any extras would only be legacy data predating that
   // constraint, so ignore them defensively rather than rendering a grid.
   const list = todoLists?.rows[0];
-  const openTasks = list ? (tasks?.rows ?? []).filter((task) => task.list_id === list.id && task.status === "Open") : [];
+  const listTasks = list ? (tasks?.rows ?? []).filter((task) => task.list_id === list.id) : [];
+  // Same filter BoardContainer's showCompleted toggle applies: off shows
+  // Open only, on reveals Done and Cancelled too.
+  const visibleTasks = showCompleted ? listTasks : listTasks.filter((task) => task.status === "Open");
   const boardLoading = todoListsLoading || tasksLoading;
 
   const handleUpdate = async (values: CoursePayload) => {
@@ -99,16 +106,23 @@ export function CourseDetailContainer({ courseId }: Props) {
       </GlassPanel>
 
       <GlassPanel className="flex flex-col gap-3 p-6">
-        <p className="font-mono text-xs uppercase tracking-wide text-text-eyebrow">Board</p>
+        <div className="flex items-center justify-between">
+          <p className="font-mono text-xs uppercase tracking-wide text-text-eyebrow">Board</p>
+          {list && <Switch checked={showCompleted} onCheckedChange={setShowCompleted} label="Show completed" />}
+        </div>
         {boardLoading ? (
           <Skeleton className="h-24 w-full" />
         ) : !list ? (
           <EmptyState title="No Board List yet" description="Create one from the Board." />
-        ) : openTasks.length === 0 ? (
-          <EmptyState title="Nothing open" description="Every card on this list is done or cancelled." />
+        ) : visibleTasks.length === 0 ? (
+          listTasks.length === 0 ? (
+            <EmptyState title="No cards yet" description="Add a card from the Board." />
+          ) : (
+            <EmptyState title="Nothing open" description="Every card on this list is done or cancelled." />
+          )
         ) : (
           <div className="flex flex-col gap-2">
-            {openTasks.map((task) => (
+            {visibleTasks.map((task) => (
               // Course-scoped lists are owner-only (see /api/todo-lists POST) —
               // person_id never gets set on these tasks, so no People fetch here.
               <BoardCard key={task.id} task={task} personName={undefined} onOpenCard={setOpenCardId} />
