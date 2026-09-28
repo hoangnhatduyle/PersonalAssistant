@@ -136,7 +136,7 @@ export function WorkloadDensityStrip({ deadlines, tasks, todoLists, courses, app
           <div className="flex flex-wrap items-center gap-3">
             {KIND_ORDER.map((kind) => (
               <span key={kind} className="flex items-center gap-1 font-mono text-[10px] uppercase tracking-wide text-text-secondary">
-                <span className={`h-2 w-2 rounded-full ${ITEM_KIND_BG_CLASS[kind]}`} />
+                <span className={`h-2 w-2 rounded-[1px] ${ITEM_KIND_BG_CLASS[kind]}`} />
                 {ITEM_KIND_LABEL[kind]}
               </span>
             ))}
