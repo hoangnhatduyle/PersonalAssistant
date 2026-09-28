@@ -5,22 +5,24 @@ import Link from "next/link";
 import { useCourse, useUpdateCourse } from "@/hooks/useCourses";
 import { useDeadlines } from "@/hooks/useDeadlines";
 import { useTodoLists } from "@/hooks/useTodoLists";
-import { useTasks } from "@/hooks/useTasks";
+import { useCreateTask, useTasks } from "@/hooks/useTasks";
 import { CourseForm } from "@/components/courses/CourseForm";
 import { DeleteCourseButton } from "@/components/courses/DeleteCourseButton";
 import { DeadlineList } from "@/components/deadlines/DeadlineList";
 import { BoardCard } from "@/components/board/BoardCard";
 import { BoardCardDetailDialog } from "@/components/board/BoardCardDetailDialog";
+import { TaskForm } from "@/components/board/TaskForm";
 import { NotesForTarget } from "@/components/notes/NotesForTarget";
 import { GlassPanel } from "@/components/ui/GlassPanel";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
+import { Dialog } from "@/components/ui/Dialog";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Switch } from "@/components/ui/Switch";
 import { useToast } from "@/components/ui/Toast";
 import { formatBlocksSummary } from "@/lib/calendar/recurrence";
-import type { CoursePayload } from "@/lib/api/schemas";
+import type { CoursePayload, TaskPayload } from "@/lib/api/schemas";
 import { formatLeadMinutes } from "@/lib/reminders/lead-time";
 
 type Props = {
@@ -35,9 +37,11 @@ export function CourseDetailContainer({ courseId }: Props) {
   // group client-side, same pattern BoardContainer uses.
   const { data: tasks, isLoading: tasksLoading } = useTasks({ limit: 100 });
   const updateCourse = useUpdateCourse(courseId);
+  const createTask = useCreateTask();
   const { showToast } = useToast();
   const [isEditing, setIsEditing] = useState(false);
   const [openCardId, setOpenCardId] = useState<string | null>(null);
+  const [isAddingCard, setIsAddingCard] = useState(false);
   // Hidden by default, same convention as BoardContainer's own toggle — a
   // finished card is clutter on the course page until this brings it back.
   const [showCompleted, setShowCompleted] = useState(false);
@@ -62,6 +66,16 @@ export function CourseDetailContainer({ courseId }: Props) {
       setIsEditing(false);
     } catch {
       showToast("Could not update course", "error");
+    }
+  };
+
+  const handleCreateCard = async (values: TaskPayload) => {
+    try {
+      await createTask.mutateAsync(values);
+      showToast("Card created", "success");
+      setIsAddingCard(false);
+    } catch {
+      showToast("Could not create card", "error");
     }
   };
 
@@ -109,7 +123,14 @@ export function CourseDetailContainer({ courseId }: Props) {
         <GlassPanel className="flex min-w-0 flex-col gap-3 p-6">
           <div className="flex items-center justify-between">
             <p className="font-mono text-xs uppercase tracking-wide text-text-eyebrow">Board</p>
-            {list && <Switch checked={showCompleted} onCheckedChange={setShowCompleted} label="Show completed" />}
+            <div className="flex items-center gap-3">
+              {list && <Switch checked={showCompleted} onCheckedChange={setShowCompleted} label="Show completed" />}
+              {list && (
+                <Button variant="secondary" size="sm" onClick={() => setIsAddingCard(true)}>
+                  + Add card
+                </Button>
+              )}
+            </div>
           </div>
           {boardLoading ? (
             <Skeleton className="h-24 w-full" />
@@ -117,7 +138,7 @@ export function CourseDetailContainer({ courseId }: Props) {
             <EmptyState title="No Board List yet" description="Create one from the Board." />
           ) : visibleTasks.length === 0 ? (
             listTasks.length === 0 ? (
-              <EmptyState title="No cards yet" description="Add a card from the Board." />
+              <EmptyState title="No cards yet" description="Add a card above." />
             ) : (
               <EmptyState title="Nothing open" description="Every card on this list is done or cancelled." />
             )
@@ -136,6 +157,15 @@ export function CourseDetailContainer({ courseId }: Props) {
           <NotesForTarget targetType="course" targetId={course.id} />
         </div>
       </div>
+
+      <Dialog open={isAddingCard} onClose={() => setIsAddingCard(false)} title="New card">
+        <TaskForm
+          defaultListId={list?.id ?? null}
+          onSubmit={handleCreateCard}
+          onCancel={() => setIsAddingCard(false)}
+          submitLabel="Create card"
+        />
+      </Dialog>
 
       <BoardCardDetailDialog taskId={openCardId} onClose={() => setOpenCardId(null)} />
     </div>

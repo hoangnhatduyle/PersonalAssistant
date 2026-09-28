@@ -102,18 +102,34 @@ export function TaskForm({
         htmlFor="list_id"
         error={errors.list_id?.message}
       >
-        <Select
-          id="list_id"
-          invalid={Boolean(errors.list_id)}
-          {...register("list_id", { setValueAs: emptyToNull })}
-        >
-          <option value="">Miscellaneous</option>
-          {(todoLists?.rows ?? []).map((list) => (
-            <option key={list.id} value={list.id}>
-              {list.name}
-            </option>
-          ))}
-        </Select>
+        {/* Controller, not register — the option list loads async, and a
+            register'd uncontrolled select applies its initial DOM value at
+            mount time only. If the matching <option> (e.g. defaultListId
+            from BoardColumn's "+ Add card") hasn't rendered yet, the browser
+            silently falls back to "Miscellaneous" and never re-syncs once
+            the option appears. A controlled value re-applies on every
+            render, so it selects correctly whenever the option shows up. */}
+        <Controller
+          control={control}
+          name="list_id"
+          render={({ field }) => (
+            <Select
+              id="list_id"
+              invalid={Boolean(errors.list_id)}
+              name={field.name}
+              value={field.value ?? ""}
+              onChange={(event) => field.onChange(emptyToNull(event.target.value))}
+              onBlur={field.onBlur}
+            >
+              <option value="">Miscellaneous</option>
+              {(todoLists?.rows ?? []).map((list) => (
+                <option key={list.id} value={list.id}>
+                  {list.name}
+                </option>
+              ))}
+            </Select>
+          )}
+        />
       </FormField>
 
       <FormField
