@@ -36,7 +36,10 @@ export function Dialog({ open, onClose, title, children, size = "md" }: Props) {
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center overflow-x-hidden p-4">
       <div
-        className="absolute inset-0 bg-bg-void/80 backdrop-blur-sm"
+        // No backdrop-blur: it forces the whole page behind to be re-blurred
+        // whenever the compositor redraws, which makes scrolling a large
+        // cross-process iframe (the mail reader) janky on desktop.
+        className="absolute inset-0 bg-bg-void/90"
         aria-hidden="true"
         onClick={onClose}
       />
