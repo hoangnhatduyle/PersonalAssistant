@@ -74,6 +74,7 @@ export const knowledgeKeys = {
   list: (filters?: object) => [...knowledgeKeys.all, "list", filters ?? {}] as const,
   detail: (id: string) => [...knowledgeKeys.all, "detail", id] as const,
   content: (id: string) => [...knowledgeKeys.all, "content", id] as const,
+  graph: (includeSimilar: boolean) => [...knowledgeKeys.all, "graph", includeSimilar] as const,
 };
 
 export const settingsKeys = {

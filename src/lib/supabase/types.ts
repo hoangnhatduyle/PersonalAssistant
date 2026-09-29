@@ -507,6 +507,52 @@ export type Database = {
           },
         ]
       }
+      knowledge_links: {
+        Row: {
+          created_at: string
+          id: string
+          source_a: string
+          source_b: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          source_a: string
+          source_b: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          source_a?: string
+          source_b?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "knowledge_links_source_a_user_id_fkey"
+            columns: ["source_a", "user_id"]
+            isOneToOne: false
+            referencedRelation: "knowledge_sources"
+            referencedColumns: ["id", "user_id"]
+          },
+          {
+            foreignKeyName: "knowledge_links_source_b_user_id_fkey"
+            columns: ["source_b", "user_id"]
+            isOneToOne: false
+            referencedRelation: "knowledge_sources"
+            referencedColumns: ["id", "user_id"]
+          },
+          {
+            foreignKeyName: "knowledge_links_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       knowledge_sources: {
         Row: {
           attempt_count: number
@@ -3081,6 +3127,25 @@ export type Database = {
       fail_knowledge_import: {
         Args: { p_error_message: string; p_source_id: string }
         Returns: boolean
+      }
+      knowledge_graph_nodes: {
+        Args: { p_snippet_chars: number }
+        Returns: {
+          id: string
+          origin_url: string | null
+          snippet: string | null
+          source_type: Database["public"]["Enums"]["knowledge_source_type"]
+          status: Database["public"]["Enums"]["knowledge_source_status"]
+          title: string
+        }[]
+      }
+      knowledge_similar_edges: {
+        Args: { p_threshold: number; p_top_k: number }
+        Returns: {
+          similarity: number
+          source_a: string
+          source_b: string
+        }[]
       }
       library_post_tag_counts: {
         Args: never

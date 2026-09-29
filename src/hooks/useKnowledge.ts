@@ -1,7 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch, toQueryString } from "@/lib/http/client";
 import { knowledgeKeys } from "@/lib/query/keys";
-import type { KnowledgeSource, KnowledgeSourceContent, KnowledgeSourceStatus, KnowledgeSourceType } from "@/lib/api/entity-types";
+import type {
+  KnowledgeGraph,
+  KnowledgeSource,
+  KnowledgeSourceContent,
+  KnowledgeSourceStatus,
+  KnowledgeSourceType,
+} from "@/lib/api/entity-types";
 
 export interface KnowledgeListFilters {
   status?: KnowledgeSourceStatus;
@@ -90,6 +96,45 @@ export function useRetryKnowledgeSource(id: string) {
   return useMutation({
     mutationFn: async () =>
       (await apiFetch<{ id: string; status: "Processing" }>(`/api/knowledge/${id}/retry`, { method: "POST" })).data,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: knowledgeKeys.all });
+    },
+  });
+}
+
+/** Nodes + manual/suggested edges. Polls while any node is still Pending/Processing, like useKnowledgeSources. */
+export function useKnowledgeGraph(includeSimilar = true) {
+  return useQuery({
+    queryKey: knowledgeKeys.graph(includeSimilar),
+    queryFn: async () => (await apiFetch<KnowledgeGraph>(`/api/knowledge/graph${includeSimilar ? "" : "?similar=0"}`)).data,
+    refetchInterval: (query) => {
+      const nodes = query.state.data?.nodes ?? [];
+      return nodes.some((node) => ACTIVE_KNOWLEDGE_STATUSES.includes(node.status)) ? KNOWLEDGE_POLL_INTERVAL_MS : false;
+    },
+  });
+}
+
+export function useCreateKnowledgeLink() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { source_id: string; target_id: string }) =>
+      (
+        await apiFetch<{ id: string; source_a: string; source_b: string }>("/api/knowledge/links", {
+          method: "POST",
+          body: input,
+        })
+      ).data,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: knowledgeKeys.all });
+    },
+  });
+}
+
+export function useDeleteKnowledgeLink() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (linkId: string) =>
+      (await apiFetch<{ id: string }>(`/api/knowledge/links/${linkId}`, { method: "DELETE" })).data,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: knowledgeKeys.all });
     },

@@ -348,6 +348,19 @@ export const knowledgeSourceCreateFieldsSchema = z
   });
 export type KnowledgeSourceCreateFields = z.infer<typeof knowledgeSourceCreateFieldsSchema>;
 
+// Manual knowledge-graph link. Undirected: the route normalizes the pair into
+// canonical (source_a < source_b) order before insert.
+export const knowledgeLinkCreateSchema = z
+  .object({
+    source_id: z.uuid(),
+    target_id: z.uuid(),
+  })
+  .refine((value) => value.source_id !== value.target_id, {
+    message: "A source cannot be linked to itself",
+    path: ["target_id"],
+  });
+export type KnowledgeLinkCreate = z.infer<typeof knowledgeLinkCreateSchema>;
+
 // SPEC-API-009 UserPreferencesResponse. A singleton-per-caller resource (no
 // id-addressed route) — PATCH validates a partial payload and the route
 // upserts by user_id. quiet_hours_start/quiet_hours_end must be provided
