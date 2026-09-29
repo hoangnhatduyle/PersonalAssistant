@@ -8,10 +8,12 @@ import { useToast } from "@/components/ui/Toast";
 
 type Props = {
   sourceId: string;
+  /** Called after a successful delete — lets a parent (e.g. the view dialog) close itself. */
+  onDeleted?: () => void;
 };
 
 /** Hard delete (unlike every other entity) — no cascade disclosure needed, chunk removal is automatic via FK cascade. */
-export function DeleteKnowledgeSourceButton({ sourceId }: Props) {
+export function DeleteKnowledgeSourceButton({ sourceId, onDeleted }: Props) {
   const [open, setOpen] = useState(false);
   const deleteSource = useDeleteKnowledgeSource(sourceId);
   const { showToast } = useToast();
@@ -21,6 +23,7 @@ export function DeleteKnowledgeSourceButton({ sourceId }: Props) {
       await deleteSource.mutateAsync();
       showToast("Source deleted", "success");
       setOpen(false);
+      onDeleted?.();
     } catch {
       showToast("Could not delete the source", "error");
     }

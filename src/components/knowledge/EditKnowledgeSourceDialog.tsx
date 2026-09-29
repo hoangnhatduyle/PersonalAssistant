@@ -2,7 +2,13 @@
 
 import { useRef, useState } from "react";
 import type { FormEvent } from "react";
-import { useCreateKnowledgeSource, useDeleteKnowledgeSource, useKnowledgeSourceContent } from "@/hooks/useKnowledge";
+import {
+  useCreateKnowledgeLink,
+  useCreateKnowledgeSource,
+  useDeleteKnowledgeSource,
+  useKnowledgeGraph,
+  useKnowledgeSourceContent,
+} from "@/hooks/useKnowledge";
 import { Dialog } from "@/components/ui/Dialog";
 import { FormField } from "@/components/ui/FormField";
 import { Input } from "@/components/ui/Input";
@@ -49,6 +55,8 @@ function EditKnowledgeSourceForm({ source, onClose }: { source: KnowledgeSource;
   const { data, isLoading } = useKnowledgeSourceContent(source.id, isPastedText && !isReplacing);
   const createSource = useCreateKnowledgeSource();
   const deleteSource = useDeleteKnowledgeSource(source.id);
+  const createLink = useCreateKnowledgeLink();
+  const { data: graph } = useKnowledgeGraph();
   const { showToast } = useToast();
 
   const titleRef = useRef<HTMLInputElement>(null);
@@ -65,13 +73,22 @@ function EditKnowledgeSourceForm({ source, onClose }: { source: KnowledgeSource;
 
     setReplacing(true);
     try {
-      if (isPastedText) {
-        await createSource.mutateAsync({ source_type: "pasted_text", title: trimmedTitle, text: textRef.current?.value ?? "" });
-      } else {
-        await createSource.mutateAsync({ source_type: "url", title: trimmedTitle, url: urlRef.current?.value.trim() ?? "" });
-      }
+      const replacement = isPastedText
+        ? await createSource.mutateAsync({ source_type: "pasted_text", title: trimmedTitle, text: textRef.current?.value ?? "" })
+        : await createSource.mutateAsync({ source_type: "url", title: trimmedTitle, url: urlRef.current?.value.trim() ?? "" });
+
+      // Edit is create-replacement + delete-original, and deleting the original
+      // cascades away its manual links — carry them over to the replacement first.
+      const manualNeighbours = (graph?.edges ?? [])
+        .filter((edge) => edge.kind === "manual" && (edge.source === source.id || edge.target === source.id))
+        .map((edge) => (edge.source === source.id ? edge.target : edge.source));
+      const relinked = await Promise.allSettled(
+        manualNeighbours.map((otherId) => createLink.mutateAsync({ source_id: replacement.id, target_id: otherId })),
+      );
+      const relinkFailed = relinked.some((result) => result.status === "rejected");
+
       await deleteSource.mutateAsync();
-      showToast("Source updated", "success");
+      showToast(relinkFailed ? "Source updated, but some links could not be kept" : "Source updated", relinkFailed ? "error" : "success");
       onClose();
     } catch {
       showToast("Could not update the source", "error");

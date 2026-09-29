@@ -87,6 +87,30 @@ export interface KnowledgeSource {
   updated_at: string;
 }
 
+export interface KnowledgeGraphNode {
+  id: string;
+  title: string;
+  source_type: KnowledgeSourceType;
+  origin_url: string | null;
+  status: KnowledgeSourceStatus;
+  /** First few hundred characters of raw_content, for the hover preview; null until extraction finishes. */
+  snippet: string | null;
+}
+
+/** "manual" edges are user-created links (linkId set); "similar" edges are computed suggestions (score set). */
+export interface KnowledgeGraphEdge {
+  source: string;
+  target: string;
+  kind: "manual" | "similar";
+  linkId?: string;
+  score?: number;
+}
+
+export interface KnowledgeGraph {
+  nodes: KnowledgeGraphNode[];
+  edges: KnowledgeGraphEdge[];
+}
+
 /** GET /api/knowledge/[id]/content's response — the one place raw_content is ever sent to the client. */
 export interface KnowledgeSourceContent {
   id: string;

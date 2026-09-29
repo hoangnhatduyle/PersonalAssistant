@@ -82,3 +82,11 @@ export const KNOWLEDGE_TOP_K = 8;
 // and unnecessary exposure of ingestion internals).
 export const KNOWLEDGE_SOURCE_PUBLIC_COLUMNS =
   "id, source_type, title, origin_url, status, error_message, attempt_count, created_at, updated_at";
+
+// Knowledge graph view: suggested edges come from centroid cosine similarity
+// between Ready sources (knowledge_similar_edges, 0051). Tuned by eye — the
+// graph endpoint also lets the client drop suggested edges entirely.
+export const KNOWLEDGE_GRAPH_SIMILARITY_THRESHOLD = 0.45;
+export const KNOWLEDGE_GRAPH_TOP_K = 3;
+// Hover-preview text length, truncated in SQL so raw_content never ships in bulk.
+export const KNOWLEDGE_GRAPH_SNIPPET_CHARS = 240;

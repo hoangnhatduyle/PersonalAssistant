@@ -86,7 +86,7 @@ export function KnowledgeSourceCard({ source }: Props) {
         <DeleteKnowledgeSourceButton sourceId={source.id} />
       </div>
 
-      <ViewKnowledgeSourceDialog source={source} open={isViewOpen} onClose={() => setViewOpen(false)} />
+      <ViewKnowledgeSourceDialog sourceId={source.id} open={isViewOpen} onClose={() => setViewOpen(false)} />
       {EDITABLE_SOURCE_TYPES.has(source.source_type) && (
         <EditKnowledgeSourceDialog source={source} open={isEditOpen} onClose={() => setEditOpen(false)} />
       )}
