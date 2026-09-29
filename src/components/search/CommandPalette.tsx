@@ -128,7 +128,7 @@ export function CommandPalette() {
 
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-start justify-center pt-[15vh]">
-      <div className="absolute inset-0 bg-bg-void/80 backdrop-blur-sm" aria-hidden="true" onClick={close} />
+      <div className="absolute inset-0 bg-bg-void/90" aria-hidden="true" onClick={close} />
       <div
         role="dialog"
         aria-modal="true"
