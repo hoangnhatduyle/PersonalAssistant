@@ -2,7 +2,7 @@ id: SPEC-CORE-008
 version: 0.3.0
 kind: domain
 title: Knowledge Reference domain model
-status: draft
+status: active
 context_and_scope:
   in_scope:
     - Importing a reference source (URL-fetch, pasted text, or uploaded file) into a personal per-user knowledge base

@@ -10,7 +10,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
-    "gen:types": "supabase gen types typescript --local > src/lib/supabase/types.ts"
+    "gen:types": "supabase gen types typescript --local > src/lib/supabase/types.ts",
+    "prepare": "sh scripts/install-git-hooks.sh"
   },
   "dependencies": {
     "@deepgram/sdk": "^5.8.0",
