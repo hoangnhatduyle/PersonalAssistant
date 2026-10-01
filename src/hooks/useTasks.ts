@@ -91,6 +91,17 @@ export function useAcknowledgeTask(id: string) {
   });
 }
 
+/** Copies a Done card into a fresh Open one (no due date, completion details dropped) — see /api/tasks/[id]/duplicate. */
+export function useDuplicateTask(id: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async () => (await apiFetch<TaskWithLabels>(`/api/tasks/${id}/duplicate`, { method: "POST" })).data,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: taskKeys.all });
+    },
+  });
+}
+
 export function useDeleteTask(id: string) {
   const queryClient = useQueryClient();
   return useMutation({

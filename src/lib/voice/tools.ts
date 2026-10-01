@@ -61,7 +61,7 @@ export interface ProposeMutationArgs {
   confidence: number;
   summary: string;
   target_type: "course" | "deadline" | "task" | "note" | "reminder" | "session" | "todo_list" | "event";
-  operation: "create" | "update" | "delete" | "acknowledge" | "transition";
+  operation: "create" | "update" | "delete" | "acknowledge" | "transition" | "duplicate";
   target_id: string | null;
   course_id: string | null;
   title: string | null;
@@ -158,19 +158,27 @@ export type EmptyToolArgs = Record<string, never>;
  */
 const MUTATION_FIELD_PROPERTIES_BASE = {
   target_type: { type: "string", enum: ["course", "deadline", "task", "note", "reminder", "session", "todo_list", "event"] },
-  operation: { type: "string", enum: ["create", "update", "delete", "acknowledge", "transition"] },
+  operation: { type: "string", enum: ["create", "update", "delete", "acknowledge", "transition", "duplicate"] },
   target_id: {
     type: ["string", "null"],
     description:
-      "An id from the provided entity context (deadlines/tasks/sessions/todoLists/appointments lists as appropriate). Null for a create, and also allowed null on a Deadline series cancel (cancel_scope \"series\") when the occurrence is not yet chosen.",
+      "An id from the provided entity context (deadlines/tasks/sessions/todoLists/appointments lists as appropriate). Null for a create, and also allowed null on a Deadline series cancel (cancel_scope \"series\") when the occurrence is not yet chosen, and on a Task \"duplicate\" when no card of that name exists (set title to the spoken name instead).",
   },
   course_id: {
     type: ["string", "null"],
     description:
       "A course id from the entity context. Create-only for a Deadline — never send it on a Deadline update (a Deadline's course cannot be changed after create; if the user asks to move one, explain that via respond_to_user). Optional on a Board List create.",
   },
-  title: { type: ["string", "null"], description: "Deadline/Task title, a new Deadline Session's title, or a general Event/Appointment's title." },
-  due_at: { type: ["string", "null"], description: "Deadline/Task due date-time. ISO 8601 datetime with a UTC offset." },
+  title: {
+    type: ["string", "null"],
+    description:
+      "Deadline/Task title, a new Deadline Session's title, or a general Event/Appointment's title. On a Task \"duplicate\", the card name the user said.",
+  },
+  due_at: {
+    type: ["string", "null"],
+    description:
+      "Deadline/Task due date-time. ISO 8601 datetime with a UTC offset. On a Task \"duplicate\", the NEW card's due date (the copy never inherits the original's); null if the user gave none.",
+  },
   body: { type: ["string", "null"], description: "Note body." },
   priority: { type: ["string", "null"], enum: ["Low", "Medium", "High", "Urgent", null], description: "Deadline/Task priority." },
   reminder_lead_minutes: { type: ["integer", "null"] },
@@ -404,7 +412,7 @@ export const CONVERSATION_TOOLS = [
     type: "function",
     name: "propose_mutation",
     description:
-      "Propose a single explicit, unambiguous data change the user just instructed: create/update/delete a Deadline, Task, Note, or Course; mark a Deadline's or Task's status via transition (\"mark done\", \"mark in progress\", \"mark submitted\", \"cancel\"); acknowledge/dismiss/snooze a Reminder; create/delete a Deadline Session or mark one done/skipped; create/rename/delete a Board List (a simple named container for Task cards, e.g. \"Misc\" or a per-course reading list) -- optionally place a Task into one via list_id on a Task create/update; create/update/delete a general Appointment/Event, or mark one done/missed via transition. Call this by itself, never alongside another tool call. Never invent an id -- target_id/course_id/deadline_id/list_id must come from the entity context provided to you. If you are not confident this is really a command (versus a question or hypothetical) or an id does not clearly match the context, set confidence below 0.95 rather than guessing -- do not silently answer via respond_to_user instead just because you are unsure, since that skips the confirmation step entirely. If the command is clearly a mutation but is missing a required field (e.g. an Appointment's time), use save_mutation_draft instead of guessing a value or proposing an incomplete mutation.",
+      "Propose a single explicit, unambiguous data change the user just instructed: create/update/delete a Deadline, Task, Note, or Course; mark a Deadline's or Task's status via transition (\"mark done\", \"mark in progress\", \"mark submitted\", \"cancel\"); reopen a Done Task by copying it into a new Open one (operation \"duplicate\" -- what the user means by \"duplicate\" or \"reopen\" a card); acknowledge/dismiss/snooze a Reminder; create/delete a Deadline Session or mark one done/skipped; create/rename/delete a Board List (a simple named container for Task cards, e.g. \"Misc\" or a per-course reading list) -- optionally place a Task into one via list_id on a Task create/update; create/update/delete a general Appointment/Event, or mark one done/missed via transition. Call this by itself, never alongside another tool call. Never invent an id -- target_id/course_id/deadline_id/list_id must come from the entity context provided to you. If you are not confident this is really a command (versus a question or hypothetical) or an id does not clearly match the context, set confidence below 0.95 rather than guessing -- do not silently answer via respond_to_user instead just because you are unsure, since that skips the confirmation step entirely. If the command is clearly a mutation but is missing a required field (e.g. an Appointment's time), use save_mutation_draft instead of guessing a value or proposing an incomplete mutation.",
     strict: true,
     parameters: {
       type: "object",

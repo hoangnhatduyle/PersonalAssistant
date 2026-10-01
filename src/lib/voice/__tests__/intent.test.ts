@@ -11,6 +11,18 @@ const TIMEZONE = "UTC";
 const END_OF_TODAY_UTC = "2026-06-15T23:59:59.999Z";
 
 describe("mutationSchema", () => {
+  it("requires a target_id for a task duplicate", () => {
+    const result = mutationSchema.safeParse({
+      target_type: "task",
+      operation: "duplicate",
+      target_id: null,
+      title: "Read Paper A",
+      due_at: null,
+      reminder_lead_minutes: null,
+    });
+    expect(result.success).toBe(false);
+  });
+
   it("accepts a valid create (no target_id required)", () => {
     const result = mutationSchema.safeParse({
       target_type: "deadline",
@@ -542,6 +554,35 @@ describe("additionalStepsSchema", () => {
 });
 
 describe("toPendingMutation", () => {
+  it("maps a task duplicate, carrying the new card's due date", () => {
+    const raw = mutationSchema.parse({
+      target_type: "task",
+      operation: "duplicate",
+      target_id: VALID_TARGET_ID,
+      title: "Read Paper A",
+      due_at: "2026-10-05T16:00:00.000Z",
+      reminder_lead_minutes: null,
+    });
+    expect(toPendingMutation(raw, NOW, TIMEZONE)).toEqual({
+      targetType: "task",
+      operation: "duplicate",
+      targetId: VALID_TARGET_ID,
+      dueAt: "2026-10-05T16:00:00.000Z",
+    });
+  });
+
+  it("maps a task duplicate without a due date to no dueAt", () => {
+    const raw = mutationSchema.parse({
+      target_type: "task",
+      operation: "duplicate",
+      target_id: VALID_TARGET_ID,
+      title: null,
+      due_at: null,
+      reminder_lead_minutes: null,
+    });
+    expect(toPendingMutation(raw, NOW, TIMEZONE)).toEqual({ targetType: "task", operation: "duplicate", targetId: VALID_TARGET_ID });
+  });
+
   it("maps a course delete", () => {
     const raw = mutationSchema.parse({ target_type: "course", operation: "delete", target_id: VALID_TARGET_ID });
     expect(toPendingMutation(raw, NOW, TIMEZONE)).toEqual({ targetType: "course", operation: "delete", targetId: VALID_TARGET_ID });

@@ -75,7 +75,10 @@ const mutationSchemaBase = z.discriminatedUnion("target_type", [
   }),
   z.object({
     target_type: z.literal("task"),
-    operation: z.enum(["create", "update", "delete", "transition"]),
+    // "duplicate": reopen a Done card by copying it into a fresh Open one --
+    // see task-duplicate-gate.ts and duplicate_task (0052_duplicate_task.sql).
+    // The user-facing words "duplicate" and "reopen" both map to this.
+    operation: z.enum(["create", "update", "delete", "transition", "duplicate"]),
     target_id: z.uuid().nullable(),
     title: z.string().nullable(),
     due_at: z.iso.datetime({ offset: true }).nullable(),
@@ -332,7 +335,18 @@ export interface EntityContext {
   // list_id (board merge, 0029_board_merge.sql) -- lets the model match "the
   // task in my grocery list" against the right Task when a title alone is
   // ambiguous, the same way a deadline's course_id disambiguates it.
-  tasks: Array<{ id: string; title: string; list_id: string | null; status: Database["public"]["Enums"]["task_status"] } & ValidEvents>;
+  // completed_at is set on Done tasks only: several completed cards can share
+  // one title (every "duplicate" of a card that was then finished again), and
+  // task-duplicate-gate.ts picks the most recently finished one.
+  tasks: Array<
+    {
+      id: string;
+      title: string;
+      list_id: string | null;
+      status: Database["public"]["Enums"]["task_status"];
+      completed_at?: string;
+    } & ValidEvents
+  >;
   // Board Lists (todo_lists, 0015_course_todos.sql) -- for resolving a
   // Task's list_id, or an existing list's id by name, the same "id from the
   // entity context, never invented" pattern as deadlines/tasks above.
@@ -389,7 +403,7 @@ export async function loadEntityContext(supabase: SupabaseClient<Database>, user
   ] = await Promise.all([
     supabase.from("courses").select("id, code, name").eq("user_id", userId).is("person_id", null).is("deleted_at", null),
     supabase.from("deadlines").select("id, title, course_id, due_at, status, recurrence_days").eq("user_id", userId).is("person_id", null).is("deleted_at", null),
-    supabase.from("tasks").select("id, title, list_id, status").eq("user_id", userId).is("person_id", null).is("deleted_at", null),
+    supabase.from("tasks").select("id, title, list_id, status, completed_at").eq("user_id", userId).is("person_id", null).is("deleted_at", null),
     supabase.from("todo_lists").select("id, name, course_id").eq("user_id", userId).is("deleted_at", null),
     supabase.from("appointments").select("id, title, deadline_id, session_status").eq("user_id", userId).eq("category", "Session").is("deleted_at", null),
     // Same owner-only, not-deleted filter schedule-loader.ts's loadSchedule
@@ -411,7 +425,11 @@ export async function loadEntityContext(supabase: SupabaseClient<Database>, user
         recurring: recurrence_days.length > 0,
         validEvents: getValidDeadlineEvents(deadline.status),
       })),
-    tasks: (tasks ?? []).map((task) => ({ ...task, validEvents: getValidTaskEvents(task.status) })),
+    tasks: (tasks ?? []).map(({ completed_at, ...task }) => ({
+      ...task,
+      ...(task.status === "Done" && completed_at ? { completed_at } : {}),
+      validEvents: getValidTaskEvents(task.status),
+    })),
     todoLists: todoLists ?? [],
     // session_status/event_status are nullable columns on the shared
     // appointments table; a row that has never transitioned reads as "planned",
@@ -554,6 +572,10 @@ export function toPendingMutation(raw: RawMutation, now: Date, timeZone: string)
       }
       if (raw.operation === "delete") {
         return { targetType: "task", operation: "delete", targetId: raw.target_id! };
+      }
+      if (raw.operation === "duplicate") {
+        // due_at here is the NEW card's due date (the copy never inherits the original's).
+        return { targetType: "task", operation: "duplicate", targetId: raw.target_id!, ...(raw.due_at ? { dueAt: raw.due_at } : {}) };
       }
       if (raw.operation === "transition") {
         return { targetType: "task", operation: "transition", targetId: raw.target_id!, event: raw.event! };

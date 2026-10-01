@@ -3124,6 +3124,7 @@ export type Database = {
           isSetofReturn: true
         }
       }
+      duplicate_task: { Args: { p_task_id: string }; Returns: string }
       fail_knowledge_import: {
         Args: { p_error_message: string; p_source_id: string }
         Returns: boolean

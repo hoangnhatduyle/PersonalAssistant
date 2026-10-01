@@ -435,6 +435,7 @@ export function BoardContainer() {
       <BoardCardDetailDialog
         taskId={openCardId}
         onClose={() => setOpenCardId(null)}
+        onOpenTask={setOpenCardId}
       />
 
       <ConfirmDialog

@@ -62,6 +62,8 @@ export type PendingMutation =
   | { targetType: "task"; operation: "update"; targetId: string; payload: TaskPatch }
   | { targetType: "task"; operation: "delete"; targetId: string }
   | { targetType: "task"; operation: "transition"; targetId: string; event: TaskTransitionEvent }
+  // Reopens a Done card by copying it into a fresh Open one (duplicate_task, 0052_duplicate_task.sql); dueAt is the copy's own new due date.
+  | { targetType: "task"; operation: "duplicate"; targetId: string; dueAt?: string }
   | { targetType: "note"; operation: "create"; payload: NotePayload }
   | { targetType: "note"; operation: "update"; targetId: string; payload: NotePatch }
   | { targetType: "note"; operation: "delete"; targetId: string }
@@ -346,6 +348,41 @@ async function executeTaskMutation(
       .single();
     if (error) throw error;
     return { summary: `Task marked ${nextStatus}.`, data: updated };
+  }
+
+  if (mutation.operation === "duplicate") {
+    // Mirrors POST /api/tasks/[id]/duplicate: only a Done card can be reopened.
+    const { data: source, error: sourceError } = await supabase
+      .from("tasks")
+      .select("id, status")
+      .eq("id", mutation.targetId)
+      .eq("user_id", userId)
+      .is("deleted_at", null)
+      .maybeSingle();
+    if (sourceError) throw sourceError;
+    if (!source) throw new MutationTargetNotFoundError(`task ${mutation.targetId} not found or already deleted`);
+    if (source.status !== "Done") throw new Error(`Only a Done card can be reopened, got status "${source.status}"`);
+
+    const { data: newId, error: duplicateError } = await supabase.rpc("duplicate_task", { p_task_id: mutation.targetId });
+    if (duplicateError || !newId) throw duplicateError ?? new Error("duplicate_task returned no id");
+
+    // The copy starts with no due date; apply the one the user gave, and let
+    // its reminder follow (reminder settings were copied from the original).
+    const { data: copy, error: copyError } = mutation.dueAt
+      ? await supabase.from("tasks").update({ due_at: mutation.dueAt }).eq("id", newId).select("*").single()
+      : await supabase.from("tasks").select("*").eq("id", newId).single();
+    if (copyError) throw copyError;
+    if (mutation.dueAt) {
+      await syncReminderForTarget(supabase, {
+        userId,
+        targetType: "task",
+        targetId: copy.id,
+        dueAt: copy.due_at,
+        remindersEnabled: copy.reminders_enabled,
+        reminderLeadMinutes: copy.reminder_lead_minutes,
+      });
+    }
+    return { summary: `Reopened "${copy.title}" as a new card.`, data: copy };
   }
 
   if (mutation.operation === "create") {

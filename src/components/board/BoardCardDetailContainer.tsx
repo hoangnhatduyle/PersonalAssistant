@@ -6,6 +6,7 @@ import { useTodoLists } from "@/hooks/useTodoLists";
 import { TaskForm } from "@/components/board/TaskForm";
 import { TaskTransitionMenu } from "@/components/board/TaskTransitionMenu";
 import { DeleteTaskButton } from "@/components/board/DeleteTaskButton";
+import { DuplicateTaskButton } from "@/components/board/DuplicateTaskButton";
 import { ChecklistSection } from "@/components/board/ChecklistSection";
 import { AttachmentsSection } from "@/components/board/AttachmentsSection";
 import { NotesForTarget } from "@/components/notes/NotesForTarget";
@@ -24,12 +25,15 @@ type Props = {
   embedded?: boolean;
   /** Forwarded to DeleteTaskButton — closes the dialog on delete instead of its standalone-page router.push. */
   onDeleted?: () => void;
+  /** Forwarded to DuplicateTaskButton — switches the dialog to the new copy instead of its standalone-page router.push. */
+  onOpenTask?: (taskId: string) => void;
 };
 
 export function BoardCardDetailContainer({
   taskId,
   embedded = false,
   onDeleted,
+  onOpenTask,
 }: Props) {
   const { data: task, isLoading } = useTask(taskId);
   const { data: todoLists } = useTodoLists({ limit: 100 });
@@ -70,6 +74,9 @@ export function BoardCardDetailContainer({
         >
           {isEditing ? "Cancel edit" : "Edit"}
         </Button>
+        {task.status === "Done" && (
+          <DuplicateTaskButton taskId={task.id} onOpenTask={onOpenTask} />
+        )}
         <DeleteTaskButton taskId={task.id} onDeleted={onDeleted} fallbackHref={fallbackHref} />
       </div>
 

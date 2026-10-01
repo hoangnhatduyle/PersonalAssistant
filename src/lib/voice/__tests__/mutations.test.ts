@@ -162,6 +162,60 @@ describe("executePendingMutation", () => {
       ).rejects.toThrow(/Cannot apply/);
     });
 
+    describe("duplicate (reopen a Done card)", () => {
+      async function doneTask(overrides: Record<string, unknown> = {}): Promise<string> {
+        const taskId = await createTask(admin, userId, { title: "Read Paper A", due_at: "2026-09-29T12:00:00Z", ...overrides });
+        await walkTransitions(admin, "tasks", taskId, "status", ["Done"]);
+        return taskId;
+      }
+
+      it("copies a Done card into a new Open card with no due date and leaves the original Done", async () => {
+        const sourceId = await doneTask();
+        const result = await executePendingMutation(user.client, userId, { targetType: "task", operation: "duplicate", targetId: sourceId });
+
+        const copy = result.data as { id: string; status: string; due_at: string | null; completed_at: string | null; title: string };
+        expect(copy.id).not.toBe(sourceId);
+        expect(copy).toMatchObject({ title: "Read Paper A", status: "Open", due_at: null, completed_at: null });
+        expect(result.summary).toBe('Reopened "Read Paper A" as a new card.');
+        const { data: original } = await admin.from("tasks").select("status, completed_at").eq("id", sourceId).single();
+        expect(original?.status).toBe("Done");
+        expect(original?.completed_at).not.toBeNull();
+      });
+
+      it("sets the new card's due date and schedules its reminder when one is given", async () => {
+        const sourceId = await doneTask();
+        const dueAt = "2099-10-05T16:00:00.000Z";
+        const result = await executePendingMutation(user.client, userId, {
+          targetType: "task",
+          operation: "duplicate",
+          targetId: sourceId,
+          dueAt,
+        });
+
+        const copy = result.data as { id: string; due_at: string };
+        expect(new Date(copy.due_at).toISOString()).toBe(dueAt);
+        const { data: reminders } = await admin.from("reminders").select("id").eq("target_type", "task").eq("target_id", copy.id);
+        expect(reminders?.length).toBeGreaterThan(0);
+      });
+
+      it("refuses to reopen a card that is still Open", async () => {
+        const taskId = await createTask(admin, userId, { status: "Open" });
+        await expect(
+          executePendingMutation(user.client, userId, { targetType: "task", operation: "duplicate", targetId: taskId }),
+        ).rejects.toThrow(/Only a Done card can be reopened/);
+      });
+
+      it("throws MutationTargetNotFoundError for a nonexistent task", async () => {
+        await expect(
+          executePendingMutation(user.client, userId, {
+            targetType: "task",
+            operation: "duplicate",
+            targetId: "00000000-0000-0000-0000-000000000000",
+          }),
+        ).rejects.toBeInstanceOf(MutationTargetNotFoundError);
+      });
+    });
+
     // Board merge (supabase/migrations/0029_board_merge.sql): a "Course
     // To-Do item" is now just a Task with list_id set.
     it("creates a task under a live Board List", async () => {

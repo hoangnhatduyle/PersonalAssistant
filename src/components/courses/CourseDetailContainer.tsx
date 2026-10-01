@@ -167,7 +167,7 @@ export function CourseDetailContainer({ courseId }: Props) {
         />
       </Dialog>
 
-      <BoardCardDetailDialog taskId={openCardId} onClose={() => setOpenCardId(null)} />
+      <BoardCardDetailDialog taskId={openCardId} onClose={() => setOpenCardId(null)} onOpenTask={setOpenCardId} />
     </div>
   );
 }

@@ -62,7 +62,7 @@ import { CANCEL_SCOPE_QUESTION, RECURRENCE_DAYS_QUESTION, RECURRENCE_QUESTION } 
 import { runSuggestionsLookup } from "@/lib/voice/suggestions-lookup";
 import { runDeadlineProgressLookup } from "@/lib/voice/deadline-progress-lookup";
 import { loadEntityContext, loadUserTimezone, mutationDraftSchema, type EntityContext } from "@/lib/voice/intent";
-import { getValidDeadlineEvents } from "@/lib/api/transitions";
+import { getValidDeadlineEvents, getValidTaskEvents } from "@/lib/api/transitions";
 import { CONVERSATION_SYSTEM_PROMPT, runConversationTurn } from "../conversation-core";
 
 const VALID_TARGET_ID = "11111111-1111-4111-8111-111111111111";
@@ -970,6 +970,100 @@ describe("runConversationTurn", () => {
     if (result.kind === "answer") {
       expect(result.message).toMatch(/mark it in progress/);
     }
+  });
+
+  describe("reopening a closed card (task duplicate)", () => {
+    const DONE_ID = "55555555-5555-4555-8555-555555555555";
+    const OPEN_ID = "66666666-6666-4666-8666-666666666666";
+
+    function contextTask(overrides: Partial<EntityContext["tasks"][number]> & { id: string }): EntityContext["tasks"][number] {
+      const status = overrides.status ?? "Done";
+      return { title: "Read Paper A", list_id: null, ...overrides, status, validEvents: getValidTaskEvents(status) };
+    }
+
+    function contextWith(tasks: EntityContext["tasks"]): EntityContext {
+      return { courses: [], deadlines: [], tasks, todoLists: [], sessions: [], appointments: [], knowledgeSources: [], people: [] };
+    }
+
+    function duplicateCall(overrides: Record<string, unknown>) {
+      return toolCallResponse([
+        {
+          id: "c1",
+          name: "propose_mutation",
+          arguments: {
+            ...validProposeMutationArgs,
+            confidence: 0.98,
+            summary: "Reopen Read Paper A as a new card.",
+            operation: "duplicate",
+            target_id: DONE_ID,
+            title: "Read Paper A",
+            ...overrides,
+          },
+        },
+      ]);
+    }
+
+    it("proposes the duplicate directly when the Done card and its new due date are known", async () => {
+      vi.mocked(loadEntityContext).mockResolvedValueOnce(contextWith([contextTask({ id: DONE_ID })]));
+      mocks.responsesCreate.mockReset();
+      mocks.responsesCreate.mockResolvedValueOnce(duplicateCall({ due_at: "2026-10-05T16:00:00.000Z" }));
+
+      const result = await runConversationTurn(fakeSupabase, "user-1", "reopen read paper a due friday", "conv-1");
+
+      expect(result).toMatchObject({
+        kind: "mutation_proposal",
+        mutation: { targetType: "task", operation: "duplicate", targetId: DONE_ID, dueAt: "2026-10-05T16:00:00.000Z" },
+      });
+    });
+
+    it("asks for the new card's due date before proposing when none was given", async () => {
+      vi.mocked(loadEntityContext).mockResolvedValueOnce(contextWith([contextTask({ id: DONE_ID })]));
+      mocks.responsesCreate.mockReset();
+      mocks.responsesCreate.mockResolvedValueOnce(duplicateCall({ due_at: null }));
+
+      const result = await runConversationTurn(fakeSupabase, "user-1", "duplicate read paper a", "conv-1");
+
+      expect(result).toMatchObject({ kind: "answer", needsFollowUp: true });
+      if (result.kind === "answer") expect(result.message).toMatch(/what due date should the new card have/);
+    });
+
+    it("redirects to creating a brand-new card when no closed card has that name", async () => {
+      vi.mocked(loadEntityContext).mockResolvedValueOnce(contextWith([contextTask({ id: DONE_ID })]));
+      mocks.responsesCreate.mockReset();
+      mocks.responsesCreate.mockResolvedValueOnce(duplicateCall({ target_id: null, title: "Read Paper Z" }));
+
+      const result = await runConversationTurn(fakeSupabase, "user-1", "duplicate read paper z", "conv-1");
+
+      expect(result).toMatchObject({
+        kind: "answer",
+        needsFollowUp: true,
+        draftMutation: { mutation: { target_type: "task", operation: "create", title: "Read Paper Z" } },
+      });
+      if (result.kind === "answer") expect(result.message).toMatch(/Did you mean to create a brand-new card/);
+    });
+
+    it("retargets 'mark it done' from a closed card to the Open card with the same name", async () => {
+      vi.mocked(loadEntityContext).mockResolvedValueOnce(
+        contextWith([contextTask({ id: DONE_ID }), contextTask({ id: OPEN_ID, status: "Open" })]),
+      );
+      mocks.responsesCreate.mockReset();
+      mocks.responsesCreate.mockResolvedValueOnce(
+        duplicateCall({ operation: "transition", event: "user_marks_done", summary: "Mark Read Paper A done." }),
+      );
+
+      const result = await runConversationTurn(fakeSupabase, "user-1", "mark read paper a done", "conv-1");
+
+      expect(result).toMatchObject({
+        kind: "mutation_proposal",
+        mutation: { targetType: "task", operation: "transition", targetId: OPEN_ID, event: "user_marks_done" },
+      });
+    });
+
+    it("teaches the model that duplicate and reopen mean the same thing and that Open cards win", () => {
+      expect(CONVERSATION_SYSTEM_PROMPT).toMatch(/"duplicate", "reopen"/);
+      expect(CONVERSATION_SYSTEM_PROMPT).toMatch(/operation "duplicate"/);
+      expect(CONVERSATION_SYSTEM_PROMPT).toMatch(/Open cards take priority over closed ones/);
+    });
   });
 
   // Responses-API-specific behavior with no Chat-Completions analog -- these
