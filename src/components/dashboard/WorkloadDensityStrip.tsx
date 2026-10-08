@@ -5,6 +5,7 @@ import Link from "next/link";
 import { GlassPanel } from "@/components/ui/GlassPanel";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Badge } from "@/components/ui/Badge";
+import { WorkloadDensityChart } from "@/components/dashboard/WorkloadDensityChart";
 import { buildWorkloadDensity, itemsForDensityDay, countPastDueItems, pastDueItemsFor } from "@/lib/dashboard/workload-density";
 import { ITEM_KIND_BG_CLASS, ITEM_KIND_LABEL } from "@/lib/dashboard/item-kind";
 import type { AppointmentRow, CourseRow, DeadlineRow, TaskRow, TodoListRow } from "@/lib/api/entity-types";
@@ -19,7 +20,6 @@ type Props = {
 };
 
 const WINDOW_DAYS = 7;
-const BAR_MAX_HEIGHT_PX = 56;
 /** Lowest same-day total worth calling out as a pile-up. */
 const PILE_UP_THRESHOLD = 3;
 
@@ -40,7 +40,6 @@ export function WorkloadDensityStrip({ deadlines, tasks, todoLists, courses, app
     () => buildWorkloadDensity(deadlines, tasks, appointments, WINDOW_DAYS),
     [deadlines, tasks, appointments],
   );
-  const max = Math.max(1, ...buckets.map((bucket) => bucket.total));
   const isEmpty = buckets.every((bucket) => bucket.total === 0 && bucket.sessionCount === 0);
 
   const densestBucket = buckets.reduce((densest, bucket) => (bucket.total > densest.total ? bucket : densest), buckets[0]);
@@ -89,49 +88,7 @@ export function WorkloadDensityStrip({ deadlines, tasks, todoLists, courses, app
         <EmptyState title="Nothing on the horizon" description="No deadlines or tasks due in the next 7 days." />
       ) : (
         <>
-          <div className="flex items-end justify-between gap-2">
-            {buckets.map((bucket) => {
-              const heightPx = Math.max(4, (bucket.total / max) * BAR_MAX_HEIGHT_PX);
-              const isSelected = selectedDate === bucket.date;
-              return (
-                <button
-                  key={bucket.date}
-                  type="button"
-                  onClick={() => selectDate(bucket.date)}
-                  aria-pressed={isSelected}
-                  className="flex flex-1 flex-col items-center gap-1.5"
-                >
-                  {/* Fixed-height slot above the bar for the Session marker — kept
-                      separate from the bar's own height so a day with heavy Session
-                      load doesn't read as a due-item pile-up (see sessionCount). */}
-                  <div className="flex h-2.5 items-end" title={bucket.sessionCount > 0 ? `${bucket.sessionCount} session(s) planned` : undefined}>
-                    {bucket.sessionCount > 0 && <span className={`h-1.5 w-1.5 rounded-full ${ITEM_KIND_BG_CLASS.session}`} />}
-                  </div>
-                  <div className="flex h-14 w-full items-end justify-center">
-                    <div
-                      className={`flex w-full max-w-6 flex-col-reverse overflow-hidden rounded-t-sm transition-colors ${
-                        isSelected ? "ring-2 ring-accent-indigo" : ""
-                      }`}
-                      style={{ height: `${heightPx}px` }}
-                    >
-                      {bucket.total === 0 ? (
-                        <div className="h-full w-full bg-panel-border" />
-                      ) : (
-                        KIND_ORDER.filter((kind) => bucket[`${kind}Count`] > 0).map((kind) => (
-                          <div
-                            key={kind}
-                            className={ITEM_KIND_BG_CLASS[kind]}
-                            style={{ height: `${(bucket[`${kind}Count`] / bucket.total) * 100}%` }}
-                          />
-                        ))
-                      )}
-                    </div>
-                  </div>
-                  <span className="font-mono text-[10px] text-text-secondary">{formatShortDate(bucket.date)}</span>
-                </button>
-              );
-            })}
-          </div>
+          <WorkloadDensityChart buckets={buckets} selectedDate={selectedDate} onSelectDate={selectDate} />
 
           <div className="flex flex-wrap items-center gap-3">
             {KIND_ORDER.map((kind) => (
