@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useDeadlines } from "@/hooks/useDeadlines";
 import { useTasks, useTaskActivity } from "@/hooks/useTasks";
 import { useTodoLists } from "@/hooks/useTodoLists";
@@ -10,6 +10,7 @@ import { usePeople } from "@/hooks/usePeople";
 import { UpNextPanel } from "@/components/dashboard/UpNextPanel";
 import { MomentumCard } from "@/components/dashboard/MomentumCard";
 import { DailyIntelligenceCard } from "@/components/dashboard/DailyIntelligenceCard";
+import { WeeklyReviewCard } from "@/components/dashboard/WeeklyReviewCard";
 import { WorkloadDensityStrip } from "@/components/dashboard/WorkloadDensityStrip";
 import { StaleItemsCard } from "@/components/dashboard/StaleItemsCard";
 import { CourseProgressList } from "@/components/dashboard/CourseProgressList";
@@ -17,6 +18,8 @@ import { Skeleton } from "@/components/ui/Skeleton";
 
 /** No /api/dashboard route exists — composes already-fetched entity hooks client-side. */
 export function DashboardContainer() {
+  const [dailyDismissed, setDailyDismissed] = useState(false);
+  const [weeklyDismissed, setWeeklyDismissed] = useState(false);
   // Deadlines are owner-only everywhere now (People feature — matches Voice
   // Assistant's get_person_schedule, which never returns a tracked person's
   // Deadlines either).
@@ -61,7 +64,15 @@ export function DashboardContainer() {
         </div>
       ) : (
         <>
-          <DailyIntelligenceCard />
+          {/* Side by side from md up. Dismissing one card lets the other take the full row. */}
+          <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-6 md:grid-cols-2">
+            <div className={dailyDismissed ? "hidden" : weeklyDismissed ? "md:col-span-2" : ""}>
+              <DailyIntelligenceCard onDismiss={() => setDailyDismissed(true)} />
+            </div>
+            <div className={weeklyDismissed ? "hidden" : dailyDismissed ? "md:col-span-2" : ""}>
+              <WeeklyReviewCard onDismiss={() => setWeeklyDismissed(true)} />
+            </div>
+          </div>
           <WorkloadDensityStrip
             deadlines={deadlines?.rows ?? []}
             tasks={mineOnlyTasks}

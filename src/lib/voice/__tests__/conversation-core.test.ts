@@ -41,6 +41,10 @@ vi.mock("@/lib/voice/deadline-progress-lookup", () => ({
   runDeadlineProgressLookup: vi.fn().mockResolvedValue({ message: "2 of 3 sessions done." }),
 }));
 
+vi.mock("@/lib/voice/weekly-review-lookup", () => ({
+  runWeeklyReviewLookup: vi.fn().mockResolvedValue({ message: "You completed 5 items. Next week is clear." }),
+}));
+
 // loadEntityContext/loadUserTimezone are the two DB-touching calls
 // runConversationTurn makes unconditionally -- mocked so these tests never
 // hit a real Supabase instance. mutationSchema/toPendingMutation are kept
@@ -61,6 +65,7 @@ import { loadDraftMutation } from "@/lib/voice/conversation-memory";
 import { CANCEL_SCOPE_QUESTION, RECURRENCE_DAYS_QUESTION, RECURRENCE_QUESTION } from "@/lib/voice/deadline-recurrence-gate";
 import { runSuggestionsLookup } from "@/lib/voice/suggestions-lookup";
 import { runDeadlineProgressLookup } from "@/lib/voice/deadline-progress-lookup";
+import { runWeeklyReviewLookup } from "@/lib/voice/weekly-review-lookup";
 import { loadEntityContext, loadUserTimezone, mutationDraftSchema, type EntityContext } from "@/lib/voice/intent";
 import { getValidDeadlineEvents, getValidTaskEvents } from "@/lib/api/transitions";
 import { CONVERSATION_SYSTEM_PROMPT, runConversationTurn } from "../conversation-core";
@@ -659,6 +664,27 @@ describe("runConversationTurn", () => {
       // next iteration) -- at(-2) is this call's own function_call_output,
       // at(-1) would be that later, unrelated function_call item.
       expect((mocks.responsesCreate.mock.calls[1][0].input.at(-2) as { output: string }).output).toContain("Unknown person_id");
+    });
+  });
+
+  describe("get_weekly_review", () => {
+    it("calls the weekly review lookup with no arguments and relays its message", async () => {
+      mocks.responsesCreate.mockReset();
+      mocks.responsesCreate
+        .mockResolvedValueOnce(toolCallResponse([{ id: "call_1", name: "get_weekly_review", arguments: {} }]))
+        .mockResolvedValueOnce(
+          toolCallResponse([{ id: "call_2", name: "respond_to_user", arguments: { message: "You completed 5 items. Next week is clear.", needs_follow_up: false } }]),
+        );
+
+      const result = await runConversationTurn(fakeSupabase, "user-1", "give me this week's review and how next week looks", "conv-1");
+
+      expect(result).toEqual({ kind: "answer", message: "You completed 5 items. Next week is clear.", needsFollowUp: false, conversationId: "conv-1" });
+      expect(runWeeklyReviewLookup).toHaveBeenCalledWith(fakeSupabase, "user-1", expect.any(Date));
+      expect((mocks.responsesCreate.mock.calls[1][0].input.at(-2) as { output: string }).output).toContain("You completed 5 items");
+    });
+
+    it("is listed in the system prompt so the model knows when to call it", () => {
+      expect(CONVERSATION_SYSTEM_PROMPT).toContain("get_weekly_review");
     });
   });
 

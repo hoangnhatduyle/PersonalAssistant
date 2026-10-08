@@ -47,7 +47,12 @@ function setCachedIntelligence(data: CachedIntelligence) {
   }
 }
 
-export function DailyIntelligenceCard() {
+type Props = {
+  /** Lets the page re-flow its grid when this card is dismissed. */
+  onDismiss?: () => void;
+};
+
+export function DailyIntelligenceCard({ onDismiss }: Props = {}) {
   const [narrative, setNarrative] = useState<string | null>(null);
   const [workload, setWorkload] = useState<CachedIntelligence["workload"] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -111,7 +116,10 @@ export function DailyIntelligenceCard() {
         <p className="font-mono text-xs uppercase tracking-wide text-accent-teal">Daily Intelligence</p>
         <button
           type="button"
-          onClick={() => setDismissed(true)}
+          onClick={() => {
+            setDismissed(true);
+            onDismiss?.();
+          }}
           className="font-mono text-xs text-text-secondary transition-colors hover:text-text-primary"
           aria-label="Dismiss intelligence"
         >

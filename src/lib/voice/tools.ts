@@ -120,7 +120,7 @@ export interface ProposeMutationArgs {
   > | null;
 }
 
-/** get_personalization_suggestions and start_new_conversation both take no arguments. */
+/** get_personalization_suggestions, get_weekly_review and start_new_conversation all take no arguments. */
 export type EmptyToolArgs = Record<string, never>;
 
 /**
@@ -133,6 +133,7 @@ export type EmptyToolArgs = Record<string, never>;
  *   lookup_knowledge                 -> runKnowledgeLookup (knowledge/retrieval.ts)
  *   get_personalization_suggestions  -> runSuggestionsLookup (suggestions-lookup.ts)
  *   get_deadline_progress            -> runDeadlineProgressLookup (deadline-progress-lookup.ts)
+ *   get_weekly_review                -> runWeeklyReviewLookup (weekly-review-lookup.ts)
  *   start_new_conversation           -> endConversation + resolveActiveConversation (conversation-memory.ts)
  *   respond_to_user                  -> handled directly in conversation-core's loop, not dispatchTool
  *   propose_mutation                 -> handled directly in conversation-core's loop, not dispatchTool
@@ -380,6 +381,14 @@ export const CONVERSATION_TOOLS = [
       required: ["deadline_id"],
       additionalProperties: false,
     },
+  },
+  {
+    type: "function",
+    name: "get_weekly_review",
+    description:
+      "Get the user's weekly review: how the last 7 days went (items completed vs. due, on-time rate, sessions done), what is still open or past due, and how the next 7 days look (load per day, pile-up days, deadlines with no study sessions planned), ending with 1-2 recommendations. Call this for \"give me this week's review\", \"how was my week\", \"how did I do last week\", \"how does next week look\", or any request that combines looking back and looking ahead. No arguments. Its message is already final and speech-ready.",
+    strict: true,
+    parameters: { type: "object", properties: {}, required: [], additionalProperties: false },
   },
   {
     type: "function",
