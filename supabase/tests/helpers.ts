@@ -374,3 +374,52 @@ export async function createLibraryApplication(
   if (error) throw new Error(`failed to create library_application: ${error.message}`, { cause: error });
   return data.id as string;
 }
+
+/** A connected mailbox row. The token columns are opaque placeholders: these tests never decrypt them. */
+export async function createMailAccount(
+  admin: SupabaseClient,
+  userId: string,
+  overrides: Record<string, unknown> = {},
+): Promise<string> {
+  const { data, error } = await admin
+    .from("mail_accounts")
+    .insert({
+      user_id: userId,
+      provider: "google",
+      provider_email: `${randomUUID()}@gmail.com`,
+      refresh_token_ciphertext: "ct",
+      refresh_token_iv: "iv",
+      refresh_token_auth_tag: "tag",
+      ...overrides,
+    })
+    .select("id")
+    .single();
+  if (error) throw new Error(`failed to create mail_account: ${error.message}`, { cause: error });
+  return data.id as string;
+}
+
+export async function createMailTriageItem(
+  admin: SupabaseClient,
+  userId: string,
+  accountId: string,
+  overrides: Record<string, unknown> = {},
+): Promise<string> {
+  const { data, error } = await admin
+    .from("mail_triage_items")
+    .insert({
+      user_id: userId,
+      mail_account_id: accountId,
+      provider: "google",
+      provider_message_id: `msg-${randomUUID()}`,
+      subject: "Test subject",
+      sender: "Ada <ada@example.com>",
+      received_at: new Date().toISOString(),
+      bucket: "needs_action",
+      reason: "Test reason",
+      ...overrides,
+    })
+    .select("id")
+    .single();
+  if (error) throw new Error(`failed to create mail_triage_item: ${error.message}`, { cause: error });
+  return data.id as string;
+}

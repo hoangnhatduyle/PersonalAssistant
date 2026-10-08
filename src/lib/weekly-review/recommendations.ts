@@ -40,5 +40,11 @@ export function buildRecommendations(data: WeeklyReviewData): string[] {
     );
   }
 
+  // Lowest priority: only takes a slot the rules above left free.
+  const emails = data.pending.unresolvedEmails;
+  if (emails && picks.length < MAX_RECOMMENDATIONS) {
+    picks.push(`Go through ${plural(emails.count, "email")} from your latest check that still ${emails.count === 1 ? "needs" : "need"} attention.`);
+  }
+
   return picks.slice(0, MAX_RECOMMENDATIONS);
 }

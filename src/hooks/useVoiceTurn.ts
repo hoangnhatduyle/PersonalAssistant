@@ -1,6 +1,15 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "@/lib/http/client";
-import { appointmentKeys, courseKeys, deadlineKeys, noteKeys, reminderKeys, taskKeys, todoListKeys } from "@/lib/query/keys";
+import {
+  appointmentKeys,
+  courseKeys,
+  deadlineKeys,
+  mailKeys,
+  noteKeys,
+  reminderKeys,
+  taskKeys,
+  todoListKeys,
+} from "@/lib/query/keys";
 import type { VoiceTurnResult } from "@/lib/voice/session";
 import type { MutationExecutionResult } from "@/lib/voice/mutations";
 
@@ -26,6 +35,9 @@ function invalidateAfterMutation(queryClient: ReturnType<typeof useQueryClient>)
   // Board Cards are tasks (board merge) — already covered by taskKeys above.
   queryClient.invalidateQueries({ queryKey: appointmentKeys.all });
   queryClient.invalidateQueries({ queryKey: todoListKeys.all });
+  // A Deadline/Task/Event proposed from an email-triage item marks that item
+  // acted on confirm (session.ts), so the stored triage lists are stale too.
+  queryClient.invalidateQueries({ queryKey: mailKeys.triage() });
 }
 
 /**
@@ -34,10 +46,12 @@ function invalidateAfterMutation(queryClient: ReturnType<typeof useQueryClient>)
  * mutating intent always lands in AwaitingConfirmation (the actual write
  * only happens later via useConfirmVoiceTurn), and a read-only intent
  * (upcoming_schedule/knowledge_lookup) only reads — a knowledge_lookup
- * answer doesn't touch knowledge_sources/knowledge_chunks. So there is
- * nothing to invalidate on this hook's success.
+ * answer doesn't touch knowledge_sources/knowledge_chunks. The one exception
+ * is the triage_email tool, which stores triage results (mail_triage_items),
+ * so only the stored-triage lists are invalidated on success.
  */
 export function useVoiceTurn() {
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (input: VoiceTurnClientInput) => {
       if ("audio" in input) {
@@ -50,6 +64,9 @@ export function useVoiceTurn() {
         ).data;
       }
       return (await apiFetch<VoiceTurnResult>("/api/voice", { method: "POST", body: { transcript: input.transcript } })).data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: mailKeys.triage() });
     },
   });
 }

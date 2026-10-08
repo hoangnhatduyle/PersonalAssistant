@@ -71,6 +71,33 @@ describe("WeeklyReviewCard", () => {
     expect(localStorage.getItem("cadence.weeklyReview")).toContain("You finished 5 items last week.");
   });
 
+  it("lists unresolved emails from the latest triage when the review has them, and omits the block otherwise", async () => {
+    const withEmails = makeReview();
+    withEmails.data.pending.unresolvedEmails = {
+      count: 4,
+      items: [
+        { subject: "Lease renewal", sender: "Ada <ada@x.com>", bucket: "needs_action" },
+        { subject: "Interview schedule", sender: "Recruiter <r@co.com>", bucket: "important" },
+      ],
+    };
+    apiFetch.mockResolvedValueOnce({ data: withEmails });
+    const { unmount } = renderWithProviders(<WeeklyReviewCard />);
+    fireEvent.click(screen.getByRole("button", { name: "Generate" }));
+
+    expect(await screen.findByText("4 unresolved emails")).toBeInTheDocument();
+    expect(screen.getByText("Lease renewal")).toBeInTheDocument();
+    expect(screen.getByText("Interview schedule")).toBeInTheDocument();
+    unmount();
+
+    // A review cached before this feature has no such field and must still render.
+    localStorage.clear();
+    apiFetch.mockResolvedValueOnce({ data: makeReview() });
+    renderWithProviders(<WeeklyReviewCard />);
+    fireEvent.click(screen.getByRole("button", { name: "Generate" }));
+    expect(await screen.findByText("You finished 5 items last week.")).toBeInTheDocument();
+    expect(screen.queryByTestId("unresolved-emails")).not.toBeInTheDocument();
+  });
+
   it("restores today's cached review without a request, but ignores a cache from another day", () => {
     const today = new Date();
     const key = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;

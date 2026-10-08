@@ -1354,6 +1354,116 @@ export type Database = {
           },
         ]
       }
+      mail_triage_items: {
+        Row: {
+          bucket: string
+          created_at: string
+          expires_at: string
+          id: string
+          mail_account_id: string
+          provider: string
+          provider_message_id: string
+          reason: string
+          received_at: string
+          resolved_at: string | null
+          sender: string
+          stage2_at: string | null
+          status: string
+          subject: string
+          suggested_action: Json | null
+          triaged_at: string
+          updated_at: string
+          user_id: string
+          web_link: string | null
+        }
+        Insert: {
+          bucket: string
+          created_at?: string
+          expires_at?: string
+          id?: string
+          mail_account_id: string
+          provider: string
+          provider_message_id: string
+          reason: string
+          received_at: string
+          resolved_at?: string | null
+          sender: string
+          stage2_at?: string | null
+          status?: string
+          subject: string
+          suggested_action?: Json | null
+          triaged_at?: string
+          updated_at?: string
+          user_id: string
+          web_link?: string | null
+        }
+        Update: {
+          bucket?: string
+          created_at?: string
+          expires_at?: string
+          id?: string
+          mail_account_id?: string
+          provider?: string
+          provider_message_id?: string
+          reason?: string
+          received_at?: string
+          resolved_at?: string | null
+          sender?: string
+          stage2_at?: string | null
+          status?: string
+          subject?: string
+          suggested_action?: Json | null
+          triaged_at?: string
+          updated_at?: string
+          user_id?: string
+          web_link?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "mail_triage_items_mail_account_id_user_id_fkey"
+            columns: ["mail_account_id", "user_id"]
+            isOneToOne: false
+            referencedRelation: "mail_accounts"
+            referencedColumns: ["id", "user_id"]
+          },
+          {
+            foreignKeyName: "mail_triage_items_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      mail_triage_runs: {
+        Row: {
+          created_at: string
+          id: string
+          provider: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          provider: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          provider?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "mail_triage_runs_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       notes: {
         Row: {
           body: string
@@ -3037,6 +3147,51 @@ export type Database = {
         SetofOptions: {
           from: "*"
           to: "mail_api_requests"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
+      delete_expired_mail_triage_items: {
+        Args: never
+        Returns: {
+          bucket: string
+          created_at: string
+          expires_at: string
+          id: string
+          mail_account_id: string
+          provider: string
+          provider_message_id: string
+          reason: string
+          received_at: string
+          resolved_at: string | null
+          sender: string
+          stage2_at: string | null
+          status: string
+          subject: string
+          suggested_action: Json | null
+          triaged_at: string
+          updated_at: string
+          user_id: string
+          web_link: string | null
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "mail_triage_items"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
+      delete_expired_mail_triage_runs: {
+        Args: never
+        Returns: {
+          created_at: string
+          id: string
+          provider: string
+          user_id: string
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "mail_triage_runs"
           isOneToOne: false
           isSetofReturn: true
         }

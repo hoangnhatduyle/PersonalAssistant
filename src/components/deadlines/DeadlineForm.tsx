@@ -21,6 +21,9 @@ type Props = {
   deadline?: DeadlineRow;
   /** Pre-fills the due date/time when creating from a Calendar empty-slot click (src/components/calendar/CreateEventDialog.tsx). Ignored when editing an existing deadline. */
   defaultDueAt?: string;
+  /** Pre-fill the title / course when creating from an email-triage suggestion (src/components/dashboard/EmailActionDialog.tsx). Ignored when editing. */
+  defaultTitle?: string;
+  defaultCourseId?: string;
   onSubmit: (values: DeadlinePayload) => Promise<void> | void;
   onCancel?: () => void;
   submitLabel?: string;
@@ -40,7 +43,15 @@ function weekdayOf(dueAt: string): number | null {
   return Number.isNaN(date.getTime()) ? null : date.getDay();
 }
 
-export function DeadlineForm({ deadline, defaultDueAt, onSubmit, onCancel, submitLabel = "Save" }: Props) {
+export function DeadlineForm({
+  deadline,
+  defaultDueAt,
+  defaultTitle,
+  defaultCourseId,
+  onSubmit,
+  onCancel,
+  submitLabel = "Save",
+}: Props) {
   const { data: courses } = useCourses({ personId: "me" });
   const [isRecurring, setIsRecurring] = useState(() => (deadline?.recurrence_days?.length ?? 0) > 0);
   const {
@@ -56,8 +67,8 @@ export function DeadlineForm({ deadline, defaultDueAt, onSubmit, onCancel, submi
   } = useForm<DeadlinePayload>({
     resolver: zodResolver(deadlinePayloadSchema),
     defaultValues: {
-      course_id: deadline?.course_id ?? "",
-      title: deadline?.title ?? "",
+      course_id: deadline?.course_id ?? defaultCourseId ?? "",
+      title: deadline?.title ?? defaultTitle ?? "",
       due_at: deadline?.due_at ?? defaultDueAt ?? "",
       priority: deadline?.priority ?? undefined,
       recurrence_days: deadline?.recurrence_days ?? [],

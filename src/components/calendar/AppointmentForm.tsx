@@ -34,13 +34,24 @@ type Props = {
   /** Pre-fills date/time when creating from a Calendar empty-slot click (src/components/calendar/CreateEventDialog.tsx). Ignored when editing an existing appointment. */
   defaultDate?: string;
   defaultTime?: string;
+  /** Pre-fill the title / duration when creating from an email-triage suggestion (src/components/dashboard/EmailActionDialog.tsx). Ignored when editing. */
+  defaultTitle?: string;
+  defaultDurationMinutes?: number;
   onSubmit: (values: AppointmentPayload) => void;
   onCancel: () => void;
 };
 
-export function AppointmentForm({ appointment, defaultDate, defaultTime, onSubmit, onCancel }: Props) {
+export function AppointmentForm({
+  appointment,
+  defaultDate,
+  defaultTime,
+  defaultTitle,
+  defaultDurationMinutes,
+  onSubmit,
+  onCancel,
+}: Props) {
   const [isRecurring, setIsRecurring] = useState(() => (appointment?.meeting_blocks?.length ?? 0) > 0);
-  const [title, setTitle] = useState(appointment?.title ?? "");
+  const [title, setTitle] = useState(appointment?.title ?? defaultTitle ?? "");
   const [category, setCategory] = useState(appointment?.category ?? APPOINTMENT_CATEGORIES[0]);
   const [date, setDate] = useState(appointment?.date ?? defaultDate ?? "");
   // Structured HH:MM (not free text) — required so appointment-vs-appointment
@@ -48,7 +59,13 @@ export function AppointmentForm({ appointment, defaultDate, defaultTime, onSubmi
   // time to compare, unlike a Deadline Session's free-text time.
   const [time, setTime] = useState(appointment?.time ?? defaultTime ?? "");
   const [duration, setDuration] = useState(
-    appointment?.duration_minutes ? String(appointment.duration_minutes) : defaultTime ? "60" : "",
+    appointment?.duration_minutes
+      ? String(appointment.duration_minutes)
+      : defaultDurationMinutes
+        ? String(defaultDurationMinutes)
+        : defaultTime
+          ? "60"
+          : "",
   );
   const [location, setLocation] = useState(appointment?.location ?? "");
   const [notes, setNotes] = useState((appointment?.notes ?? []).join("\n"));

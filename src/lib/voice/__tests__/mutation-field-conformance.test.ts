@@ -135,6 +135,38 @@ describe("mutation field conformance", () => {
   );
 });
 
+// triage_item_id is advertised on propose_mutation but is not a payload field:
+// it rides on the PendingMutation itself (src/lib/voice/mutations.ts's
+// triageItemId) so confirmVoiceSession can mark the originating email handled.
+// It is therefore checked here rather than in the ADVERTISED payload table.
+describe("triage_item_id conformance", () => {
+  const TRIAGE_ID = "33333333-3333-4333-8333-333333333333";
+
+  it("is advertised on propose_mutation", () => {
+    expect(MUTATION_FIELD_NAMES).toContain("triage_item_id");
+  });
+
+  it.each(["deadline", "task", "event"])("survives onto a %s create's PendingMutation, outside the API payload", (targetType) => {
+    const raw = mutationSchema.safeParse({ ...sampleArgs(targetType, "create", "title"), triage_item_id: TRIAGE_ID });
+    expect(raw.success).toBe(true);
+    if (!raw.success) return;
+    const pending = toPendingMutation(raw.data, NOW, TIMEZONE);
+    expect(pending).toMatchObject({ targetType, operation: "create", triageItemId: TRIAGE_ID });
+    if ("payload" in pending) expect(pending.payload).not.toHaveProperty("triage_item_id");
+  });
+
+  it("defaults to null and is omitted when the model leaves it out", () => {
+    const raw = mutationSchema.safeParse(sampleArgs("task", "create", "title"));
+    expect(raw.success).toBe(true);
+    if (!raw.success) return;
+    expect(toPendingMutation(raw.data, NOW, TIMEZONE)).not.toHaveProperty("triageItemId");
+  });
+
+  it("rejects a value that isn't a uuid", () => {
+    expect(mutationSchema.safeParse({ ...sampleArgs("task", "create", "title"), triage_item_id: "not-a-uuid" }).success).toBe(false);
+  });
+});
+
 function sampleArgs(targetType: string, operation: string, field: string): Record<string, unknown> {
   const base: Record<string, unknown> = {
     target_type: targetType,

@@ -1,14 +1,19 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { MailMessageDialog } from "@/components/dashboard/MailMessageDialog";
 import { MailProviderIcon } from "@/components/dashboard/MailProviderIcon";
+import { TriageBucketBadge, bucketLabel } from "@/components/dashboard/TriageBucketBadge";
+import { useEmailTriage } from "@/hooks/useEmailTriage";
 import { useMailAccounts, useDisconnectMailAccount } from "@/hooks/useMailAccounts";
 import { useMailMessages } from "@/hooks/useMailMessages";
 import { formatRelativeTime } from "@/lib/format-relative-time";
+import type { TriageBucket } from "@/lib/email-triage/types";
 import type { MailMessage, MailProvider } from "@/lib/mail/types";
+
+const FILTERS = ["all", "needs_action", "important", "fyi", "ignore"] as const satisfies ReadonlyArray<TriageBucket | "all">;
 
 const PROVIDER_LABEL: Record<MailProvider, string> = {
   google: "Gmail",
@@ -29,11 +34,34 @@ const CONNECT_LINK_CLASSES =
 export function MailInboxCard() {
   const [activeTab, setActiveTab] = useState<MailProvider>("google");
   const [selectedMessage, setSelectedMessage] = useState<MailMessage | null>(null);
+  const [bucketFilter, setBucketFilter] = useState<TriageBucket | "all">("all");
   const { data: accounts } = useMailAccounts();
   const { data: inbox, isLoading, isFetching, refetch } = useMailMessages(activeTab);
   const disconnectMutation = useDisconnectMailAccount();
 
   const activeAccount = accounts?.find((account) => account.provider === activeTab);
+
+  // Stored triage results (every non-expired item, including dismissed/acted)
+  // joined to the visible messages by provider message id. Badges/filters only
+  // appear for messages a manual triage run has actually classified.
+  const { data: triageItems } = useEmailTriage("all");
+  const triageByMessageId = useMemo(
+    () => new Map((triageItems ?? []).filter((item) => item.provider === activeTab).map((item) => [item.messageId, item])),
+    [triageItems, activeTab],
+  );
+  const bucketCounts = useMemo(() => {
+    const counts = new Map<TriageBucket, number>();
+    for (const message of inbox?.messages ?? []) {
+      const triage = triageByMessageId.get(message.id);
+      if (triage) counts.set(triage.bucket, (counts.get(triage.bucket) ?? 0) + 1);
+    }
+    return counts;
+  }, [inbox, triageByMessageId]);
+  // A filter whose bucket has no messages left (e.g. after a refresh) falls back to "all".
+  const activeFilter = bucketFilter !== "all" && !bucketCounts.has(bucketFilter) ? "all" : bucketFilter;
+  const visibleMessages = (inbox?.messages ?? []).filter(
+    (message) => activeFilter === "all" || triageByMessageId.get(message.id)?.bucket === activeFilter,
+  );
 
   return (
     <div className="flex flex-col gap-4">
@@ -116,27 +144,64 @@ export function MailInboxCard() {
           {inbox.messages.length === 0 ? (
             <EmptyState title="Inbox zero" description={`No recent ${PROVIDER_LABEL[activeTab]} messages.`} />
           ) : (
-            <ul className="flex max-h-[14rem] flex-col divide-y divide-panel-border overflow-y-auto pr-1">
-              {inbox.messages.map((message) => (
-                <li key={message.id} className="flex items-start gap-2 py-2.5 first:pt-0 last:pb-0">
-                  {!message.isRead && (
-                    <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-status-ok" aria-hidden="true" />
-                  )}
-                  <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                    <button
-                      type="button"
-                      onClick={() => setSelectedMessage(message)}
-                      className="truncate text-left text-sm text-text-primary hover:underline"
-                    >
-                      {message.subject}
-                    </button>
-                    <span className="truncate font-mono text-xs text-text-secondary">
-                      {message.from} · {formatRelativeTime(new Date(message.receivedAt))}
-                    </span>
-                  </div>
-                </li>
-              ))}
-            </ul>
+            <>
+              {bucketCounts.size > 0 && (
+                <div role="group" aria-label="Filter by triage bucket" className="flex flex-wrap items-center gap-1.5">
+                  {FILTERS.map((filter) => {
+                    const count = filter === "all" ? inbox.messages.length : (bucketCounts.get(filter) ?? 0);
+                    if (filter !== "all" && count === 0) return null;
+                    const isActive = activeFilter === filter;
+                    return (
+                      <button
+                        key={filter}
+                        type="button"
+                        aria-pressed={isActive}
+                        onClick={() => setBucketFilter(filter)}
+                        className={`rounded-full border px-2.5 py-0.5 font-mono text-[10px] uppercase tracking-wide transition-colors ${
+                          isActive
+                            ? "border-accent-teal text-text-primary"
+                            : "border-panel-border text-text-secondary hover:text-text-primary"
+                        }`}
+                      >
+                        {filter === "all" ? "All" : bucketLabel(filter)} {count}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+              {visibleMessages.length === 0 ? (
+                <p className="text-sm text-text-secondary">No messages in this bucket.</p>
+              ) : (
+                <ul className="flex max-h-[14rem] flex-col divide-y divide-panel-border overflow-y-auto pr-1">
+                  {visibleMessages.map((message) => {
+                    const triage = triageByMessageId.get(message.id);
+                    return (
+                      <li key={message.id} className="flex items-start gap-2 py-2.5 first:pt-0 last:pb-0">
+                        {!message.isRead && (
+                          <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-status-ok" aria-hidden="true" />
+                        )}
+                        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedMessage(message)}
+                              className="min-w-0 truncate text-left text-sm text-text-primary hover:underline"
+                            >
+                              {message.subject}
+                            </button>
+                            {triage && <TriageBucketBadge bucket={triage.bucket} className="shrink-0" />}
+                          </div>
+                          <span className="truncate font-mono text-xs text-text-secondary">
+                            {message.from} · {formatRelativeTime(new Date(message.receivedAt))}
+                          </span>
+                          {triage && <span className="truncate text-xs text-text-secondary">{triage.reason}</span>}
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </>
           )}
         </>
       )}

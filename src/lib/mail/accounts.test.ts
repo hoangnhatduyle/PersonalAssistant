@@ -33,6 +33,7 @@ describe("getMailAccount", () => {
   it("decrypts a stored refresh token", async () => {
     const encrypted = encryptToken("real-refresh-token");
     const supabase = fakeSupabase({
+      id: "acct-1",
       provider: "google",
       provider_email: "user@gmail.com",
       refresh_token_ciphertext: encrypted.ciphertext,
@@ -41,7 +42,12 @@ describe("getMailAccount", () => {
     });
 
     const account = await getMailAccount(supabase, "user-1", "google");
-    expect(account).toEqual({ provider: "google", providerEmail: "user@gmail.com", refreshToken: "real-refresh-token" });
+    expect(account).toEqual({
+      id: "acct-1",
+      provider: "google",
+      providerEmail: "user@gmail.com",
+      refreshToken: "real-refresh-token",
+    });
   });
 
   it("returns null when no account row exists", async () => {

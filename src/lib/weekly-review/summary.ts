@@ -38,6 +38,9 @@ export function buildPlainSummary(data: WeeklyReviewData): string {
     sentences.push("Nothing is past due.");
   }
   if (pending.dueTodayCount > 0) sentences.push(`${plural(pending.dueTodayCount, "item")} ${pending.dueTodayCount === 1 ? "is" : "are"} due today.`);
+  if (pending.unresolvedEmails) {
+    sentences.push(`You also have ${plural(pending.unresolvedEmails.count, "unresolved email")} from your latest email check.`);
+  }
 
   if (nextWeek.total === 0) {
     sentences.push("Next week is clear.");

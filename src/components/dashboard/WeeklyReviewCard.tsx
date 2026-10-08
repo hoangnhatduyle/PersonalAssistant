@@ -207,6 +207,21 @@ function ReviewBody({
 
       <p className="whitespace-pre-line text-sm leading-relaxed text-text-primary">{review.narrative}</p>
 
+      {pending.unresolvedEmails && (
+        <div className="flex flex-col gap-1.5" data-testid="unresolved-emails">
+          <p className="font-mono text-xs uppercase tracking-wide text-text-eyebrow">
+            {pending.unresolvedEmails.count} unresolved {pending.unresolvedEmails.count === 1 ? "email" : "emails"}
+          </p>
+          <ul className="flex flex-col gap-1">
+            {pending.unresolvedEmails.items.slice(0, 3).map((email, index) => (
+              <li key={`${email.subject}-${index}`} className="truncate text-sm text-text-primary">
+                {email.subject}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       <div className="flex flex-col gap-2">
         <p className="font-mono text-xs uppercase tracking-wide text-text-eyebrow">Next 7 days</p>
         <div className="grid grid-cols-7 gap-1" data-testid="next-week-strip">

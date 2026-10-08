@@ -1,12 +1,41 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/types";
-import type { ReviewDeadline, ReviewSession, ReviewTask, WeeklyReviewRows, WeeklyReviewWindow } from "@/lib/weekly-review/types";
+import { attentionItems } from "@/lib/email-triage/rank";
+import { loadTriageItems } from "@/lib/email-triage/store";
+import type {
+  ReviewDeadline,
+  ReviewEmail,
+  ReviewSession,
+  ReviewTask,
+  WeeklyReviewRows,
+  WeeklyReviewWindow,
+} from "@/lib/weekly-review/types";
 
 const OPEN_DEADLINE_STATUSES = ["Not Started", "In Progress", "Submitted", "Overdue"] as const;
 const DEADLINE_COLUMNS = "id, title, due_at, status, completed_at, course_id, priority";
 const TASK_COLUMNS = "id, title, due_at, status, completed_at, priority";
 /** Older still-open items beyond this are summarised by the first N; the review only names a handful anyway. */
 const OLDER_OPEN_LIMIT = 200;
+
+/**
+ * Open Important / Needs-action emails from the latest triage: a plain DB read
+ * of stored results (no mailbox or OpenAI calls), ranked needs-action first.
+ * Non-fatal: the review is about deadlines and tasks, so a failure here is
+ * logged and the section is simply omitted.
+ */
+async function loadUnresolvedEmails(supabase: SupabaseClient<Database>, userId: string, now: Date): Promise<ReviewEmail[]> {
+  try {
+    const items = await loadTriageItems(supabase, userId, { scope: "open", now });
+    return attentionItems(items).map((item) => ({
+      subject: item.subject,
+      sender: item.sender,
+      bucket: item.bucket as ReviewEmail["bucket"],
+    }));
+  } catch (error) {
+    console.error("weekly review: unresolved emails unavailable", error);
+    return [];
+  }
+}
 
 function dedupeById<T extends { id: string }>(...lists: T[][]): T[] {
   return [...new Map(lists.flat().map((row) => [row.id, row])).values()];
@@ -24,6 +53,7 @@ export async function loadWeeklyReviewRows(
   supabase: SupabaseClient<Database>,
   userId: string,
   window: WeeklyReviewWindow,
+  now: Date = new Date(),
 ): Promise<WeeklyReviewRows> {
   const lastStart = window.lastStartUtc.toISOString();
   const tomorrowStart = window.tomorrowStartUtc.toISOString();
@@ -84,6 +114,7 @@ export async function loadWeeklyReviewRows(
   }
 
   return {
+    unresolvedEmails: await loadUnresolvedEmails(supabase, userId, now),
     deadlines,
     tasks,
     sessions: sessions.data ?? [],

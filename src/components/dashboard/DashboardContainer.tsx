@@ -11,6 +11,7 @@ import { UpNextPanel } from "@/components/dashboard/UpNextPanel";
 import { MomentumCard } from "@/components/dashboard/MomentumCard";
 import { DailyIntelligenceCard } from "@/components/dashboard/DailyIntelligenceCard";
 import { WeeklyReviewCard } from "@/components/dashboard/WeeklyReviewCard";
+import { EmailAttentionCard } from "@/components/dashboard/EmailAttentionCard";
 import { WorkloadDensityStrip } from "@/components/dashboard/WorkloadDensityStrip";
 import { StaleItemsCard } from "@/components/dashboard/StaleItemsCard";
 import { CourseProgressList } from "@/components/dashboard/CourseProgressList";
@@ -64,14 +65,18 @@ export function DashboardContainer() {
         </div>
       ) : (
         <>
-          {/* Side by side from md up. Dismissing one card lets the other take the full row. */}
-          <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-6 md:grid-cols-2">
-            <div className={dailyDismissed ? "hidden" : weeklyDismissed ? "md:col-span-2" : ""}>
-              <DailyIntelligenceCard onDismiss={() => setDailyDismissed(true)} />
+          {/* Daily Intelligence + Weekly Review stay a pair. "Needs your attention" is a compact third column on very wide screens (2xl) and a full-width row beneath the pair everywhere else. */}
+          <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-6 2xl:grid-cols-[minmax(0,1fr)_minmax(300px,360px)]">
+            {/* Side by side from md up. Dismissing one card lets the other take the full row. */}
+            <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-6 md:grid-cols-2">
+              <div className={dailyDismissed ? "hidden" : weeklyDismissed ? "md:col-span-2" : ""}>
+                <DailyIntelligenceCard onDismiss={() => setDailyDismissed(true)} />
+              </div>
+              <div className={weeklyDismissed ? "hidden" : dailyDismissed ? "md:col-span-2" : ""}>
+                <WeeklyReviewCard onDismiss={() => setWeeklyDismissed(true)} />
+              </div>
             </div>
-            <div className={weeklyDismissed ? "hidden" : dailyDismissed ? "md:col-span-2" : ""}>
-              <WeeklyReviewCard onDismiss={() => setWeeklyDismissed(true)} />
-            </div>
+            <EmailAttentionCard />
           </div>
           <WorkloadDensityStrip
             deadlines={deadlines?.rows ?? []}

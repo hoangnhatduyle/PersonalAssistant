@@ -17,6 +17,7 @@ export const COLLISION_THRESHOLD = 3;
 const MAX_PAST_DUE_ITEMS = 8;
 const MAX_NEXT_WEEK_ITEMS = 8;
 const MAX_UNPLANNED_DEADLINES = 5;
+const MAX_UNRESOLVED_EMAIL_ITEMS = 5;
 const MAX_TITLES_PER_DAY = 3;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -99,6 +100,8 @@ export function buildWeeklyReview(rows: WeeklyReviewRows, window: WeeklyReviewWi
   }));
   const dueTodayCount = entries.filter((entry) => entry.open && inRange(entry.dueAt, window.todayStartUtc, window.tomorrowStartUtc)).length;
 
+  const unresolvedEmails = rows.unresolvedEmails ?? [];
+
   // --- Next week -----------------------------------------------------------
   const nextEntries = entries.filter((entry) => entry.open && inRange(entry.dueAt, window.tomorrowStartUtc, window.nextEndUtcExclusive)).sort(byDueAt);
   const plannedSessionsByDay = new Map<string, number>();
@@ -150,7 +153,14 @@ export function buildWeeklyReview(rows: WeeklyReviewRows, window: WeeklyReviewWi
       onTimeRate: judged > 0 ? Math.round((completedOnTime / judged) * 100) : null,
       sessions: { done: countSessions("done"), skipped: countSessions("skipped"), planned: countSessions("planned") },
     },
-    pending: { pastDueCount: pastDue.length, pastDueItems, dueTodayCount },
+    pending: {
+      pastDueCount: pastDue.length,
+      pastDueItems,
+      dueTodayCount,
+      ...(unresolvedEmails.length > 0
+        ? { unresolvedEmails: { count: unresolvedEmails.length, items: unresolvedEmails.slice(0, MAX_UNRESOLVED_EMAIL_ITEMS) } }
+        : {}),
+    },
     nextWeek: {
       days,
       total: nextEntries.length,

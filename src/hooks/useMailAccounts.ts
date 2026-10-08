@@ -19,6 +19,8 @@ export function useDisconnectMailAccount() {
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: mailKeys.accounts() });
       queryClient.invalidateQueries({ queryKey: mailKeys.messages(result.provider) });
+      // Disconnecting a mailbox cascades its stored triage results (0053).
+      queryClient.invalidateQueries({ queryKey: mailKeys.triage() });
     },
   });
 }

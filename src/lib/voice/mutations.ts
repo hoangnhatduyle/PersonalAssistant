@@ -53,12 +53,13 @@ export type PendingMutation =
   | { targetType: "course"; operation: "create"; payload: CoursePayload }
   | { targetType: "course"; operation: "update"; targetId: string; payload: CoursePatch }
   | { targetType: "course"; operation: "delete"; targetId: string }
-  | { targetType: "deadline"; operation: "create"; payload: DeadlinePayload }
+  // triageItemId (Deadline/Task/Event create only): the email-triage item this was proposed from -- marked "acted" by confirmVoiceSession once the create succeeds (src/lib/email-triage/store.ts).
+  | { targetType: "deadline"; operation: "create"; payload: DeadlinePayload; triageItemId?: string }
   | { targetType: "deadline"; operation: "update"; targetId: string; payload: DeadlinePatch }
   | { targetType: "deadline"; operation: "delete"; targetId: string }
   // cancelScope only matters for user_cancels on a recurring deadline (default: just this occurrence) -- see cancel_deadline_series, 0042_deadline_series.sql.
   | { targetType: "deadline"; operation: "transition"; targetId: string; event: DeadlineTransitionEvent; cancelScope?: DeadlineCancelScope }
-  | { targetType: "task"; operation: "create"; payload: TaskPayload }
+  | { targetType: "task"; operation: "create"; payload: TaskPayload; triageItemId?: string }
   | { targetType: "task"; operation: "update"; targetId: string; payload: TaskPatch }
   | { targetType: "task"; operation: "delete"; targetId: string }
   | { targetType: "task"; operation: "transition"; targetId: string; event: TaskTransitionEvent }
@@ -74,7 +75,7 @@ export type PendingMutation =
   | { targetType: "todo_list"; operation: "create"; payload: TodoListPayload }
   | { targetType: "todo_list"; operation: "update"; targetId: string; payload: TodoListPatch }
   | { targetType: "todo_list"; operation: "delete"; targetId: string }
-  | { targetType: "event"; operation: "create"; payload: AppointmentPayload }
+  | { targetType: "event"; operation: "create"; payload: AppointmentPayload; triageItemId?: string }
   | { targetType: "event"; operation: "update"; targetId: string; payload: AppointmentPatch }
   | { targetType: "event"; operation: "delete"; targetId: string }
   | { targetType: "event"; operation: "transition"; targetId: string; event: EventTransitionEvent };

@@ -15,7 +15,11 @@ export function useMailMessageDetail(provider: MailProvider, id: string | undefi
   return useQuery({
     queryKey: mailKeys.messageDetail(provider, id ?? ""),
     queryFn: async () =>
-      (await apiFetch<MailMessageDetailResponse>(`/api/mail/messages/${id}${toQueryString({ provider })}`)).data,
+      (
+        await apiFetch<MailMessageDetailResponse>(
+          `/api/mail/messages/${encodeURIComponent(id ?? "")}${toQueryString({ provider })}`,
+        )
+      ).data,
     enabled: Boolean(id),
     staleTime: MAIL_QUERY_STALE_TIME_MS,
   });

@@ -45,6 +45,11 @@ vi.mock("@/lib/voice/weekly-review-lookup", () => ({
   runWeeklyReviewLookup: vi.fn().mockResolvedValue({ message: "You completed 5 items. Next week is clear." }),
 }));
 
+vi.mock("@/lib/voice/email-triage-lookup", () => ({
+  runEmailTriageLookup: vi.fn().mockResolvedValue({ message: "I checked 3 new emails in Gmail. 1 email needs action." }),
+  runStoredEmailTriageLookup: vi.fn().mockResolvedValue({ message: "1 email needs action." }),
+}));
+
 // loadEntityContext/loadUserTimezone are the two DB-touching calls
 // runConversationTurn makes unconditionally -- mocked so these tests never
 // hit a real Supabase instance. mutationSchema/toPendingMutation are kept
@@ -66,6 +71,7 @@ import { CANCEL_SCOPE_QUESTION, RECURRENCE_DAYS_QUESTION, RECURRENCE_QUESTION } 
 import { runSuggestionsLookup } from "@/lib/voice/suggestions-lookup";
 import { runDeadlineProgressLookup } from "@/lib/voice/deadline-progress-lookup";
 import { runWeeklyReviewLookup } from "@/lib/voice/weekly-review-lookup";
+import { runEmailTriageLookup, runStoredEmailTriageLookup } from "@/lib/voice/email-triage-lookup";
 import { loadEntityContext, loadUserTimezone, mutationDraftSchema, type EntityContext } from "@/lib/voice/intent";
 import { getValidDeadlineEvents, getValidTaskEvents } from "@/lib/api/transitions";
 import { CONVERSATION_SYSTEM_PROMPT, runConversationTurn } from "../conversation-core";
@@ -685,6 +691,138 @@ describe("runConversationTurn", () => {
 
     it("is listed in the system prompt so the model knows when to call it", () => {
       expect(CONVERSATION_SYSTEM_PROMPT).toContain("get_weekly_review");
+    });
+  });
+
+  describe("triage_email", () => {
+    it("runs the live triage lookup with the provider and day range the model passed", async () => {
+      mocks.responsesCreate.mockReset();
+      vi.mocked(runEmailTriageLookup).mockClear();
+      mocks.responsesCreate
+        .mockResolvedValueOnce(toolCallResponse([{ id: "call_1", name: "triage_email", arguments: { provider: "google", days: 3 } }]))
+        .mockResolvedValueOnce(
+          toolCallResponse([{ id: "call_2", name: "respond_to_user", arguments: { message: "I checked 3 new emails in Gmail. 1 email needs action.", needs_follow_up: false } }]),
+        );
+
+      const result = await runConversationTurn(fakeSupabase, "user-1", "check my Gmail for the last 3 days", "conv-1");
+
+      expect(result).toMatchObject({ kind: "answer", message: "I checked 3 new emails in Gmail. 1 email needs action." });
+      expect(runEmailTriageLookup).toHaveBeenCalledWith(fakeSupabase, "user-1", { provider: "google", days: 3 });
+      expect((mocks.responsesCreate.mock.calls[1][0].input.at(-2) as { output: string }).output).toContain("1 email needs action");
+    });
+
+    it("passes provider null through so the lookup can report which accounts are connected and the model can ask", async () => {
+      mocks.responsesCreate.mockReset();
+      vi.mocked(runEmailTriageLookup).mockClear();
+      vi.mocked(runEmailTriageLookup).mockResolvedValueOnce({
+        message: "Which account should I check, Gmail or Outlook?",
+        needsProvider: true,
+        connected: ["google", "microsoft"],
+      });
+      mocks.responsesCreate
+        .mockResolvedValueOnce(toolCallResponse([{ id: "call_1", name: "triage_email", arguments: { provider: null, days: null } }]))
+        .mockResolvedValueOnce(
+          toolCallResponse([{ id: "call_2", name: "respond_to_user", arguments: { message: "Gmail or Outlook?", needs_follow_up: true } }]),
+        );
+
+      const result = await runConversationTurn(fakeSupabase, "user-1", "check my email", "conv-1");
+
+      expect(result).toMatchObject({ kind: "answer", message: "Gmail or Outlook?", needsFollowUp: true });
+      expect(runEmailTriageLookup).toHaveBeenCalledWith(fakeSupabase, "user-1", { provider: null, days: null });
+      expect((mocks.responsesCreate.mock.calls[1][0].input.at(-2) as { output: string }).output).toContain("needsProvider");
+    });
+
+    it("rejects an out-of-range day count as a tool error without running triage", async () => {
+      mocks.responsesCreate.mockReset();
+      vi.mocked(runEmailTriageLookup).mockClear();
+      mocks.responsesCreate
+        .mockResolvedValueOnce(toolCallResponse([{ id: "call_1", name: "triage_email", arguments: { provider: "google", days: 400 } }]))
+        .mockResolvedValueOnce(toolCallResponse([{ id: "call_2", name: "respond_to_user", arguments: { message: "I can look back up to 30 days.", needs_follow_up: false } }]));
+
+      await runConversationTurn(fakeSupabase, "user-1", "check my email for the last year", "conv-1");
+
+      expect(runEmailTriageLookup).not.toHaveBeenCalled();
+    });
+
+    it("is described as explicit-ask only in the system prompt, and always asks which account when unspecified", () => {
+      expect(CONVERSATION_SYSTEM_PROMPT).toContain("triage_email");
+      expect(CONVERSATION_SYSTEM_PROMPT).toMatch(/ONLY when the user explicitly asks/);
+      expect(CONVERSATION_SYSTEM_PROMPT).toContain("Gmail or Outlook?");
+    });
+  });
+
+  describe("get_email_triage", () => {
+    it("reads the stored triage results with no arguments", async () => {
+      mocks.responsesCreate.mockReset();
+      vi.mocked(runStoredEmailTriageLookup).mockClear();
+      vi.mocked(runEmailTriageLookup).mockClear();
+      mocks.responsesCreate
+        .mockResolvedValueOnce(toolCallResponse([{ id: "call_1", name: "get_email_triage", arguments: {} }]))
+        .mockResolvedValueOnce(toolCallResponse([{ id: "call_2", name: "respond_to_user", arguments: { message: "1 email needs action.", needs_follow_up: false } }]));
+
+      const result = await runConversationTurn(fakeSupabase, "user-1", "any important emails?", "conv-1");
+
+      expect(result).toMatchObject({ kind: "answer", message: "1 email needs action." });
+      expect(runStoredEmailTriageLookup).toHaveBeenCalledWith(fakeSupabase, "user-1");
+      expect(runEmailTriageLookup).not.toHaveBeenCalled();
+    });
+
+    it("is listed in the system prompt, with email text treated as untrusted data", () => {
+      expect(CONVERSATION_SYSTEM_PROMPT).toContain("get_email_triage");
+      expect(CONVERSATION_SYSTEM_PROMPT).toContain("triage_item_id");
+      expect(CONVERSATION_SYSTEM_PROMPT).toMatch(/untrusted text written by third parties/);
+    });
+  });
+
+  describe("propose_mutation with triage_item_id", () => {
+    const TRIAGE_ITEM_ID = "55555555-5555-4555-8555-555555555555";
+    const taskCreateArgs = {
+      confidence: 0.97,
+      summary: "Add a task to sign the lease.",
+      target_type: "task",
+      operation: "create",
+      target_id: null,
+      title: "Sign the lease",
+      due_at: "2026-10-16T17:00:00-04:00",
+      reminder_lead_minutes: null,
+    };
+
+    it("carries the id onto the pending task create so confirming it can mark the email handled", async () => {
+      mocks.responsesCreate.mockReset();
+      mocks.responsesCreate.mockResolvedValueOnce(
+        toolCallResponse([{ id: "call_1", name: "propose_mutation", arguments: { ...taskCreateArgs, triage_item_id: TRIAGE_ITEM_ID } }]),
+      );
+
+      const result = await runConversationTurn(fakeSupabase, "user-1", "yes, add that task", "conv-1");
+
+      expect(result).toMatchObject({
+        kind: "mutation_proposal",
+        mutation: { targetType: "task", operation: "create", triageItemId: TRIAGE_ITEM_ID, payload: { title: "Sign the lease" } },
+      });
+    });
+
+    it("leaves triageItemId off when none was given", async () => {
+      mocks.responsesCreate.mockReset();
+      mocks.responsesCreate.mockResolvedValueOnce(
+        toolCallResponse([{ id: "call_1", name: "propose_mutation", arguments: { ...taskCreateArgs, triage_item_id: null } }]),
+      );
+
+      const result = await runConversationTurn(fakeSupabase, "user-1", "add a task to sign the lease", "conv-1");
+
+      if (result.kind !== "mutation_proposal") throw new Error("expected a mutation_proposal");
+      expect(result.mutation).not.toHaveProperty("triageItemId");
+    });
+
+    it("ignores a triage_item_id on an operation that isn't a create", async () => {
+      mocks.responsesCreate.mockReset();
+      mocks.responsesCreate.mockResolvedValueOnce(
+        toolCallResponse([{ id: "call_1", name: "propose_mutation", arguments: { ...validProposeMutationArgs, triage_item_id: TRIAGE_ITEM_ID } }]),
+      );
+
+      const result = await runConversationTurn(fakeSupabase, "user-1", "delete my task", "conv-1");
+
+      if (result.kind !== "mutation_proposal") throw new Error("expected a mutation_proposal");
+      expect(result.mutation).toEqual({ targetType: "task", operation: "delete", targetId: VALID_TARGET_ID });
     });
   });
 

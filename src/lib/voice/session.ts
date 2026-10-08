@@ -14,6 +14,7 @@ import { executePendingMutation, type MutationExecutionResult, type PendingMutat
 import type { KnowledgeCitation } from "@/lib/knowledge/retrieval";
 import { loadQueuedSteps, resolveActiveConversation, setDraftMutation, setQueuedSteps } from "@/lib/voice/conversation-memory";
 import { runConversationTurn, type ConversationTurnOutcome, type RunConversationTurnFn } from "@/lib/voice/conversation-core";
+import { setTriageItemStatus } from "@/lib/email-triage/store";
 import { stripSpokenFillers } from "@/lib/voice/spoken-input";
 import { timed } from "@/lib/voice/_perf-temp";
 
@@ -458,6 +459,26 @@ async function mintNextQueuedStep(
 }
 
 /**
+ * A Deadline/Task/Event create that was proposed from an email-triage item
+ * carries that item's id; once the create has succeeded the item is handled.
+ * Best-effort: the create above already went through, so a failure here is
+ * logged and never masks that success (the item just stays open until
+ * dismissed or expired).
+ */
+export async function markTriageItemActed(
+  supabase: SupabaseClient<Database>,
+  userId: string,
+  mutation: PendingMutation,
+): Promise<void> {
+  if (!("triageItemId" in mutation) || !mutation.triageItemId) return;
+  try {
+    await setTriageItemStatus(supabase, userId, mutation.triageItemId, "acted");
+  } catch (error) {
+    console.error("confirmVoiceSession: failed to mark the email triage item acted", error);
+  }
+}
+
+/**
  * SPEC-API-005 AC-6/AC-9, SPEC-VOICE-005 AC-7, NC-VOICE-005: executes
  * exactly the persisted pending_mutation, only from AwaitingConfirmation and
  * only before expires_at.
@@ -504,7 +525,9 @@ export async function confirmVoiceSession(
   // UPDATE with no state predicate or affected-row check).
   await transition(supabase, userId, sessionId, "AwaitingConfirmation", "user_confirms", {});
   try {
-    const result = await executePendingMutation(supabase, userId, session.pending_mutation as PendingMutation);
+    const pendingMutation = session.pending_mutation as PendingMutation;
+    const result = await executePendingMutation(supabase, userId, pendingMutation);
+    await markTriageItemActed(supabase, userId, pendingMutation);
     await transition(supabase, userId, sessionId, "Executing", "execution_completed", {
       pending_mutation: null,
       ended_at: new Date().toISOString(),

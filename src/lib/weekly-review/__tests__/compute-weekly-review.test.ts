@@ -4,6 +4,8 @@ import {
   createAuthenticatedUser,
   createCourse,
   createDeadline,
+  createMailAccount,
+  createMailTriageItem,
   createSession,
   createTask,
   walkTransitions,
@@ -52,5 +54,35 @@ describe("computeWeeklyReview", () => {
     expect(data.nextWeek.items.map((item) => item.title)).toEqual(["Upcoming HW"]);
     expect(data.nextWeek.deadlinesWithoutSessions).toEqual([]);
     expect(recommendations[0]).toContain("Slipped HW");
+  });
+
+  it("includes the user's own unresolved Important / Needs-action triage items, and nobody else's", async () => {
+    const mine = await createAuthenticatedUser();
+    const myAccount = await createMailAccount(admin, mine.userId);
+    await createMailTriageItem(admin, mine.userId, myAccount, { subject: "Sign the lease", bucket: "needs_action" });
+    await createMailTriageItem(admin, mine.userId, myAccount, { subject: "Interview details", bucket: "important" });
+    await createMailTriageItem(admin, mine.userId, myAccount, { subject: "Newsletter", bucket: "ignore" });
+    await createMailTriageItem(admin, mine.userId, myAccount, { subject: "Already handled", bucket: "needs_action", status: "acted" });
+    await createMailTriageItem(admin, mine.userId, myAccount, {
+      subject: "Expired",
+      bucket: "needs_action",
+      expires_at: new Date(Date.now() - 60_000).toISOString(),
+    });
+
+    const theirs = await createAuthenticatedUser();
+    const theirAccount = await createMailAccount(admin, theirs.userId);
+    await createMailTriageItem(admin, theirs.userId, theirAccount, { subject: "Someone else's email", bucket: "needs_action" });
+
+    const { data } = await computeWeeklyReview(mine.client, mine.userId, new Date());
+
+    expect(data.pending.unresolvedEmails?.count).toBe(2);
+    expect(data.pending.unresolvedEmails?.items.map((email) => email.subject)).toEqual(["Sign the lease", "Interview details"]);
+
+    const { data: theirData } = await computeWeeklyReview(theirs.client, theirs.userId, new Date());
+    expect(theirData.pending.unresolvedEmails?.items.map((email) => email.subject)).toEqual(["Someone else's email"]);
+
+    const nobody = await createAuthenticatedUser();
+    const { data: empty } = await computeWeeklyReview(nobody.client, nobody.userId, new Date());
+    expect(empty.pending.unresolvedEmails).toBeUndefined();
   });
 });

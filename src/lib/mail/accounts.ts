@@ -5,6 +5,7 @@ import { MailReauthRequiredError } from "@/lib/mail/errors";
 import type { MailProvider } from "@/lib/mail/types";
 
 export interface MailAccount {
+  id: string;
   provider: MailProvider;
   providerEmail: string;
   refreshToken: string;
@@ -23,7 +24,7 @@ export async function getMailAccount(
 ): Promise<MailAccount | null> {
   const { data, error } = await supabase
     .from("mail_accounts")
-    .select("provider, provider_email, refresh_token_ciphertext, refresh_token_iv, refresh_token_auth_tag")
+    .select("id, provider, provider_email, refresh_token_ciphertext, refresh_token_iv, refresh_token_auth_tag")
     .eq("user_id", userId)
     .eq("provider", provider)
     .maybeSingle();
@@ -47,6 +48,7 @@ export async function getMailAccount(
   }
 
   return {
+    id: data.id,
     provider: data.provider as MailProvider,
     providerEmail: data.provider_email,
     refreshToken,

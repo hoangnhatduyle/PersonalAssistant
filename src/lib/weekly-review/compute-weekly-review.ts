@@ -15,7 +15,7 @@ export async function computeWeeklyReview(
 ): Promise<{ data: WeeklyReviewData; recommendations: string[] }> {
   const timezone = await loadUserTimezone(supabase, userId);
   const window = resolveWeeklyReviewWindow(now, timezone);
-  const rows = await loadWeeklyReviewRows(supabase, userId, window);
+  const rows = await loadWeeklyReviewRows(supabase, userId, window, now);
   const data = buildWeeklyReview(rows, window, now);
   return { data, recommendations: buildRecommendations(data) };
 }

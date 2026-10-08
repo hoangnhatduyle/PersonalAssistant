@@ -40,6 +40,11 @@ const taskTransitionEventSchema = z.enum(["user_marks_done", "user_cancels"]).nu
 const sessionTransitionEventSchema = z.enum(["user_marks_session_done", "user_marks_session_skipped"]).nullable().default(null);
 const eventTransitionEventSchema = z.enum(["user_marks_event_done", "user_marks_event_missed"]).nullable().default(null);
 
+// Email triage (src/lib/email-triage): the triage item a Deadline/Task/Event
+// create was proposed from. Create-only and optional; omission is tolerated
+// as null for the same reason as itemPriorityMutationSchema above.
+const triageItemIdSchema = z.uuid().nullable().default(null);
+
 const mutationSchemaBase = z.discriminatedUnion("target_type", [
   z.object({
     target_type: z.literal("course"),
@@ -72,6 +77,7 @@ const mutationSchemaBase = z.discriminatedUnion("target_type", [
     // deadline-recurrence-gate.ts), "occurrence" = just this one, "series" =
     // every open occurrence + no more (cancel_deadline_series, 0042).
     cancel_scope: z.enum(["occurrence", "series"]).nullable().default(null),
+    triage_item_id: triageItemIdSchema,
   }),
   z.object({
     target_type: z.literal("task"),
@@ -93,6 +99,7 @@ const mutationSchemaBase = z.discriminatedUnion("target_type", [
     // null on create = Miscellaneous; null on update = leave list_id unchanged
     // (see toPendingMutation's due_at-style "!== null means explicit" rule).
     list_id: z.uuid().nullable().default(null),
+    triage_item_id: triageItemIdSchema,
   }),
   z.object({
     target_type: z.literal("note"),
@@ -156,6 +163,7 @@ const mutationSchemaBase = z.discriminatedUnion("target_type", [
       .nullable(),
     location: z.string().nullable(),
     event: eventTransitionEventSchema,
+    triage_item_id: triageItemIdSchema,
   }),
 ]);
 
@@ -526,6 +534,7 @@ export function toPendingMutation(raw: RawMutation, now: Date, timeZone: string)
             priority: raw.priority ?? "Medium",
             ...recurrenceFields(raw),
           },
+          ...(raw.triage_item_id ? { triageItemId: raw.triage_item_id } : {}),
         };
       }
       if (raw.operation === "delete") {
@@ -568,6 +577,7 @@ export function toPendingMutation(raw: RawMutation, now: Date, timeZone: string)
             priority: raw.priority ?? "Medium",
             ...(raw.list_id ? { list_id: raw.list_id } : {}),
           },
+          ...(raw.triage_item_id ? { triageItemId: raw.triage_item_id } : {}),
         };
       }
       if (raw.operation === "delete") {
@@ -646,6 +656,7 @@ export function toPendingMutation(raw: RawMutation, now: Date, timeZone: string)
             duration_minutes: raw.duration_minutes!,
             ...(raw.location ? { location: raw.location } : {}),
           },
+          ...(raw.triage_item_id ? { triageItemId: raw.triage_item_id } : {}),
         };
       }
       if (raw.operation === "delete") {

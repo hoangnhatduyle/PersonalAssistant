@@ -91,6 +91,8 @@ export const mailKeys = {
   accounts: () => [...mailKeys.all, "accounts"] as const,
   messages: (provider: string) => [...mailKeys.all, "messages", provider] as const,
   messageDetail: (provider: string, id: string) => [...mailKeys.all, "messageDetail", provider, id] as const,
+  // Stored email-triage results (GET /api/mail/triage). `scope`: open items only, or all non-expired (mail-card badges).
+  triage: (scope?: "open" | "all") => [...mailKeys.all, "triage", ...(scope ? [scope] : [])] as const,
 };
 
 export const libraryKeys = {

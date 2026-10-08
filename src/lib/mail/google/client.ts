@@ -5,6 +5,7 @@ const DEFAULT_MAX_RESULTS = 20;
 
 interface GmailListResponse {
   messages?: Array<{ id: string }>;
+  nextPageToken?: string;
 }
 
 interface GmailHeader {
@@ -60,12 +61,36 @@ async function gmailGet<T>(path: string, accessToken: string): Promise<T> {
   return response.json();
 }
 
+export interface GoogleSearchOptions {
+  maxResults: number;
+  /** Gmail search syntax (the `q` param), e.g. "is:unread after:1700000000". */
+  query?: string;
+  labelIds?: string[];
+}
+
+export interface GoogleSearchResult {
+  messages: MailMessage[];
+  /** True when Gmail reports more matches than `maxResults` returned. */
+  truncated: boolean;
+}
+
 /** Lists recent Gmail messages, normalized to MailMessage. One list call + one metadata GET per message id (Gmail has no batch-fetch-with-headers in a single REST call). */
 export async function listGoogleMessages(
   accessToken: string,
   maxResults: number = DEFAULT_MAX_RESULTS,
 ): Promise<MailMessage[]> {
-  const list = await gmailGet<GmailListResponse>(`/messages?maxResults=${maxResults}`, accessToken);
+  return (await searchGoogleMessages(accessToken, { maxResults })).messages;
+}
+
+/** Filtered variant of listGoogleMessages (unread / since-date / label), also reporting whether more matches exist beyond maxResults. */
+export async function searchGoogleMessages(
+  accessToken: string,
+  { maxResults, query, labelIds }: GoogleSearchOptions,
+): Promise<GoogleSearchResult> {
+  const params = new URLSearchParams({ maxResults: String(maxResults) });
+  if (query) params.set("q", query);
+  for (const labelId of labelIds ?? []) params.append("labelIds", labelId);
+  const list = await gmailGet<GmailListResponse>(`/messages?${params.toString()}`, accessToken);
   const ids = list.messages ?? [];
 
   const messages = await Promise.all(
@@ -77,7 +102,7 @@ export async function listGoogleMessages(
     ),
   );
 
-  return messages
+  const normalized = messages
     .map((message): MailMessage => {
       const headers = message.payload?.headers;
       return {
@@ -94,6 +119,8 @@ export async function listGoogleMessages(
       };
     })
     .sort((a, b) => b.receivedAt.localeCompare(a.receivedAt));
+
+  return { messages: normalized, truncated: Boolean(list.nextPageToken) };
 }
 
 export interface GoogleMessageDetail {

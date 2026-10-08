@@ -23,6 +23,8 @@ type Props = {
   defaultListId?: string | null;
   /** Pre-fills the due date/time when creating from a Calendar empty-slot click (src/components/calendar/CreateEventDialog.tsx). Ignored when editing an existing card. */
   defaultDueAt?: string;
+  /** Pre-fills the title when creating from an email-triage suggestion (src/components/dashboard/EmailActionDialog.tsx). Ignored when editing an existing card. */
+  defaultTitle?: string;
   onSubmit: (values: TaskPayload) => Promise<void> | void;
   onCancel?: () => void;
   submitLabel?: string;
@@ -43,6 +45,7 @@ export function TaskForm({
   task,
   defaultListId,
   defaultDueAt,
+  defaultTitle,
   onSubmit,
   onCancel,
   submitLabel = "Save",
@@ -60,7 +63,7 @@ export function TaskForm({
   } = useForm<TaskPayload>({
     resolver: zodResolver(taskPayloadSchema),
     defaultValues: {
-      title: task?.title ?? "",
+      title: task?.title ?? defaultTitle ?? "",
       due_at: task?.due_at ?? defaultDueAt ?? null,
       reminders_enabled: task?.reminders_enabled ?? true,
       reminder_lead_minutes: task?.reminder_lead_minutes ?? 30,

@@ -7,7 +7,16 @@ export type ReviewDeadline = Pick<DeadlineRow, "id" | "title" | "due_at" | "stat
 export type ReviewTask = Pick<TaskRow, "id" | "title" | "due_at" | "status" | "completed_at" | "priority">;
 export type ReviewSession = Pick<AppointmentRow, "deadline_id" | "session_status" | "date">;
 
+/** An open Important / Needs-action email from the latest triage (src/lib/email-triage). Subject and sender only, never the body. */
+export interface ReviewEmail {
+  subject: string;
+  sender: string;
+  bucket: "important" | "needs_action";
+}
+
 export interface WeeklyReviewRows {
+  /** Open Important / Needs-action triage items, already ranked (needs action first, newest first). Absent = none loaded. */
+  unresolvedEmails?: ReviewEmail[];
   /** Deadlines/Tasks completed or due inside the last window, plus every open one due before the end of the next window. */
   deadlines: ReviewDeadline[];
   tasks: ReviewTask[];
@@ -82,6 +91,8 @@ export interface WeeklyReviewData {
     /** Oldest first, capped. */
     pastDueItems: PastDueItem[];
     dueTodayCount: number;
+    /** Present only when at least one Important / Needs-action email from the latest triage is still unresolved. `items` is capped; `count` is the total. */
+    unresolvedEmails?: { count: number; items: ReviewEmail[] };
   };
   nextWeek: {
     days: NextWeekDay[];
