@@ -51,7 +51,7 @@ export function WorkloadDensityChart({ buckets, selectedDate, onSelectDate }: Pr
             axisLine={{ stroke: "rgb(255 255 255 / 0.12)" }}
             tickLine={false}
             interval={0}
-            height={44}
+            height={54}
             tick={(props) => {
               const datum = data[props.index];
               return (
@@ -62,7 +62,14 @@ export function WorkloadDensityChart({ buckets, selectedDate, onSelectDate }: Pr
                   date={datum.label}
                   emphasised={datum.dayOffset === 0}
                   extra={
-                    datum.sessionCount > 0 ? <circle cx={0} cy={36} r={2} fill="var(--status-ok)" /> : undefined
+                    datum.sessionCount > 0 ? (
+                      <g>
+                        <circle cx={-6} cy={39} r={3.5} fill="var(--status-ok)" />
+                        <text x={2} y={39} dy="0.35em" style={CHART_AXIS_TICK} fill="var(--status-ok)">
+                          {datum.sessionCount}
+                        </text>
+                      </g>
+                    ) : undefined
                   }
                 />
               );
