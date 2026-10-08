@@ -45,6 +45,9 @@ export function CourseDetailContainer({ courseId }: Props) {
   // Hidden by default, same convention as BoardContainer's own toggle — a
   // finished card is clutter on the course page until this brings it back.
   const [showCompleted, setShowCompleted] = useState(false);
+  // Separate from the Board toggle above; same default and filter as the
+  // Deadlines page (DeadlineListContainer).
+  const [showCompletedDeadlines, setShowCompletedDeadlines] = useState(false);
 
   if (isLoading) return <Skeleton className="h-64 w-full" />;
   if (!course) return <p className="text-sm text-text-secondary">Course not found.</p>;
@@ -57,7 +60,10 @@ export function CourseDetailContainer({ courseId }: Props) {
   // Same filter BoardContainer's showCompleted toggle applies: off shows
   // Open only, on reveals Done and Cancelled too.
   const visibleTasks = showCompleted ? listTasks : listTasks.filter((task) => task.status === "Open");
-  const boardLoading = todoListsLoading || tasksLoading;
+  const visibleDeadlines = (deadlines?.rows ?? []).filter(
+    (deadline) => showCompletedDeadlines || (deadline.status !== "Completed" && deadline.status !== "Cancelled"),
+  );
+  const boardLoading =todoListsLoading || tasksLoading;
 
   const handleUpdate = async (values: CoursePayload) => {
     try {
@@ -112,11 +118,14 @@ export function CourseDetailContainer({ courseId }: Props) {
       <GlassPanel className="flex flex-col gap-3 p-6">
         <div className="flex items-center justify-between">
           <p className="font-mono text-xs uppercase tracking-wide text-text-eyebrow">Deadlines</p>
-          <Link href="/courses/deadlines" className="text-xs text-accent-indigo hover:underline">
-            View all
-          </Link>
+          <div className="flex items-center gap-3">
+            <Switch checked={showCompletedDeadlines} onCheckedChange={setShowCompletedDeadlines} label="Show completed" />
+            <Link href="/courses/deadlines" className="text-xs text-accent-indigo hover:underline">
+              View all
+            </Link>
+          </div>
         </div>
-        {deadlinesLoading ? <Skeleton className="h-24 w-full" /> : <DeadlineList deadlines={deadlines?.rows ?? []} />}
+        {deadlinesLoading ? <Skeleton className="h-24 w-full" /> : <DeadlineList deadlines={visibleDeadlines} />}
       </GlassPanel>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2 lg:items-start">
