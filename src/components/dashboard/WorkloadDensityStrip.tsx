@@ -99,7 +99,7 @@ export function WorkloadDensityStrip({ deadlines, tasks, todoLists, courses, app
             ))}
             <span className="flex items-center gap-1 font-mono text-[10px] uppercase tracking-wide text-text-secondary">
               <span className={`h-1.5 w-1.5 rounded-full ${ITEM_KIND_BG_CLASS.session}`} />
-              {ITEM_KIND_LABEL.session} (scheduled, not counted above)
+              {ITEM_KIND_LABEL.session} (planned time, shown in its own strip)
             </span>
           </div>
 
