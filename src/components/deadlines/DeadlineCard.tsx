@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/Badge";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { DEADLINE_STATUS_TONE } from "@/lib/status-colors";
 import { DeadlineTransitionMenu } from "@/components/deadlines/DeadlineTransitionMenu";
-import { FeedbackControl } from "@/components/feedback/FeedbackControl";
+import { DeadlineNotesPreview } from "@/components/notes/DeadlineNotesPreview";
 import type { DeadlineRow } from "@/lib/api/entity-types";
 import type { SessionProgress } from "@/lib/deadlines/session-progress";
 import { formatDeadlineRecurrence } from "@/lib/deadlines/recurrence";
@@ -44,8 +44,8 @@ export function DeadlineCard({ deadline, courseName, sessionProgress }: Props) {
           <ProgressBar value={sessionProgress.ratio} label="Session progress" />
         </div>
       )}
+      <DeadlineNotesPreview deadlineId={deadline.id} />
       <DeadlineTransitionMenu deadlineId={deadline.id} status={deadline.status} isRecurring={deadline.recurrence_days.length > 0} />
-      {deadline.status === "Completed" && <FeedbackControl targetType="deadline" targetId={deadline.id} />}
     </GlassPanel>
   );
 }

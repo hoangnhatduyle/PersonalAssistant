@@ -43,8 +43,8 @@ export async function PATCH(request: Request, { params }: RouteParams) {
   // empty UPDATE, which errors rather than no-opping — reject explicitly.
   if (Object.keys(parsed.data).length === 0) return validationErrorResponse("No valid fields to update");
 
-  const owns = await ownsNoteLinkTargets(supabase, user.id, parsed.data.linked_course_id, parsed.data.linked_task_id);
-  if (!owns) return validationErrorResponse("linked_course_id/linked_task_id must reference a resource you own");
+  const owns = await ownsNoteLinkTargets(supabase, user.id, parsed.data.linked_course_id, parsed.data.linked_task_id, parsed.data.linked_deadline_id);
+  if (!owns) return validationErrorResponse("linked_course_id/linked_task_id/linked_deadline_id must reference a resource you own");
 
   const { data: existing, error: fetchError } = await supabase
     .from("notes")

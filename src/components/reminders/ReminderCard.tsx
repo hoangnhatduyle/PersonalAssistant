@@ -6,7 +6,6 @@ import { GlassPanel } from "@/components/ui/GlassPanel";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { SnoozeUntilPicker } from "@/components/reminders/SnoozeUntilPicker";
-import { FeedbackControl } from "@/components/feedback/FeedbackControl";
 import { useAckReminder } from "@/hooks/useReminders";
 import { useToast } from "@/components/ui/Toast";
 import { REMINDER_STATUS_TONE } from "@/lib/status-colors";
@@ -72,10 +71,6 @@ export function ReminderCard({ reminder, targetTitle, personLabel }: Props) {
       )}
 
       {isSnoozing && <SnoozeUntilPicker isSubmitting={ack.isPending} onConfirm={handleSnooze} onCancel={() => setIsSnoozing(false)} />}
-
-      {reminder.acknowledgment_state === "Acknowledged" && (
-        <FeedbackControl targetType="reminder" targetId={reminder.id} />
-      )}
     </GlassPanel>
   );
 }

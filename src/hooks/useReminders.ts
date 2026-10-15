@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch, toQueryString } from "@/lib/http/client";
-import { feedbackKeys, reminderKeys } from "@/lib/query/keys";
+import { reminderKeys } from "@/lib/query/keys";
 import type { ReminderAckPayload } from "@/lib/api/schemas";
 import type { ReminderRow, ReminderStatus } from "@/lib/api/entity-types";
 
@@ -28,8 +28,6 @@ export function useAckReminder(id: string) {
       (await apiFetch<ReminderRow>(`/api/reminders/${id}/ack`, { method: "POST", body: payload })).data,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: reminderKeys.all });
-      // An Acknowledged reminder becomes eligible for a FeedbackControl.
-      queryClient.invalidateQueries({ queryKey: feedbackKeys.all });
     },
   });
 }

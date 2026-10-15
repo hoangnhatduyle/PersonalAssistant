@@ -379,7 +379,7 @@ export const CONVERSATION_TOOLS = [
   {
     type: "function",
     name: "get_personalization_suggestions",
-    description: "Check for pending personalization suggestions (e.g. reminder-timing adjustments) generated from the user's recent feedback.",
+    description: "Check for pending personalization suggestions (e.g. reminder-timing adjustments) already generated for the user.",
     strict: true,
     parameters: { type: "object", properties: {}, required: [], additionalProperties: false },
   },

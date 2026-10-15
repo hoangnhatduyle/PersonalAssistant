@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 
 /**
  * Library is private to the user: the AI assistant, voice, search,
- * briefing, personalization and feedback layers must not see it (yet).
+ * briefing and personalization layers must not see it (yet).
  * This turns "assistant can't see it" into a failing test if anyone wires
  * it in. When that becomes intentional, relax exactly the paths named here.
  */
@@ -15,7 +15,6 @@ const ISOLATED_PATHS = [
   "src/lib/voice",
   "src/lib/knowledge",
   "src/lib/personalization",
-  "src/app/api/feedback",
 ];
 
 const ROOT = path.resolve(__dirname, "../../../..");

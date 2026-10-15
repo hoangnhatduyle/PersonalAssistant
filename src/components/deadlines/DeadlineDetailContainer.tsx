@@ -7,7 +7,7 @@ import { DeadlineForm } from "@/components/deadlines/DeadlineForm";
 import { DeadlineTransitionMenu } from "@/components/deadlines/DeadlineTransitionMenu";
 import { DeleteDeadlineButton } from "@/components/deadlines/DeleteDeadlineButton";
 import { SessionsSection } from "@/components/deadlines/SessionsSection";
-import { FeedbackControl } from "@/components/feedback/FeedbackControl";
+import { NotesForTarget } from "@/components/notes/NotesForTarget";
 import { GlassPanel } from "@/components/ui/GlassPanel";
 import { StatusPill } from "@/components/ui/StatusPill";
 import { Skeleton } from "@/components/ui/Skeleton";
@@ -67,8 +67,10 @@ export function DeadlineDetailContainer({ deadlineId }: Props) {
         {isEditing && (
           <DeadlineForm deadline={deadline} onSubmit={handleUpdate} onCancel={() => setIsEditing(false)} submitLabel="Save changes" />
         )}
+      </GlassPanel>
 
-        {deadline.status === "Completed" && <FeedbackControl targetType="deadline" targetId={deadline.id} />}
+      <GlassPanel className="p-6">
+        <NotesForTarget targetType="deadline" targetId={deadline.id} />
       </GlassPanel>
 
       <SessionsSection deadlineId={deadline.id} />

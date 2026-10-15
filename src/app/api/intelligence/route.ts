@@ -3,7 +3,6 @@ import { requireAuthenticatedContext } from "@/lib/api/auth";
 import { requireEnv } from "@/lib/env";
 import { successResponse, serverErrorResponse } from "@/lib/api/response";
 import { buildSuggestion, type Suggestion } from "@/lib/dashboard/suggestion";
-import { generateSuggestionsForUser } from "@/lib/personalization/generate-for-user";
 import { buildSessionProgress } from "@/lib/deadlines/session-progress";
 import type { DeadlineRow, TaskRow, PersonalizationSuggestionRow } from "@/lib/api/entity-types";
 import type { StatusTone } from "@/lib/status-colors";
@@ -13,7 +12,6 @@ export interface DailyIntelligenceResponse {
   narrative: string;
   workload: { tone: StatusTone; message: string };
   suggestions: PersonalizationSuggestionRow[];
-  suggestionsGenerated: number;
 }
 
 const INTELLIGENCE_SYSTEM_PROMPT = `You are a friendly personal assistant for a university student. Produce a concise, upbeat daily overview summarizing their day ahead. Cover:
@@ -139,28 +137,21 @@ export async function POST() {
       workload_status: workload.message,
     };
 
-    // Run LLM narrative and personalization generation in parallel
     const openai = new OpenAI({ apiKey: requireEnv("OPENAI_API_KEY") });
 
-    const [completion, suggestionsResult] = await Promise.all([
-      openai.chat.completions.create({
-        model: "gpt-5.6-luna",
-        response_format: { type: "json_object" },
-        messages: [
-          { role: "system", content: INTELLIGENCE_SYSTEM_PROMPT },
-          { role: "user", content: JSON.stringify(llmContext) },
-        ],
-      }),
-      generateSuggestionsForUser(supabase, user.id).catch((error) => {
-        console.error("personalization generation failed (non-fatal)", error);
-        return { candidatesEvaluated: 0, created: 0, skipped: 0 };
-      }),
-    ]);
+    const completion = await openai.chat.completions.create({
+      model: "gpt-5.6-luna",
+      response_format: { type: "json_object" },
+      messages: [
+        { role: "system", content: INTELLIGENCE_SYSTEM_PROMPT },
+        { role: "user", content: JSON.stringify(llmContext) },
+      ],
+    });
 
     const raw = JSON.parse(completion.choices[0]?.message.content ?? "{}");
     const narrative = typeof raw.narrative === "string" ? raw.narrative : "Have a great day!";
 
-    // Fetch all pending suggestions (including any just created)
+    // Pending personalization suggestions (Apply/Dismiss still works on existing ones)
     const { data: pendingSuggestions } = await supabase
       .from("personalization_suggestions")
       .select("*")
@@ -173,7 +164,6 @@ export async function POST() {
       narrative,
       workload: { tone: workload.tone, message: workload.message },
       suggestions: (pendingSuggestions ?? []) as PersonalizationSuggestionRow[],
-      suggestionsGenerated: suggestionsResult.created,
     });
   } catch (error) {
     return serverErrorResponse("intelligence generation failed", error);

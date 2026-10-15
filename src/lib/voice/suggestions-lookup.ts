@@ -1,6 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/types";
-import { generateSuggestionsForUser } from "@/lib/personalization/generate-for-user";
 
 export interface SuggestionsLookupResult {
   message: string;
@@ -12,8 +11,9 @@ export interface SuggestionsLookupFn {
 
 /**
  * Backs the "personalization_suggestions" voice queryKind (src/lib/voice/
- * session.ts) — runs the same on-demand generation the dashboard's "Check
- * for suggestions" button triggers, then reports a short spoken count.
+ * session.ts) — reports a short spoken count of pending suggestions. New
+ * suggestions are no longer generated (they were derived from user feedback,
+ * which has been removed); this only surfaces ones that already exist.
  * Detailed per-suggestion rationale is deliberately NOT spoken here — that
  * happens client-side in the review-aloud loop (src/hooks/
  * useReviewSuggestionsAloud.ts), which the client kicks off after seeing
@@ -21,8 +21,6 @@ export interface SuggestionsLookupFn {
  * "one concise message" shape as upcoming_schedule/knowledge_lookup.
  */
 export const runSuggestionsLookup: SuggestionsLookupFn = async (supabase, userId) => {
-  await generateSuggestionsForUser(supabase, userId);
-
   const { count } = await supabase
     .from("personalization_suggestions")
     .select("id", { count: "exact", head: true })

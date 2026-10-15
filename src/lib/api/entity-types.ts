@@ -20,7 +20,6 @@ export type DeadlineRow = Database["public"]["Tables"]["deadlines"]["Row"];
 export type TaskRow = Database["public"]["Tables"]["tasks"]["Row"];
 export type NoteRow = Database["public"]["Tables"]["notes"]["Row"];
 export type ReminderRow = Database["public"]["Tables"]["reminders"]["Row"];
-export type FeedbackRow = Database["public"]["Tables"]["feedback"]["Row"];
 export type PersonRow = Database["public"]["Tables"]["people"]["Row"];
 export type TodoListRow = Database["public"]["Tables"]["todo_lists"]["Row"];
 export type ChecklistItemRow = Database["public"]["Tables"]["checklist_items"]["Row"];

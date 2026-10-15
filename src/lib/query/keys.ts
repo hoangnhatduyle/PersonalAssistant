@@ -64,11 +64,6 @@ export const reminderKeys = {
   list: (filters?: object) => [...reminderKeys.all, "list", filters ?? {}] as const,
 };
 
-export const feedbackKeys = {
-  all: ["feedback"] as const,
-  list: () => [...feedbackKeys.all, "list"] as const,
-};
-
 export const knowledgeKeys = {
   all: ["knowledge"] as const,
   list: (filters?: object) => [...knowledgeKeys.all, "list", filters ?? {}] as const,

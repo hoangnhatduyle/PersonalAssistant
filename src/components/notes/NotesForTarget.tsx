@@ -11,26 +11,31 @@ import { useToast } from "@/components/ui/Toast";
 import type { NoteRow } from "@/lib/api/entity-types";
 
 type Props = {
-  targetType: "course" | "task";
+  targetType: "course" | "task" | "deadline";
   targetId: string;
 };
 
 /**
- * No server-side filter param exists for Notes — filters the same
+ * Course/Task notes: no server-side filter param exists — filters the same
  * `useNotes()` cache client-side by the linked id. Fine at this app's scale
- * (per SPEC-CORE Phase 4 plan).
+ * (per SPEC-CORE Phase 4 plan). Deadline notes use the `linkedDeadlineId`
+ * filter so they aren't lost to the list's default 20-row page.
  */
 export function NotesForTarget({ targetType, targetId }: Props) {
-  const { data, isLoading } = useNotes();
+  const { data, isLoading } = useNotes(
+    targetType === "deadline" ? { linkedDeadlineId: targetId, limit: 100 } : undefined,
+  );
   const createNote = useCreateNote();
   const { showToast } = useToast();
   const [draft, setDraft] = useState("");
 
   const notes = useMemo<NoteRow[]>(() => {
     const rows = data?.rows ?? [];
-    return rows.filter((note) =>
-      targetType === "course" ? note.linked_course_id === targetId : note.linked_task_id === targetId,
-    );
+    return rows.filter((note) => {
+      if (targetType === "course") return note.linked_course_id === targetId;
+      if (targetType === "task") return note.linked_task_id === targetId;
+      return note.linked_deadline_id === targetId;
+    });
   }, [data, targetType, targetId]);
 
   const handleAdd = async () => {
@@ -41,6 +46,7 @@ export function NotesForTarget({ targetType, targetId }: Props) {
         body,
         linked_course_id: targetType === "course" ? targetId : undefined,
         linked_task_id: targetType === "task" ? targetId : undefined,
+        linked_deadline_id: targetType === "deadline" ? targetId : undefined,
       });
       setDraft("");
       showToast("Note added", "success");

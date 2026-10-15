@@ -10,7 +10,6 @@ import { DuplicateTaskButton } from "@/components/board/DuplicateTaskButton";
 import { ChecklistSection } from "@/components/board/ChecklistSection";
 import { AttachmentsSection } from "@/components/board/AttachmentsSection";
 import { NotesForTarget } from "@/components/notes/NotesForTarget";
-import { FeedbackControl } from "@/components/feedback/FeedbackControl";
 import { GlassPanel } from "@/components/ui/GlassPanel";
 import { StatusPill } from "@/components/ui/StatusPill";
 import { Skeleton } from "@/components/ui/Skeleton";
@@ -87,10 +86,6 @@ export function BoardCardDetailContainer({
           onCancel={() => setIsEditing(false)}
           submitLabel="Save changes"
         />
-      )}
-
-      {task.status === "Done" && (
-        <FeedbackControl targetType="task" targetId={task.id} />
       )}
     </>
   );

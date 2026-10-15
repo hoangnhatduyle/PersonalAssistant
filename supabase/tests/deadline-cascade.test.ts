@@ -10,7 +10,7 @@ import {
   type TestUser,
 } from "./helpers";
 
-// Traces: supabase/migrations/0025_deadline_sessions.sql soft_delete_deadline_cascade.
+// Traces: supabase/migrations/0025_deadline_sessions.sql soft_delete_deadline_cascade; 0055_notes_deadline_link.sql.
 describe("soft_delete_deadline_cascade", () => {
   const admin = adminClient();
   let user: TestUser;
@@ -67,5 +67,22 @@ describe("soft_delete_deadline_cascade", () => {
     const { data, error } = await admin.rpc("soft_delete_deadline_cascade", { p_deadline_id: deadlineId }).single();
     expect(error).toBeNull();
     expect(data).toMatchObject({ sessions_affected: 0, reminders_dismissed: 0 });
+  });
+
+  it("unlinks (keeps) notes attached to the deleted deadline", async () => {
+    const deadlineId = await createDeadline(admin, user.userId, courseId);
+    const { data: note, error: noteError } = await admin
+      .from("notes")
+      .insert({ user_id: user.userId, body: "prep: read ch. 3", linked_deadline_id: deadlineId })
+      .select("id")
+      .single();
+    expect(noteError).toBeNull();
+
+    const { error } = await admin.rpc("soft_delete_deadline_cascade", { p_deadline_id: deadlineId }).single();
+    expect(error).toBeNull();
+
+    const { data: after } = await admin.from("notes").select("linked_deadline_id, deleted_at").eq("id", note!.id).single();
+    expect(after?.linked_deadline_id).toBeNull();
+    expect(after?.deleted_at).toBeNull();
   });
 });

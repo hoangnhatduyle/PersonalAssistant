@@ -393,120 +393,6 @@ export type Database = {
           },
         ]
       }
-      feedback: {
-        Row: {
-          comment: string | null
-          created_at: string
-          id: string
-          rating: number
-          target_id: string
-          target_type: string
-          user_id: string
-        }
-        Insert: {
-          comment?: string | null
-          created_at?: string
-          id?: string
-          rating: number
-          target_id: string
-          target_type: string
-          user_id: string
-        }
-        Update: {
-          comment?: string | null
-          created_at?: string
-          id?: string
-          rating?: number
-          target_id?: string
-          target_type?: string
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "feedback_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      feedback_aggregates: {
-        Row: {
-          avg_rating: number | null
-          dimension: string
-          id: string
-          rating_sum: number
-          sample_count: number
-          updated_at: string
-          user_id: string
-        }
-        Insert: {
-          avg_rating?: number | null
-          dimension: string
-          id?: string
-          rating_sum?: number
-          sample_count?: number
-          updated_at?: string
-          user_id: string
-        }
-        Update: {
-          avg_rating?: number | null
-          dimension?: string
-          id?: string
-          rating_sum?: number
-          sample_count?: number
-          updated_at?: string
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "feedback_aggregates_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      knowledge_chunks: {
-        Row: {
-          chunk_index: number
-          chunk_text: string
-          created_at: string
-          embedding: string
-          id: string
-          source_id: string
-          user_id: string
-        }
-        Insert: {
-          chunk_index: number
-          chunk_text: string
-          created_at?: string
-          embedding: string
-          id?: string
-          source_id: string
-          user_id: string
-        }
-        Update: {
-          chunk_index?: number
-          chunk_text?: string
-          created_at?: string
-          embedding?: string
-          id?: string
-          source_id?: string
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "knowledge_chunks_source_id_user_id_fkey"
-            columns: ["source_id", "user_id"]
-            isOneToOne: false
-            referencedRelation: "knowledge_sources"
-            referencedColumns: ["id", "user_id"]
-          },
-        ]
-      }
       knowledge_links: {
         Row: {
           created_at: string
@@ -1472,6 +1358,7 @@ export type Database = {
           id: string
           linked_course_id: string | null
           linked_date: string | null
+          linked_deadline_id: string | null
           linked_task_id: string | null
           tags: string[]
           user_id: string
@@ -1483,6 +1370,7 @@ export type Database = {
           id?: string
           linked_course_id?: string | null
           linked_date?: string | null
+          linked_deadline_id?: string | null
           linked_task_id?: string | null
           tags?: string[]
           user_id: string
@@ -1494,6 +1382,7 @@ export type Database = {
           id?: string
           linked_course_id?: string | null
           linked_date?: string | null
+          linked_deadline_id?: string | null
           linked_task_id?: string | null
           tags?: string[]
           user_id?: string
@@ -1511,6 +1400,20 @@ export type Database = {
             columns: ["linked_course_id"]
             isOneToOne: false
             referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notes_linked_deadline_id_fkey"
+            columns: ["linked_deadline_id"]
+            isOneToOne: false
+            referencedRelation: "active_deadlines"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notes_linked_deadline_id_fkey"
+            columns: ["linked_deadline_id"]
+            isOneToOne: false
+            referencedRelation: "deadlines"
             referencedColumns: ["id"]
           },
           {
@@ -2806,6 +2709,7 @@ export type Database = {
           id: string | null
           linked_course_id: string | null
           linked_date: string | null
+          linked_deadline_id: string | null
           linked_task_id: string | null
           user_id: string | null
         }
@@ -2816,6 +2720,7 @@ export type Database = {
           id?: string | null
           linked_course_id?: string | null
           linked_date?: string | null
+          linked_deadline_id?: string | null
           linked_task_id?: string | null
           user_id?: string | null
         }
@@ -2826,6 +2731,7 @@ export type Database = {
           id?: string | null
           linked_course_id?: string | null
           linked_date?: string | null
+          linked_deadline_id?: string | null
           linked_task_id?: string | null
           user_id?: string | null
         }
@@ -3407,7 +3313,6 @@ export type Database = {
         Args: { p_source_id: string }
         Returns: boolean
       }
-      sweep_expired_feedback: { Args: never; Returns: number }
       sync_library_post_courses: {
         Args: { p_course_ids: string[]; p_post_id: string }
         Returns: undefined

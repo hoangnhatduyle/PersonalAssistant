@@ -237,22 +237,6 @@ export async function createVoiceSpeakRequest(admin: SupabaseClient, userId: str
   return data.id as string;
 }
 
-export async function createFeedback(
-  admin: SupabaseClient,
-  userId: string,
-  targetType: "deadline" | "task" | "reminder",
-  targetId: string,
-  overrides: Record<string, unknown> = {},
-): Promise<string> {
-  const { data, error } = await admin
-    .from("feedback")
-    .insert({ user_id: userId, target_type: targetType, target_id: targetId, rating: 4, ...overrides })
-    .select("id")
-    .single();
-  if (error) throw new Error(`failed to create feedback: ${error.message}`, { cause: error });
-  return data.id as string;
-}
-
 export async function createUserPreferences(
   admin: SupabaseClient,
   userId: string,

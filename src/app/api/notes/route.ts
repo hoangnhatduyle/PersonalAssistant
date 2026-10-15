@@ -23,6 +23,12 @@ export async function GET(request: NextRequest) {
     .range(from, to);
   if (!includeDeleted) query = query.is("deleted_at", null);
 
+  // Deadline-linked notes: one deadline's notes (detail page) or every
+  // deadline-linked note (read-only previews on the Workload cards).
+  const linkedDeadlineId = searchParams.get("linkedDeadlineId");
+  if (linkedDeadlineId) query = query.eq("linked_deadline_id", linkedDeadlineId);
+  else if (searchParams.get("hasDeadlineLink") === "true") query = query.not("linked_deadline_id", "is", null);
+
   const { data, count, error } = await query;
   if (error) return serverErrorResponse("notes list failed", error);
 
@@ -38,8 +44,8 @@ export async function POST(request: NextRequest) {
   const parsed = notePayloadSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return validationErrorResponse(parsed.error.message);
 
-  const owns = await ownsNoteLinkTargets(supabase, user.id, parsed.data.linked_course_id, parsed.data.linked_task_id);
-  if (!owns) return validationErrorResponse("linked_course_id/linked_task_id must reference a resource you own");
+  const owns = await ownsNoteLinkTargets(supabase, user.id, parsed.data.linked_course_id, parsed.data.linked_task_id, parsed.data.linked_deadline_id);
+  if (!owns) return validationErrorResponse("linked_course_id/linked_task_id/linked_deadline_id must reference a resource you own");
 
   const { data, error } = await supabase
     .from("notes")

@@ -8,6 +8,10 @@ export interface NoteListFilters {
   includeDeleted?: boolean;
   page?: number;
   limit?: number;
+  /** Only notes linked to this deadline. */
+  linkedDeadlineId?: string;
+  /** Only notes linked to any deadline. */
+  hasDeadlineLink?: boolean;
 }
 
 export function useNotes(filters?: NoteListFilters) {
@@ -18,6 +22,11 @@ export function useNotes(filters?: NoteListFilters) {
       return { rows: data, meta };
     },
   });
+}
+
+/** Every deadline-linked note (newest first), for the read-only previews on the Workload cards. */
+export function useDeadlineNotes() {
+  return useNotes({ hasDeadlineLink: true, limit: 100 });
 }
 
 export function useNote(id: string) {

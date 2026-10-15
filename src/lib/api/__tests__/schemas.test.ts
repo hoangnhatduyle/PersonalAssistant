@@ -6,7 +6,6 @@ import {
   coursePayloadSchema,
   deadlinePatchSchema,
   deadlinePayloadSchema,
-  feedbackPayloadSchema,
   notePayloadSchema,
   reminderAckSchema,
   taskPatchSchema,
@@ -199,43 +198,12 @@ describe("notePayloadSchema", () => {
   it("rejects an empty body", () => {
     expect(notePayloadSchema.safeParse({ body: "" }).success).toBe(false);
   });
-});
 
-describe("feedbackPayloadSchema", () => {
-  const base = { target_type: "deadline" as const, target_id: "550e8400-e29b-41d4-a716-446655440000", rating: 4 };
-
-  it("accepts a valid payload with no comment", () => {
-    expect(feedbackPayloadSchema.safeParse(base).success).toBe(true);
-  });
-
-  it("accepts a valid payload with a comment", () => {
-    expect(feedbackPayloadSchema.safeParse({ ...base, comment: "reminder fired too late" }).success).toBe(true);
-  });
-
-  it("accepts task and reminder target types", () => {
-    expect(feedbackPayloadSchema.safeParse({ ...base, target_type: "task" }).success).toBe(true);
-    expect(feedbackPayloadSchema.safeParse({ ...base, target_type: "reminder" }).success).toBe(true);
-  });
-
-  it("rejects an unknown target_type", () => {
-    expect(feedbackPayloadSchema.safeParse({ ...base, target_type: "course" }).success).toBe(false);
-  });
-
-  it("rejects a non-uuid target_id", () => {
-    expect(feedbackPayloadSchema.safeParse({ ...base, target_id: "not-a-uuid" }).success).toBe(false);
-  });
-
-  it("rejects a rating below 1 or above 5", () => {
-    expect(feedbackPayloadSchema.safeParse({ ...base, rating: 0 }).success).toBe(false);
-    expect(feedbackPayloadSchema.safeParse({ ...base, rating: 6 }).success).toBe(false);
-  });
-
-  it("rejects a non-integer rating", () => {
-    expect(feedbackPayloadSchema.safeParse({ ...base, rating: 3.5 }).success).toBe(false);
-  });
-
-  it("rejects an empty comment", () => {
-    expect(feedbackPayloadSchema.safeParse({ ...base, comment: "" }).success).toBe(false);
+  it("accepts a deadline link and rejects a non-uuid one", () => {
+    expect(
+      notePayloadSchema.safeParse({ body: "x", linked_deadline_id: "550e8400-e29b-41d4-a716-446655440000" }).success,
+    ).toBe(true);
+    expect(notePayloadSchema.safeParse({ body: "x", linked_deadline_id: "nope" }).success).toBe(false);
   });
 });
 

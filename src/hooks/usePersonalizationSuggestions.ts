@@ -10,29 +10,12 @@ export interface PersonalizationSuggestionListFilters {
   limit?: number;
 }
 
-export interface GenerateSuggestionsResult {
-  candidatesEvaluated: number;
-  created: number;
-  skipped: number;
-}
-
 export function usePersonalizationSuggestions(filters?: PersonalizationSuggestionListFilters) {
   return useQuery({
     queryKey: personalizationSuggestionKeys.list(filters),
     queryFn: async () => {
       const { data, meta } = await apiFetch<PersonalizationSuggestionRow[]>(`/api/suggestions${toQueryString(filters ?? {})}`);
       return { rows: data, meta };
-    },
-  });
-}
-
-/** On-demand only — never polled/scheduled, since each call costs an LLM request. */
-export function useGenerateSuggestions() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async () => (await apiFetch<GenerateSuggestionsResult>("/api/suggestions/generate", { method: "POST" })).data,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: personalizationSuggestionKeys.all });
     },
   });
 }

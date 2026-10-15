@@ -11,7 +11,6 @@ import { useCourses } from "@/hooks/useCourses";
 import { useTasks } from "@/hooks/useTasks";
 import { usePersonalizationSuggestions } from "@/hooks/usePersonalizationSuggestions";
 import { useReviewSuggestionsAloud } from "@/hooks/useReviewSuggestionsAloud";
-import { useToast } from "@/components/ui/Toast";
 import { resolveTargetTitle } from "@/lib/personalization/target-title";
 import { toneClasses } from "@/lib/status-colors";
 import { apiFetch } from "@/lib/http/client";
@@ -65,7 +64,6 @@ export function DailyIntelligenceCard({ onDismiss }: Props = {}) {
   const { data: courses } = useCourses();
   const { data: tasks } = useTasks();
   const reviewAloud = useReviewSuggestionsAloud();
-  const { showToast } = useToast();
 
   const fetchIntelligence = useCallback(async () => {
     setLoading(true);
@@ -75,13 +73,6 @@ export function DailyIntelligenceCard({ onDismiss }: Props = {}) {
       setNarrative(data.narrative);
       setWorkload(data.workload);
       setCachedIntelligence({ narrative: data.narrative, workload: data.workload, date: data.date });
-
-      if (data.suggestionsGenerated > 0) {
-        showToast(
-          `Found ${data.suggestionsGenerated} new suggestion${data.suggestionsGenerated === 1 ? "" : "s"}`,
-          "success",
-        );
-      }
 
       // Refetch live suggestion list so Apply/Dismiss state is current
       const { data: fresh } = await refetchSuggestions();
@@ -94,7 +85,7 @@ export function DailyIntelligenceCard({ onDismiss }: Props = {}) {
     } finally {
       setLoading(false);
     }
-  }, [refetchSuggestions, reviewAloud, settings?.speak_suggestions_aloud, showToast]);
+  }, [refetchSuggestions, reviewAloud, settings?.speak_suggestions_aloud]);
 
   useEffect(() => {
     const cached = getCachedIntelligence();

@@ -4,7 +4,6 @@ import {
   createAuthenticatedUser,
   createCourse,
   createDeadline,
-  createFeedback,
   createKnowledgeChunk,
   createKnowledgeSource,
   createPerson,
@@ -28,7 +27,6 @@ describe("Row Level Security", () => {
   let reminderAId: string;
   let voiceSessionAId: string;
   let voiceSpeakRequestAId: string;
-  let feedbackAId: string;
   let knowledgeSourceAId: string;
   let knowledgeChunkAId: string;
   let userPreferencesAId: string;
@@ -45,7 +43,6 @@ describe("Row Level Security", () => {
     reminderAId = await createReminder(admin, userA.userId, "deadline", deadlineAId);
     voiceSessionAId = await createVoiceSession(admin, userA.userId);
     voiceSpeakRequestAId = await createVoiceSpeakRequest(admin, userA.userId);
-    feedbackAId = await createFeedback(admin, userA.userId, "deadline", deadlineAId);
     userPreferencesAId = await createUserPreferences(admin, userA.userId);
 
     const { data: note, error } = await admin
@@ -124,12 +121,6 @@ describe("Row Level Security", () => {
   it("rejects user A inserting a voice_speak_requests row for user B", async () => {
     const { error } = await userA.client.from("voice_speak_requests").insert({ user_id: userB.userId });
     expect(error).not.toBeNull();
-  });
-
-  it("hides user A's feedback from user B", async () => {
-    const { data, error } = await userB.client.from("feedback").select("id").eq("id", feedbackAId);
-    expect(error).toBeNull();
-    expect(data ?? []).toHaveLength(0);
   });
 
   it("hides user A's knowledge_source from user B", async () => {

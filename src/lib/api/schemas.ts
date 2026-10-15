@@ -303,22 +303,13 @@ export const notePayloadSchema = z.object({
   body: z.string().trim().min(1),
   linked_course_id: z.uuid().nullable().optional(),
   linked_task_id: z.uuid().nullable().optional(),
+  linked_deadline_id: z.uuid().nullable().optional(),
   linked_date: z.iso.date().nullable().optional(),
   tags: z.array(z.string().trim().min(1)).optional(),
 });
 export type NotePayload = z.infer<typeof notePayloadSchema>;
 export const notePatchSchema = notePayloadSchema.partial();
 export type NotePatch = z.infer<typeof notePatchSchema>;
-
-// SPEC-API-007 FeedbackPayload. No patch schema: v1 feedback is
-// submit-once, delete-if-unwanted (no PATCH route, no update RLS policy).
-export const feedbackPayloadSchema = z.object({
-  target_type: z.enum(["deadline", "task", "reminder"]),
-  target_id: z.uuid(),
-  rating: z.number().int().min(1).max(5),
-  comment: z.string().trim().min(1).optional(),
-});
-export type FeedbackPayload = z.infer<typeof feedbackPayloadSchema>;
 
 // SPEC-API-008 KnowledgeSourcePayload. Validates the non-file fields parsed
 // out of the create route's multipart FormData; file presence/absence and
