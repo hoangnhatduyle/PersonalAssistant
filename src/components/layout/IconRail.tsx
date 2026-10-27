@@ -38,12 +38,6 @@ const icons = {
       <path d="M3 9h18M8 2v4M16 2v4" strokeLinecap="round" />
     </svg>
   ),
-  assistant: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} className="h-5 w-5">
-      <path d="M12 3a5 5 0 0 1 5 5v3a5 5 0 0 1-10 0V8a5 5 0 0 1 5-5z" />
-      <path d="M6 12v1a6 6 0 0 0 12 0v-1M12 19v2" strokeLinecap="round" />
-    </svg>
-  ),
   settings: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} className="h-5 w-5">
       <circle cx="12" cy="12" r="3" />
@@ -71,7 +65,6 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/courses", label: "Workload", icon: icons.courses, activePrefixes: ["/board"] },
   { href: "/library", label: "Library", icon: icons.library },
   { href: "/calendar", label: "Calendar", icon: icons.calendar },
-  { href: "/assistant", label: "Assistant", icon: icons.assistant },
   { href: "/settings", label: "Settings", icon: icons.settings },
 ];
 

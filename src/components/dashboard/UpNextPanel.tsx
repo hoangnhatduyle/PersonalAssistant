@@ -99,7 +99,7 @@ export function UpNextPanel({ deadlines, tasks, people, todoLists, courses, appo
   // Countdown ring items (top 5 from all entity types, sessions included). Reminders are
   // deliberately excluded — they're just a notification echo of an underlying
   // Deadline/Task, which already appears here in its own right, so including both
-  // showed the same item twice (see SignalInbox for the dedicated reminders view).
+  // showed the same item twice.
   const ringItems = buildUpcomingItems({ deadlines, tasks, appointments, people, courses }).slice(0, RING_ITEM_LIMIT);
 
   // Queue items (deadlines, tasks, sessions — full union, reminders excluded per above)

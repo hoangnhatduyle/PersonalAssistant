@@ -31,7 +31,8 @@ export async function seedCourse(userId: string, name = "CS 101"): Promise<strin
 }
 
 export async function openAssistant(page: Page): Promise<void> {
-  await page.goto("/assistant");
+  await page.goto("/");
+  await page.getByRole("button", { name: "Open quick capture" }).click();
   await expect(page.getByLabel("Text fallback for voice capture")).toBeVisible();
 }
 

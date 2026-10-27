@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Dialog } from "@/components/ui/Dialog";
 import { CaptureChannel, MicIcon } from "@/components/assistant/CaptureChannel";
 
-/** Header button opening a compact capture dialog — shares VoiceCaptureProvider context with /assistant, so state persists across open/close/navigate. */
+/** Header button opening a compact capture dialog — shares VoiceCaptureProvider context with Driving Mode, so state persists across open/close/navigate. */
 export function CaptureQuickAction() {
   const [open, setOpen] = useState(false);
 

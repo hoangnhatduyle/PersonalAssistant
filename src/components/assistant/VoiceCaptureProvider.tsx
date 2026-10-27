@@ -6,7 +6,7 @@ import type { VoiceTurnResult } from "@/lib/voice/session";
 
 /**
  * Shared in-flight-voice-turn state, read by both the header's
- * CaptureQuickAction and the full /assistant page's CaptureChannel (Step 8)
+ * CaptureQuickAction and Driving Mode's CaptureChannel
  * so a turn survives navigation between them. Low-frequency state (a
  * handful of discrete changes per turn, not a stream) — Context+useReducer
  * per this project's state-decision guidance, not an external store.
