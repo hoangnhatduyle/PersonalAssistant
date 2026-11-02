@@ -1739,6 +1739,7 @@ export type Database = {
           deleted_at: string | null
           due_at: string | null
           id: string
+          is_long_term: boolean
           list_id: string | null
           person_id: string | null
           position: number
@@ -1758,6 +1759,7 @@ export type Database = {
           deleted_at?: string | null
           due_at?: string | null
           id?: string
+          is_long_term?: boolean
           list_id?: string | null
           person_id?: string | null
           position?: number
@@ -1777,6 +1779,7 @@ export type Database = {
           deleted_at?: string | null
           due_at?: string | null
           id?: string
+          is_long_term?: boolean
           list_id?: string | null
           person_id?: string | null
           position?: number
@@ -2889,6 +2892,7 @@ export type Database = {
           deleted_at: string | null
           due_at: string | null
           id: string | null
+          is_long_term: boolean | null
           list_id: string | null
           person_id: string | null
           position: number | null
@@ -2908,6 +2912,7 @@ export type Database = {
           deleted_at?: string | null
           due_at?: string | null
           id?: string | null
+          is_long_term?: boolean | null
           list_id?: string | null
           person_id?: string | null
           position?: number | null
@@ -2927,6 +2932,7 @@ export type Database = {
           deleted_at?: string | null
           due_at?: string | null
           id?: string | null
+          is_long_term?: boolean | null
           list_id?: string | null
           person_id?: string | null
           position?: number | null

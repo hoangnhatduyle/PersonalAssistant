@@ -20,6 +20,7 @@ import { DEADLINE_STATUS_TONE, EVENT_STATUS_TONE, SESSION_STATUS_TONE, TASK_STAT
 import { ITEM_KIND_BG_CLASS, ITEM_KIND_LABEL, ITEM_KIND_STROKE_CLASS } from "@/lib/dashboard/item-kind";
 import { EventTransitionButtons } from "@/components/calendar/EventTransitionButtons";
 import { MailInboxCard } from "@/components/dashboard/MailInboxCard";
+import { LongTermTasksCard } from "@/components/dashboard/LongTermTasksCard";
 import type { AppointmentRow, CourseRow, DeadlineRow, EventStatus, PersonRow, TaskRow, TodoListRow } from "@/lib/api/entity-types";
 
 type Props = {
@@ -31,6 +32,10 @@ type Props = {
   courses: CourseRow[];
   /** Deadline Sessions — appointments rows tagged category "Session". */
   appointments: AppointmentRow[];
+  /** The account owner's own Tasks, for the Long-term tasks card (a tracked Person's Tasks are excluded — unlike `tasks` above, which Up Next labels instead). */
+  longTermTasks: TaskRow[];
+  /** Last-touched-via-checklist/attachment/note per task id, feeding the Long-term card's "touched Nd ago". */
+  taskActivity?: Map<string, Date>;
 };
 
 const RING_ITEM_LIMIT = 5;
@@ -82,7 +87,7 @@ function useIsMounted(): boolean {
  * the left, filterable upcoming-items queue on the right. Replaces the old
  * NowWidget + NextSequenceQueue pair to eliminate redundant item lists.
  */
-export function UpNextPanel({ deadlines, tasks, people, todoLists, courses, appointments }: Props) {
+export function UpNextPanel({ deadlines, tasks, people, todoLists, courses, appointments, longTermTasks, taskActivity }: Props) {
   const isMounted = useIsMounted();
   const [, forceTick] = useState(0);
   const [timeWindow, setTimeWindow] = useState<TimeWindowFilter>("today");
@@ -187,14 +192,19 @@ export function UpNextPanel({ deadlines, tasks, people, todoLists, courses, appo
   const heroItem = ringItems[0] ?? null;
 
   return (
-    <GlassPanel variant="glow-ok" className="flex flex-col gap-6 p-6">
-      <div className="flex h-full flex-col gap-6 lg:flex-row lg:items-stretch">
-        {/* Countdown rings — 40% width on lg. Each ring is one of the top 5 upcoming
+    <GlassPanel variant="glow-ok" className="p-6">
+      {/* 2x2 grid on lg: rings over Long-term tasks on the left (40%), Up Next
+          over Mail on the right (60%). DOM order is the narrow-screen stacking
+          order (rings, Up Next, Long-term tasks, Mail); on lg each cell is
+          placed explicitly, with hairlines between cells instead of divider
+          elements. */}
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-y-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] lg:grid-rows-[auto_1fr] lg:gap-y-0">
+        {/* Countdown rings — top-left. Each ring is one of the top 5 upcoming
             items, innermost = most urgent, filling toward solid as its due time
             closes in over a fixed 24h window (see countdown-rings.ts) so fill level
             is comparable across items regardless of how long ago each was created. */}
-        <div className="flex flex-col items-center justify-center gap-3 lg:w-2/5">
-          <svg viewBox="0 0 300 300" aria-hidden="true" className="aspect-square h-auto w-full max-w-[26rem]">
+        <div className="flex flex-col items-center gap-3 lg:col-start-1 lg:row-start-1 lg:pb-6 lg:pr-6">
+          <svg viewBox="0 0 300 300" aria-hidden="true" className="aspect-square h-auto w-full max-w-[16rem]">
             {now &&
               ringItems.map((item, index) => {
                 const radius = ringRadius(index, ringItems.length);
@@ -288,14 +298,8 @@ export function UpNextPanel({ deadlines, tasks, people, todoLists, courses, appo
           )}
         </div>
 
-        {/* Divider: a hairline on narrow screens where the two blocks stack,
-            a full-height rule on lg where they sit side by side — the two
-            blocks read as one fused card without it. */}
-        <div className="h-px w-full bg-panel-border lg:h-auto lg:w-px lg:self-stretch" aria-hidden="true" />
-
-        {/* Filterable queue */}
-        {/* Queue — 60% width on lg */}
-        <div className="flex min-w-0 flex-col gap-3 pt-2 lg:w-3/5 lg:pt-0 lg:pl-2">
+        {/* Filterable queue — top-right. */}
+        <div className="flex min-w-0 flex-col gap-3 border-t border-panel-border pt-6 lg:col-start-2 lg:row-start-1 lg:border-t-0 lg:border-l lg:pb-6 lg:pl-6 lg:pt-0">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
               <p className="font-mono text-xs uppercase tracking-wide text-text-eyebrow">Up Next</p>
@@ -400,14 +404,18 @@ export function UpNextPanel({ deadlines, tasks, people, todoLists, courses, appo
             </ul>
           )}
 
-          {/* Mail lives below the queue, inside its own column — not the
-              full card width — so it stays on the "Up Next" side, next to
-              (not under) the countdown rings. mt-auto pins it (and its
-              divider) to the bottom of this column when the card is
-              stretched taller than its content (e.g. to match MomentumCard's
-              height) — the slack collects as a gap above the divider instead
-              of as dead space below Mail. */}
-          <div className="mt-auto h-px w-full bg-panel-border" aria-hidden="true" />
+        </div>
+
+        {/* Long-term tasks — bottom-left, under the rings. Open-ended tasks with
+            no due date, kept visible here instead of in the due-date-driven
+            widgets (see long-term-items.ts). */}
+        <div className="flex min-w-0 border-t border-panel-border pt-6 lg:col-start-1 lg:row-start-2 lg:pr-6">
+          <LongTermTasksCard tasks={longTermTasks} taskActivity={taskActivity} />
+        </div>
+
+        {/* Mail — bottom-right, under the queue. Its own cell now, so it
+            stays on the "Up Next" side, next to (not under) Long-term tasks. */}
+        <div className="flex min-w-0 flex-col border-t border-panel-border pt-6 lg:col-start-2 lg:row-start-2 lg:border-l lg:pl-6">
           <MailInboxCard />
         </div>
       </div>

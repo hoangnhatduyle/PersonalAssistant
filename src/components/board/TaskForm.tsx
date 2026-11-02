@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { DateTimeField } from "@/components/ui/DateTimeField";
 import { Checkbox } from "@/components/ui/Checkbox";
+import { Switch } from "@/components/ui/Switch";
 import { ReminderLeadInput } from "@/components/ui/ReminderLeadInput";
 import { Button } from "@/components/ui/Button";
 import { LabelChip } from "@/components/ui/LabelChip";
@@ -65,6 +66,7 @@ export function TaskForm({
     defaultValues: {
       title: task?.title ?? defaultTitle ?? "",
       due_at: task?.due_at ?? defaultDueAt ?? null,
+      is_long_term: task?.is_long_term ?? false,
       reminders_enabled: task?.reminders_enabled ?? true,
       reminder_lead_minutes: task?.reminder_lead_minutes ?? 30,
       person_id: task?.person_id ?? undefined,
@@ -74,7 +76,10 @@ export function TaskForm({
     },
   });
 
-  const remindersEnabled = watch("reminders_enabled");
+  const isLongTerm = watch("is_long_term") ?? false;
+  // A long-term task has no due date, so there's nothing for a reminder to
+  // count down to either — the whole due/reminder block is hidden while it's on.
+  const remindersEnabled = watch("reminders_enabled") && !isLongTerm;
   const labelIds = watch("label_ids") ?? [];
   const labelById = new Map((labels?.rows ?? []).map((label) => [label.id, label]));
 
@@ -154,20 +159,43 @@ export function TaskForm({
         </Select>
       </FormField>
 
-      <FormField label="Due" htmlFor="due_at" error={errors.due_at?.message}>
-        <Controller
-          control={control}
-          name="due_at"
-          render={({ field }) => (
-            <DateTimeField
-              id="due_at"
-              value={field.value}
-              onChange={field.onChange}
-              invalid={Boolean(errors.due_at)}
+      <Controller
+        control={control}
+        name="is_long_term"
+        render={({ field }) => (
+          <div className="flex flex-col gap-1">
+            <Switch
+              label="Long-term task (no due date)"
+              checked={field.value ?? false}
+              onCheckedChange={(checked) => {
+                field.onChange(checked);
+                // Mirrors normalize_task_long_term on the server: turning it on drops the due date.
+                if (checked) setValue("due_at", null, { shouldDirty: true });
+              }}
             />
-          )}
-        />
-      </FormField>
+            <p className="text-xs text-text-secondary">
+              Stays on your Today page under Long-term tasks and never shows as past due.
+            </p>
+          </div>
+        )}
+      />
+
+      {!isLongTerm && (
+        <FormField label="Due" htmlFor="due_at" error={errors.due_at?.message}>
+          <Controller
+            control={control}
+            name="due_at"
+            render={({ field }) => (
+              <DateTimeField
+                id="due_at"
+                value={field.value}
+                onChange={field.onChange}
+                invalid={Boolean(errors.due_at)}
+              />
+            )}
+          />
+        </FormField>
+      )}
 
       <FormField
         label="Priority"
@@ -210,7 +238,7 @@ export function TaskForm({
         </div>
       </FormField>
 
-      <Checkbox label="Reminders enabled" {...register("reminders_enabled")} />
+      {!isLongTerm && <Checkbox label="Reminders enabled" {...register("reminders_enabled")} />}
 
       {remindersEnabled && (
         <FormField

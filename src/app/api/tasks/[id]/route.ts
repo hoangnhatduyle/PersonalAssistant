@@ -124,11 +124,15 @@ export async function PATCH(request: Request, { params }: RouteParams) {
     if (syncError) return serverErrorResponse("task label sync failed", syncError);
   }
 
+  // is_long_term counts: flipping it on makes the DB clear due_at (see
+  // normalize_task_long_term), so the reminder must resync against the
+  // post-trigger `updated.due_at` even though the body never mentioned due_at.
   const governanceTouched =
     updated &&
-    body &&
-    typeof body === "object" &&
-    ("due_at" in body || "reminders_enabled" in body || "reminder_lead_minutes" in body);
+    ("due_at" in taskFields ||
+      "reminders_enabled" in taskFields ||
+      "reminder_lead_minutes" in taskFields ||
+      "is_long_term" in taskFields);
 
   if (governanceTouched && updated) {
     await syncReminderForTarget(supabase, {

@@ -65,6 +65,7 @@ export function BoardCard({ task, personName, onOpenCard }: Props) {
         </button>
 
         {(task.due_at ||
+          task.is_long_term ||
           task.priority ||
           task.task_labels.length > 0 ||
           personName) && (
@@ -76,6 +77,7 @@ export function BoardCard({ task, personName, onOpenCard }: Props) {
                 {formatDueDate(task.due_at)}
               </span>
             )}
+            {task.is_long_term && <Badge tone="purple">Long-term</Badge>}
             {task.priority && (
               <Badge tone={ITEM_PRIORITY_TONE[task.priority]}>
                 {task.priority}

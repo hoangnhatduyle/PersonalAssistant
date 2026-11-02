@@ -49,7 +49,7 @@ function staleThresholdFor(dueAt: string | null, now: Date): number {
  * (checklist item, attachment, linked note) that doesn't bump the task's
  * own updated_at on its own. Whichever is most recent wins.
  */
-function lastTouchedAt(updatedAt: string, acknowledgedAt: string | null, childActivityAt: Date | null = null): Date {
+export function lastTouchedAt(updatedAt: string, acknowledgedAt: string | null, childActivityAt: Date | null = null): Date {
   const candidates = [new Date(updatedAt).getTime()];
   if (acknowledgedAt) candidates.push(new Date(acknowledgedAt).getTime());
   if (childActivityAt) candidates.push(childActivityAt.getTime());
