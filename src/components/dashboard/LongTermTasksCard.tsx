@@ -115,7 +115,7 @@ export function LongTermTasksCard({ tasks, taskActivity = EMPTY_ACTIVITY }: Prop
           Nothing on your radar. Mark a task as long-term in its card to keep it here without a due date.
         </p>
       ) : (
-        <ul className="flex max-h-48 flex-col divide-y divide-panel-border overflow-y-auto pr-1">
+        <ul className="flex max-h-60 flex-col divide-y divide-panel-border overflow-y-auto pr-1">
           {items.map((item) => (
             <LongTermRow key={item.id} item={item} />
           ))}
