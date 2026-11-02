@@ -94,6 +94,8 @@ export function DashboardContainer() {
               todoLists={todoLists?.rows ?? []}
               courses={courses?.rows ?? []}
               appointments={appointments?.rows ?? []}
+              longTermTasks={mineOnlyTasks}
+              taskActivity={taskActivityMap}
             />
             <MomentumCard deadlines={deadlines?.rows ?? []} tasks={mineOnlyTasks} />
           </div>

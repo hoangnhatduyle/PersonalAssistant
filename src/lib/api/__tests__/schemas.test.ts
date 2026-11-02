@@ -165,6 +165,41 @@ describe("taskPayloadSchema", () => {
   });
 });
 
+// Long-term tasks (supabase/migrations/0056_long_term_tasks.sql): no due date by
+// definition. Either field alone is fine (the DB resolves it); only a payload
+// carrying both contradicts itself.
+describe("is_long_term on task schemas", () => {
+  const DUE = "2026-11-10T12:00:00Z";
+
+  it("accepts is_long_term on its own, and with a null due_at", () => {
+    expect(taskPayloadSchema.safeParse({ title: "Loan Research", is_long_term: true }).success).toBe(true);
+    expect(taskPayloadSchema.safeParse({ title: "Loan Research", is_long_term: true, due_at: null }).success).toBe(true);
+  });
+
+  it("rejects is_long_term: true together with a due_at", () => {
+    const parsed = taskPayloadSchema.safeParse({ title: "Loan Research", is_long_term: true, due_at: DUE });
+    expect(parsed.success).toBe(false);
+    if (!parsed.success) expect(parsed.error.issues[0].path).toEqual(["due_at"]);
+  });
+
+  it("allows is_long_term: false with a due_at", () => {
+    expect(taskPayloadSchema.safeParse({ title: "Loan Research", is_long_term: false, due_at: DUE }).success).toBe(true);
+  });
+
+  it("applies the same rule to PATCH, and lets either field travel alone", () => {
+    expect(taskPatchSchema.safeParse({ is_long_term: true, due_at: DUE }).success).toBe(false);
+    expect(taskPatchSchema.safeParse({ is_long_term: true }).success).toBe(true);
+    expect(taskPatchSchema.safeParse({ due_at: DUE }).success).toBe(true);
+    expect(taskPatchSchema.safeParse({ is_long_term: true, due_at: null }).success).toBe(true);
+  });
+
+  it("keeps is_long_term when present on a patch", () => {
+    const parsed = taskPatchSchema.safeParse({ is_long_term: true });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) expect(parsed.data).toEqual({ is_long_term: true });
+  });
+});
+
 describe("reminderAckSchema", () => {
   it("accepts acknowledge/dismiss with no snooze_until", () => {
     expect(reminderAckSchema.safeParse({ event: "user_acknowledges" }).success).toBe(true);

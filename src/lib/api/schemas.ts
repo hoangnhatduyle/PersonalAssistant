@@ -179,9 +179,15 @@ export type AppointmentPatch = z.infer<typeof appointmentPatchSchema>;
 // change through the dedicated transition route (NC-API-002), like
 // deadlines.status and tasks.status.
 
-export const taskPayloadSchema = z.object({
+const taskBaseSchema = z.object({
   title: z.string().trim().min(1),
   due_at: z.iso.datetime({ offset: true }).nullable().optional(),
+  // Long-term task (supabase/migrations/0056_long_term_tasks.sql): an open-ended
+  // task with no due date that stays on Today's Long-term tasks card instead of
+  // the due-date-driven widgets. Mutually exclusive with a due_at -- see
+  // isLongTermDueAtValid below for the payload-level check, and
+  // normalize_task_long_term for how a single-field PATCH is resolved.
+  is_long_term: z.boolean().optional(),
   tags: z.array(z.string().trim().min(1)).optional(),
   reminders_enabled: z.boolean().optional(),
   reminder_lead_minutes: z.number().int().nonnegative().max(MAX_REMINDER_LEAD_MINUTES).optional(),
@@ -199,8 +205,22 @@ export const taskPayloadSchema = z.object({
   // separate attach/detach endpoint.
   label_ids: z.array(z.uuid()).optional(),
 });
+
+// A payload that sets is_long_term together with a real due_at contradicts
+// itself. Either field alone is fine -- the DB trigger lets the last-touched
+// one win (due_at set -> no longer long-term; long-term set -> due_at cleared).
+const LONG_TERM_DUE_AT_CHECK = {
+  message: "A long-term task cannot have a due date",
+  path: ["due_at"],
+};
+
+function isLongTermDueAtValid(value: { is_long_term?: boolean; due_at?: string | null }): boolean {
+  return !(value.is_long_term === true && typeof value.due_at === "string");
+}
+
+export const taskPayloadSchema = taskBaseSchema.refine(isLongTermDueAtValid, LONG_TERM_DUE_AT_CHECK);
 export type TaskPayload = z.infer<typeof taskPayloadSchema>;
-export const taskPatchSchema = taskPayloadSchema.partial();
+export const taskPatchSchema = taskBaseSchema.partial().refine(isLongTermDueAtValid, LONG_TERM_DUE_AT_CHECK);
 export type TaskPatch = z.infer<typeof taskPatchSchema>;
 
 // Checklists (Phase 2 of the Trello-style card-detail modal,

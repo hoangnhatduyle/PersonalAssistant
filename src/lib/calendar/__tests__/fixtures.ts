@@ -60,6 +60,7 @@ export function makeTask(overrides: Partial<TaskRow> = {}): TaskRow {
     id: "t-1",
     title: "Task",
     due_at: "2026-01-05T00:00:00Z",
+    is_long_term: false,
     status: "Open",
     tags: [],
     reminders_enabled: true,
