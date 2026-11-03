@@ -21,4 +21,14 @@ describe("LibrarySectionTabs", () => {
     expect(screen.getByRole("link", { name: "Employers" })).toHaveAttribute("aria-current", "page");
     expect(screen.getByRole("link", { name: "Posts" })).not.toHaveAttribute("aria-current");
   });
+
+  it("also offers Knowledge, after Employers, and marks it current on its own route", () => {
+    pathname.value = "/library/knowledge";
+    render(<LibrarySectionTabs />);
+    expect(screen.getAllByRole("link").map((link) => link.textContent)).toEqual(["Posts", "Employers", "Knowledge"]);
+    expect(screen.getByRole("link", { name: "Knowledge" })).toHaveAttribute("href", "/library/knowledge");
+    expect(screen.getByRole("link", { name: "Knowledge" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("link", { name: "Posts" })).not.toHaveAttribute("aria-current");
+    expect(screen.getByRole("link", { name: "Employers" })).not.toHaveAttribute("aria-current");
+  });
 });

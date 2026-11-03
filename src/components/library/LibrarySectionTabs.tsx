@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 const TABS = [
   { href: "/library", label: "Posts" },
   { href: "/library/employers", label: "Employers" },
+  { href: "/library/knowledge", label: "Knowledge" },
 ];
 
 /** Section switcher for the Library. Renders nothing if there is only one section to switch between. */
