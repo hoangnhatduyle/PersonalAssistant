@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useToast } from "@/components/ui/Toast";
-import { useAcknowledgeTask, useTransitionTask } from "@/hooks/useTasks";
+import { useTransitionTask } from "@/hooks/useTasks";
 import { buildLongTermItems, formatTouchedLabel, type LongTermItem } from "@/lib/dashboard/long-term-items";
 import type { TaskRow } from "@/lib/api/entity-types";
 
@@ -19,7 +19,6 @@ const CONFIRM_WINDOW_MS = 3_000;
 const EMPTY_ACTIVITY = new Map<string, Date>();
 
 function LongTermRow({ item }: { item: LongTermItem }) {
-  const acknowledge = useAcknowledgeTask(item.id);
   const transition = useTransitionTask(item.id);
   const { showToast } = useToast();
   // Done is terminal for a Task (guard_task_status), so the check needs a second click.
@@ -30,15 +29,6 @@ function LongTermRow({ item }: { item: LongTermItem }) {
     const id = setTimeout(() => setConfirmingDone(false), CONFIRM_WINDOW_MS);
     return () => clearTimeout(id);
   }, [confirmingDone]);
-
-  const handleStillOnIt = async () => {
-    try {
-      await acknowledge.mutateAsync();
-      showToast("Marked as still on it", "success");
-    } catch {
-      showToast("Could not update that task", "error");
-    }
-  };
 
   const handleDone = async () => {
     if (!confirmingDone) {
@@ -66,14 +56,6 @@ function LongTermRow({ item }: { item: LongTermItem }) {
         </div>
       </div>
       <div className="flex shrink-0 items-center gap-1.5">
-        <button
-          type="button"
-          onClick={handleStillOnIt}
-          disabled={acknowledge.isPending}
-          className="rounded-control border border-panel-border px-2 py-1 font-mono text-[10px] text-text-secondary transition-colors hover:text-text-primary disabled:opacity-50"
-        >
-          Still on it
-        </button>
         <button
           type="button"
           onClick={handleDone}

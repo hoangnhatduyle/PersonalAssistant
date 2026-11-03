@@ -48,10 +48,10 @@ describe("LongTermTasksCard", () => {
     expect(screen.queryByRole("listitem")).not.toBeInTheDocument();
   });
 
-  it("'Still on it' posts to the acknowledge route", async () => {
+  it("has no 'Still on it' button: a long-term task is meant to stay on the card, so there is nothing to acknowledge", () => {
     renderWithProviders(<LongTermTasksCard tasks={[LOAN]} />);
-    fireEvent.click(screen.getByRole("button", { name: "Still on it" }));
-    await waitFor(() => expect(apiFetch).toHaveBeenCalledWith("/api/tasks/loan/acknowledge", { method: "POST" }));
+    expect(screen.queryByRole("button", { name: "Still on it" })).not.toBeInTheDocument();
+    expect(apiFetch).not.toHaveBeenCalled();
   });
 
   it("marking done needs a second click, then posts the done transition", async () => {
