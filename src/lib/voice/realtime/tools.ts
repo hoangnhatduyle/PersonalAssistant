@@ -79,7 +79,7 @@ const CALL_ONLY_DEFINITIONS: RealtimeToolDefinition[] = [
     type: "function",
     name: "decline_pending_mutation",
     description:
-      "Cancel the change the user just declined. Call this after propose_mutation returned status \"awaiting_confirmation\" and the user clearly said no, cancel, never mind, or stop. Pass that propose_mutation result's session_id.",
+      "Cancel the change the user just declined. Call this after propose_mutation returned status \"awaiting_confirmation\" and the user clearly said no, cancel, never mind, or stop to your read-back of that change. A no that merely answers a clarifying question (for example \"does it repeat?\") is not a decline. Pass that propose_mutation result's session_id.",
     parameters: SESSION_ID_PARAMETERS,
   },
   {

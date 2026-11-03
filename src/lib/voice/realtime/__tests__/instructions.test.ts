@@ -44,6 +44,12 @@ describe("buildRealtimeInstructions", () => {
     expect(REALTIME_ADAPTATION).toMatch(/end_call/);
   });
 
+  it("says a no or yes answering a clarifying question is an answer, not a decline or confirm", () => {
+    expect(REALTIME_ADAPTATION).toMatch(/only apply to the yes-or-no you asked after reading back a proposal/i);
+    expect(REALTIME_ADAPTATION).toMatch(/does it repeat|clarifying question/i);
+    expect(REALTIME_ADAPTATION).toMatch(/never call confirm_pending_mutation or decline_pending_mutation when no propose_mutation result is awaiting confirmation/i);
+  });
+
   it("forbids substituting the only tracked person for a name that isn't on the list", () => {
     expect(REALTIME_ADAPTATION).toMatch(/not in the "people" list, say you don't have anyone tracked by that name/);
     expect(REALTIME_ADAPTATION).toMatch(/even when the list holds only one person, never substitute/);
