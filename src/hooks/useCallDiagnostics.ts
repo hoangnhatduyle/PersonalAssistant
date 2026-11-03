@@ -37,7 +37,7 @@ function writeEnabled(enabled: boolean): void {
 /**
  * Per-device switch for the voice call diagnostics overlay, the in-app
  * equivalent of `/driving?debug=1` for an installed PWA that has no address
- * bar. localStorage-backed (a device setting, like the Face ID lock), read
+ * bar. localStorage-backed (a per-device setting), read
  * through useSyncExternalStore so it is false during server rendering.
  */
 export function useCallDiagnostics(): [boolean, (enabled: boolean) => void] {

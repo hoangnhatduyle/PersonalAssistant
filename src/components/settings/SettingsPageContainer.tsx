@@ -7,16 +7,10 @@ import { EmailRemindersToggleCard } from "@/components/settings/EmailRemindersTo
 import { PushNotificationsCard } from "@/components/settings/PushNotificationsCard";
 import { PeopleManagementCard } from "@/components/settings/PeopleManagementCard";
 import { AppUpdatesCard } from "@/components/settings/AppUpdatesCard";
-import { FaceIdLockToggleCard } from "@/components/settings/FaceIdLockToggleCard";
 import { CallDiagnosticsToggleCard } from "@/components/settings/CallDiagnosticsToggleCard";
 import { KnowledgeSection } from "@/components/knowledge/KnowledgeSection";
 
-type Props = {
-  userId: string;
-  userEmail: string;
-};
-
-export function SettingsPageContainer({ userId, userEmail }: Props) {
+export function SettingsPageContainer() {
   return (
     <div className="flex flex-col gap-8">
       <section aria-labelledby="preferences-heading" className="flex flex-col gap-4">
@@ -53,7 +47,6 @@ export function SettingsPageContainer({ userId, userEmail }: Props) {
           App
         </h2>
         <AppUpdatesCard />
-        <FaceIdLockToggleCard userId={userId} userEmail={userEmail} />
         <CallDiagnosticsToggleCard />
       </section>
     </div>

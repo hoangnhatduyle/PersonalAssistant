@@ -6,7 +6,6 @@ import { AppHeader } from "@/components/layout/AppHeader";
 import { VoiceCaptureProvider } from "@/components/assistant/VoiceCaptureProvider";
 import { CommandPalette } from "@/components/search/CommandPalette";
 import { DrivingModePrompt } from "@/components/driving/DrivingModePrompt";
-import { FaceIdLockGate } from "@/components/auth/FaceIdLockGate";
 
 /**
  * Defense-in-depth alongside src/proxy.ts's redirect: proxy.ts already
@@ -21,18 +20,16 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
   if (!user) redirect("/sign-in");
 
   return (
-    <FaceIdLockGate userId={user.id}>
-      <VoiceCaptureProvider>
-        <div className="flex min-h-screen">
-          <IconRail email={user.email ?? ""} />
-          <div className="flex min-w-0 flex-1 flex-col">
-            <AppHeader email={user.email ?? ""} />
-            <main className="min-w-0 flex-1 px-6 py-6">{children}</main>
-            <CommandPalette />
-            <DrivingModePrompt />
-          </div>
+    <VoiceCaptureProvider>
+      <div className="flex min-h-screen">
+        <IconRail email={user.email ?? ""} />
+        <div className="flex min-w-0 flex-1 flex-col">
+          <AppHeader email={user.email ?? ""} />
+          <main className="min-w-0 flex-1 px-6 py-6">{children}</main>
+          <CommandPalette />
+          <DrivingModePrompt />
         </div>
-      </VoiceCaptureProvider>
-    </FaceIdLockGate>
+      </div>
+    </VoiceCaptureProvider>
   );
 }

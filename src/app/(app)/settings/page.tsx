@@ -7,5 +7,5 @@ export default async function SettingsPage() {
   const user = await getAuthenticatedUser(supabase);
   if (!user) redirect("/sign-in");
 
-  return <SettingsPageContainer userId={user.id} userEmail={user.email ?? ""} />;
+  return <SettingsPageContainer />;
 }
