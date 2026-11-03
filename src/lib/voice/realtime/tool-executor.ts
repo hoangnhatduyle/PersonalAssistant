@@ -353,7 +353,7 @@ export function createCallToolPorts(supabase: SupabaseClient<Database>, userId: 
         .select("id, transcript, pending_mutation")
         .eq("user_id", userId)
         .eq("state", "AwaitingConfirmation")
-        .order("created_at", { ascending: false })
+        .order("started_at", { ascending: false })
         .limit(10);
       if (queryError) throw new Error(`pending session lookup failed: ${queryError.message}`);
       return (data ?? []).map((row) => ({ id: row.id, transcript: row.transcript, pending_mutation: row.pending_mutation as PendingMutation | null }));
