@@ -23,3 +23,11 @@ jobs:
         run: |
           curl -sf -X POST "${{ secrets.REMINDER_EMAIL_URL }}/api/cron/send-reminder-emails" \
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
+      # Runs even if the email step failed: the two channels retry independently
+      # (reminders.emailed_at vs reminders.pushed_at), so one outage must not
+      # also silence the other.
+      - name: Call reminder push endpoint
+        if: ${{ !cancelled() }}
+        run: |
+          curl -sf -X POST "${{ secrets.REMINDER_EMAIL_URL }}/api/cron/send-reminder-pushes" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"

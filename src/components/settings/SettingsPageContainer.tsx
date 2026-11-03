@@ -4,6 +4,7 @@ import { SpeakSuggestionsToggleCard } from "@/components/settings/SpeakSuggestio
 import { ReminderCadenceCard } from "@/components/settings/ReminderCadenceCard";
 import { QuietHoursCard } from "@/components/settings/QuietHoursCard";
 import { EmailRemindersToggleCard } from "@/components/settings/EmailRemindersToggleCard";
+import { PushNotificationsCard } from "@/components/settings/PushNotificationsCard";
 import { PeopleManagementCard } from "@/components/settings/PeopleManagementCard";
 import { AppUpdatesCard } from "@/components/settings/AppUpdatesCard";
 import { FaceIdLockToggleCard } from "@/components/settings/FaceIdLockToggleCard";
@@ -26,6 +27,7 @@ export function SettingsPageContainer({ userId, userEmail }: Props) {
           <QuietHoursCard />
           <VoiceCaptureToggleCard />
           <EmailRemindersToggleCard />
+          <PushNotificationsCard />
           <HandsFreeVoiceToggleCard />
           <SpeakSuggestionsToggleCard />
         </div>

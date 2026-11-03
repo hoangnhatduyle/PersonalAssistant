@@ -10,7 +10,9 @@ import type { Database } from "./types";
  * knowledge-import RPCs (start_knowledge_import, complete_knowledge_import,
  * fail_knowledge_import) — src/app/api/cron/send-reminder-emails/route.ts
  * — to read/claim every user's Delivered reminders on a scheduled,
- * non-user-session invocation — and src/app/api/voice/[sessionId]/arm/route.ts
+ * non-user-session invocation — src/app/api/cron/send-reminder-pushes/route.ts
+ * — the same, for web-push delivery (reminders.pushed_at and every user's
+ * push_subscriptions) — and src/app/api/voice/[sessionId]/arm/route.ts
  * — to write voice_sessions.expires_at, which guard_voice_session_state
  * (0005) forbids for end-user clients outside a state transition — may
  * import this. Mirrors

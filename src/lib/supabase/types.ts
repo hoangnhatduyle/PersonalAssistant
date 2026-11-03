@@ -393,6 +393,44 @@ export type Database = {
           },
         ]
       }
+      knowledge_chunks: {
+        Row: {
+          chunk_index: number
+          chunk_text: string
+          created_at: string
+          embedding: string
+          id: string
+          source_id: string
+          user_id: string
+        }
+        Insert: {
+          chunk_index: number
+          chunk_text: string
+          created_at?: string
+          embedding: string
+          id?: string
+          source_id: string
+          user_id: string
+        }
+        Update: {
+          chunk_index?: number
+          chunk_text?: string
+          created_at?: string
+          embedding?: string
+          id?: string
+          source_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "knowledge_chunks_source_id_user_id_fkey"
+            columns: ["source_id", "user_id"]
+            isOneToOne: false
+            referencedRelation: "knowledge_sources"
+            referencedColumns: ["id", "user_id"]
+          },
+        ]
+      }
       knowledge_links: {
         Row: {
           created_at: string
@@ -1557,6 +1595,47 @@ export type Database = {
         }
         Relationships: []
       }
+      push_subscriptions: {
+        Row: {
+          auth: string
+          created_at: string
+          endpoint: string
+          id: string
+          p256dh: string
+          updated_at: string
+          user_agent: string | null
+          user_id: string
+        }
+        Insert: {
+          auth: string
+          created_at?: string
+          endpoint: string
+          id?: string
+          p256dh: string
+          updated_at?: string
+          user_agent?: string | null
+          user_id: string
+        }
+        Update: {
+          auth?: string
+          created_at?: string
+          endpoint?: string
+          id?: string
+          p256dh?: string
+          updated_at?: string
+          user_agent?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "push_subscriptions_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       reminders: {
         Row: {
           acknowledgment_state: Database["public"]["Enums"]["reminder_status"]
@@ -1565,6 +1644,7 @@ export type Database = {
           delivered_at: string | null
           emailed_at: string | null
           id: string
+          pushed_at: string | null
           snooze_until: string | null
           target_id: string
           target_type: string
@@ -1578,6 +1658,7 @@ export type Database = {
           delivered_at?: string | null
           emailed_at?: string | null
           id?: string
+          pushed_at?: string | null
           snooze_until?: string | null
           target_id: string
           target_type: string
@@ -1591,6 +1672,7 @@ export type Database = {
           delivered_at?: string | null
           emailed_at?: string | null
           id?: string
+          pushed_at?: string | null
           snooze_until?: string | null
           target_id?: string
           target_type?: string
@@ -2714,6 +2796,7 @@ export type Database = {
           linked_date: string | null
           linked_deadline_id: string | null
           linked_task_id: string | null
+          tags: string[] | null
           user_id: string | null
         }
         Insert: {
@@ -2725,6 +2808,7 @@ export type Database = {
           linked_date?: string | null
           linked_deadline_id?: string | null
           linked_task_id?: string | null
+          tags?: string[] | null
           user_id?: string | null
         }
         Update: {
@@ -2736,6 +2820,7 @@ export type Database = {
           linked_date?: string | null
           linked_deadline_id?: string | null
           linked_task_id?: string | null
+          tags?: string[] | null
           user_id?: string | null
         }
         Relationships: [
@@ -2751,6 +2836,20 @@ export type Database = {
             columns: ["linked_course_id"]
             isOneToOne: false
             referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notes_linked_deadline_id_fkey"
+            columns: ["linked_deadline_id"]
+            isOneToOne: false
+            referencedRelation: "active_deadlines"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notes_linked_deadline_id_fkey"
+            columns: ["linked_deadline_id"]
+            isOneToOne: false
+            referencedRelation: "deadlines"
             referencedColumns: ["id"]
           },
           {
@@ -3178,6 +3277,7 @@ export type Database = {
           delivered_at: string | null
           emailed_at: string | null
           id: string
+          pushed_at: string | null
           snooze_until: string | null
           target_id: string
           target_type: string
@@ -3200,8 +3300,8 @@ export type Database = {
         Args: { p_snippet_chars: number }
         Returns: {
           id: string
-          origin_url: string | null
-          snippet: string | null
+          origin_url: string
+          snippet: string
           source_type: Database["public"]["Enums"]["knowledge_source_type"]
           status: Database["public"]["Enums"]["knowledge_source_status"]
           title: string
@@ -3230,7 +3330,7 @@ export type Database = {
         }
         Returns: {
           chunk_text: string
-          origin_url: string | null
+          origin_url: string
           similarity: number
           source_id: string
           source_type: Database["public"]["Enums"]["knowledge_source_type"]

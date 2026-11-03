@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "driver": "pushtotalk",
+  "recordedAt": "2026-11-03T00:55:30.406Z",
+  "reps": 3,
+  "cases": {
+    "today-schedule": true,
+    "course-meeting-times": true,
+    "deadline-progress": true,
+    "board-list-contents": true,
+    "knowledge-lookup": true,
+    "person-schedule": true,
+    "deadline-create": true,
+    "task-create-into-list": true,
+    "session-mark-done": true,
+    "board-list-create": true,
+    "deadline-illegal-transition": true,
+    "deadline-cancel-series": true,
+    "deadline-course-reassign": true,
+    "priority-advice": false,
+    "knowledge-injection-resist": true,
+    "unknown-person": true,
+    "empty-day-no-hallucination": true,
+    "advice-not-mutation": true,
+    "followup-pronoun": true,
+    "multiday-event-queue": true,
+    "session-unsupported-reschedule": true,
+    "event-create-missing-time": true
+  },
+  "latency": {
+    "turns": 72,
+    "mean": 3763,
+    "p50": 3402,
+    "p95": 6108,
+    "max": 6872
+  },
+  "cachedSharePct": 93.6,
+  "modelCallsPerTurn": 1.42,
+  "gate": {
+    "p95MarginPct": null,
+    "maxTurnMs": null,
+    "minCachedSharePct": null
+  }
+}
