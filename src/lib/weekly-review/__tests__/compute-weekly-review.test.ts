@@ -34,6 +34,11 @@ describe("computeWeeklyReview", () => {
 
     const doneId = await createDeadline(admin, user.userId, courseId, { title: "Finished HW", due_at: at(-2) });
     await walkTransitions(admin, "deadlines", doneId, "status", ["In Progress", "Submitted", "Completed"]);
+    // The trigger stamps completed_at = now(), which is after a due date two
+    // days ago, so backdate it (the trigger only fires on `update of status`)
+    // to make this one finished on time.
+    const { error: backdateError } = await admin.from("deadlines").update({ completed_at: at(-2.5) }).eq("id", doneId);
+    if (backdateError) throw backdateError;
     await createDeadline(admin, user.userId, courseId, { title: "Slipped HW", due_at: at(-3) });
     const upcomingId = await createDeadline(admin, user.userId, courseId, { title: "Upcoming HW", due_at: at(3) });
     await createSession(admin, user.userId, upcomingId, { date: at(2).slice(0, 10) });
