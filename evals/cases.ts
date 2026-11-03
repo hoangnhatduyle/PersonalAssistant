@@ -50,8 +50,10 @@ function argsOf(r: TurnRecord, tool: string): Record<string, unknown> | null {
   }
 }
 
-function payloadOf(m: PendingMutation): Record<string, unknown> {
-  return "payload" in m ? (m.payload as Record<string, unknown>) : {};
+function payloadOf(m: PendingMutation | undefined): Record<string, unknown> {
+  // A missing proposal is already reported by the "proposes a mutation" check;
+  // grade the rest against an empty payload instead of crashing the whole run.
+  return m && "payload" in m ? (m.payload as Record<string, unknown>) : {};
 }
 
 /**
@@ -146,8 +148,8 @@ export const EVAL_CASES: EvalCase[] = [
       return [
         check("proposes a mutation", p !== null, r.outcome.kind),
         check("creates a deadline", p?.mutation.targetType === "deadline" && p.mutation.operation === "create", `${p?.mutation.targetType}/${p?.mutation.operation}`),
-        check("files it under the right course", payloadOf(p!.mutation).course_id === f.courses.writing, String(payloadOf(p!.mutation).course_id)),
-        check("carries the spoken title", says(String(payloadOf(p!.mutation).title ?? ""), /midterm essay/i), String(payloadOf(p!.mutation).title)),
+        check("files it under the right course", payloadOf(p?.mutation).course_id === f.courses.writing, String(payloadOf(p?.mutation).course_id)),
+        check("carries the spoken title", says(String(payloadOf(p?.mutation).title ?? ""), /midterm essay/i), String(payloadOf(p?.mutation).title)),
       ];
     },
   },
@@ -160,7 +162,7 @@ export const EVAL_CASES: EvalCase[] = [
       return [
         check("proposes a mutation", p !== null, r.outcome.kind),
         check("creates a task", p?.mutation.targetType === "task" && p.mutation.operation === "create", `${p?.mutation.targetType}/${p?.mutation.operation}`),
-        check("places it in the grocery list", payloadOf(p!.mutation).list_id === f.lists.grocery, String(payloadOf(p!.mutation).list_id)),
+        check("places it in the grocery list", payloadOf(p?.mutation).list_id === f.lists.grocery, String(payloadOf(p?.mutation).list_id)),
       ];
     },
   },
@@ -188,7 +190,7 @@ export const EVAL_CASES: EvalCase[] = [
       return [
         check("proposes a mutation", p !== null, r.outcome.kind),
         check("creates a board list", p?.mutation.targetType === "todo_list" && p.mutation.operation === "create", `${p?.mutation.targetType}/${p?.mutation.operation}`),
-        check("carries the spoken name", says(String(payloadOf(p!.mutation).name ?? ""), /weekend chores/i), String(payloadOf(p!.mutation).name)),
+        check("carries the spoken name", says(String(payloadOf(p?.mutation).name ?? ""), /weekend chores/i), String(payloadOf(p?.mutation).name)),
       ];
     },
   },
@@ -345,7 +347,7 @@ export const EVAL_CASES: EvalCase[] = [
       return [
         check("proposes a mutation", p !== null, r.outcome.kind),
         check("creates an event", p?.mutation.targetType === "event" && p.mutation.operation === "create", `${p?.mutation.targetType}/${p?.mutation.operation}`),
-        check("never collapses multiple days into one long event", Number(payloadOf(p!.mutation).duration_minutes ?? 0) <= 1440, String(payloadOf(p!.mutation).duration_minutes)),
+        check("never collapses multiple days into one long event", Number(payloadOf(p?.mutation).duration_minutes ?? 0) <= 1440, String(payloadOf(p?.mutation).duration_minutes)),
         check("queues the remaining days", (p?.queuedSteps.length ?? 0) >= 2, String(p?.queuedSteps.length)),
       ];
     },
