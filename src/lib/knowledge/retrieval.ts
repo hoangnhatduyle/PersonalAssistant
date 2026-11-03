@@ -19,7 +19,11 @@ export interface KnowledgeLookupResult {
   extractionLabel?: "machine_extracted";
 }
 
-type MatchedChunk = Database["public"]["Functions"]["match_knowledge_chunks"]["Returns"][number];
+// Generated types mark every RETURNS TABLE column non-null, but origin_url is a
+// nullable column (pasted-text sources have none) -- see Citation.originUrl.
+export type MatchedChunk = Omit<Database["public"]["Functions"]["match_knowledge_chunks"]["Returns"][number], "origin_url"> & {
+  origin_url: string | null;
+};
 
 const MACHINE_EXTRACTED_SOURCE_TYPES: ReadonlySet<Database["public"]["Enums"]["knowledge_source_type"]> = new Set([
   "image",
@@ -156,7 +160,7 @@ export async function runKnowledgeLookup(
   // so a future regression that weakens match_knowledge_chunks's own
   // scoping fails loudly here instead of silently leaking another user's
   // chunks into this response.
-  const chunks = (data ?? []).filter((chunk): chunk is MatchedChunk => chunk.source_id != null);
+  const chunks: MatchedChunk[] = (data ?? []).filter((chunk) => chunk.source_id != null);
   for (const chunk of chunks) {
     if (chunk.user_id !== userId) {
       throw new Error("match_knowledge_chunks returned a chunk belonging to a different user");
