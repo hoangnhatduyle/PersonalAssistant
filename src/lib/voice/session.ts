@@ -16,7 +16,6 @@ import { loadQueuedSteps, resolveActiveConversation, setDraftMutation, setQueued
 import { runConversationTurn, type ConversationTurnOutcome, type RunConversationTurnFn } from "@/lib/voice/conversation-core";
 import { setTriageItemStatus } from "@/lib/email-triage/store";
 import { stripSpokenFillers } from "@/lib/voice/spoken-input";
-import { timed } from "@/lib/voice/_perf-temp";
 
 export class VoiceSessionNotFoundError extends Error {}
 export class VoiceSessionInvalidStateError extends Error {}
@@ -72,21 +71,14 @@ async function transition(
   if (!nextState) {
     throw new VoiceSessionInvalidStateError(`Cannot apply voice event "${event}" from state "${fromState}"`);
   }
-  // TEMPORARY perf diagnostic -- see _perf-temp.ts. Every transition() call
-  // is a blocking Supabase round trip on the request's critical path, none
-  // of which showed up in the existing intakeVoiceTurn perf breakdown
-  // (only "transcribe" and "runConversationTurn" were timed) -- this closes
-  // that gap so a real request's log shows where the rest of the time goes.
-  const { data, error } = await timed(`transition (${event})`, async () =>
-    supabase
-      .from("voice_sessions")
-      .update({ state: nextState, ...fields })
-      .eq("id", sessionId)
-      .eq("user_id", userId)
-      .eq("state", fromState)
-      .select("id")
-      .maybeSingle(),
-  );
+  const { data, error } = await supabase
+    .from("voice_sessions")
+    .update({ state: nextState, ...fields })
+    .eq("id", sessionId)
+    .eq("user_id", userId)
+    .eq("state", fromState)
+    .select("id")
+    .maybeSingle();
   if (error) throw error;
   if (!data) {
     throw new VoiceSessionInvalidStateError(
@@ -147,32 +139,13 @@ async function respondWithClarification(
  * src/lib/voice/conversation-core.ts's runConversationTurn (the default
  * when runConversationTurn is omitted from deps).
  */
-// TEMPORARY perf diagnostic wrapper — see _perf-temp.ts. Wraps the real
-// implementation (renamed below) purely to log total wall time across every
-// return path without restructuring each one.
 export async function intakeVoiceTurn(
   supabase: SupabaseClient<Database>,
   userId: string,
   input: VoiceTurnInput,
   deps: VoiceTurnDeps,
 ): Promise<VoiceTurnResult> {
-  const start = Date.now();
-  try {
-    return await intakeVoiceTurnInner(supabase, userId, input, deps);
-  } finally {
-    console.log(`[perf] intakeVoiceTurn total: ${Date.now() - start}ms`);
-  }
-}
-
-async function intakeVoiceTurnInner(
-  supabase: SupabaseClient<Database>,
-  userId: string,
-  input: VoiceTurnInput,
-  deps: VoiceTurnDeps,
-): Promise<VoiceTurnResult> {
-  const { data: created, error: insertError } = await timed("insert voice_sessions", async () =>
-    supabase.from("voice_sessions").insert({ user_id: userId }).select("id, state").single(),
-  );
+  const { data: created, error: insertError } = await supabase.from("voice_sessions").insert({ user_id: userId }).select("id, state").single();
   if (insertError) throw insertError;
   const sessionId = created.id;
 
@@ -209,10 +182,8 @@ async function intakeVoiceTurnInner(
   let conversationId: string | undefined;
   try {
     transcript =
-      "transcript" in input ? input.transcript : await timed("transcribe (STT)", () => deps.transcribe(input.audio, input.mimetype));
-    const { error: transcriptError } = await timed("update transcript", async () =>
-      supabase.from("voice_sessions").update({ transcript }).eq("id", sessionId).eq("user_id", userId),
-    );
+      "transcript" in input ? input.transcript : await deps.transcribe(input.audio, input.mimetype);
+    const { error: transcriptError } = await supabase.from("voice_sessions").update({ transcript }).eq("id", sessionId).eq("user_id", userId);
     if (transcriptError) throw transcriptError;
 
     // Deterministic guard, checked before the paid model call: silence (or
@@ -242,14 +213,12 @@ async function intakeVoiceTurnInner(
     // started with, or the very turn that triggered a reset would file
     // itself under the now-closed conversation and corrupt the next turn's
     // history lookup.
-    ({ conversationId } = await timed("resolveActiveConversation", () => resolveActiveConversation(supabase, userId)));
+    ({ conversationId } = await resolveActiveConversation(supabase, userId));
     // Non-null: just assigned above -- TS can't narrow a `let` captured by
     // the nested closure below, since it can't prove nothing reassigns it
     // before the closure runs (it doesn't).
     const activeConversationId = conversationId!;
-    outcome = await timed("runConversationTurn (merged LLM call)", () =>
-      (deps.runConversationTurn ?? runConversationTurn)(supabase, userId, spoken, activeConversationId),
-    );
+    outcome = await (deps.runConversationTurn ?? runConversationTurn)(supabase, userId, spoken, activeConversationId);
   } catch (error) {
     // Previously discarded entirely -- a failed turn left resolved_intent/
     // confidence_score both NULL with no way to tell why from the DB.

@@ -43,7 +43,6 @@ import {
   type TriageEmailArgs,
 } from "@/lib/voice/tools";
 import { isBareAcknowledgement } from "@/lib/voice/spoken-input";
-import { timed } from "@/lib/voice/_perf-temp";
 
 export interface ConversationAnswer {
   kind: "answer";
@@ -572,15 +571,13 @@ const FINALIZING_TOOL_NAMES = new Set<ToolName>(["respond_to_user", "propose_mut
  */
 export const runConversationTurn: RunConversationTurnFn = async (supabase, userId, transcript, conversationId) => {
   const now = new Date();
-  const [history, timezone, context, todaySchedule, draft] = await timed("setup (history+timezone+entityContext+todaySchedule+draft)", () =>
-    Promise.all([
-      timed("  -> history", () => loadConversationHistory(supabase, userId, conversationId)),
-      timed("  -> timezone", () => loadUserTimezone(supabase, userId)),
-      timed("  -> entityContext", () => loadEntityContext(supabase, userId)),
-      timed("  -> todaySchedule", () => loadSchedule(supabase, userId, "today", now)),
-      timed("  -> draft", () => loadDraftMutation(supabase, userId, conversationId)),
-    ]),
-  );
+  const [history, timezone, context, todaySchedule, draft] = await Promise.all([
+    loadConversationHistory(supabase, userId, conversationId),
+    loadUserTimezone(supabase, userId),
+    loadEntityContext(supabase, userId),
+    loadSchedule(supabase, userId, "today", now),
+    loadDraftMutation(supabase, userId, conversationId),
+  ]);
 
   const instructions = CONVERSATION_SYSTEM_PROMPT;
   const input: OpenAI.Responses.ResponseInputItem[] = [
@@ -634,37 +631,35 @@ export const runConversationTurn: RunConversationTurnFn = async (supabase, userI
     // forced, possibly-rushed final turn.
     const isFinalIteration = iteration === MAX_TOOL_CALL_ITERATIONS - 1;
     const forceRespondToUser = isFinalIteration || sawRepeatedToolCall;
-    const response = await timed(`openai call (iteration ${iteration})`, () =>
-      openai.responses.create({
-        model: "gpt-5.6-luna",
-        // A schedule-narration hallucination once observed here (the model
-        // fabricating a class meeting not in its own tool result) was
-        // traced to the tool payload leaking a course-name list the model
-        // over-trusted, NOT to reasoning_effort -- escalating to "medium"
-        // was tried and did not stop it, and cost several extra seconds per
-        // call besides. Fixed at the payload layer instead (see
-        // toScheduleToolPayload's doc comment in schedule-loader.ts).
-        //
-        // Now on the Responses API instead of Chat Completions: gpt-5.6+
-        // models reject function tools combined with any reasoning_effort
-        // other than "none" on Chat Completions ("Function tools with
-        // reasoning_effort are not supported ... use /v1/responses or set
-        // reasoning_effort to 'none'"), confirmed empirically 2026-09-23.
-        // Responses is the only way to get tool calling + real reasoning
-        // together. Tried "medium" first (real reasoning-effort-dependent
-        // quality jump in prior testing) but measured against real e2e
-        // traffic it missed the ~10s response budget on 8.8% of turns
-        // (p95 14.7s, one spike to 26.8s) -- dropped to "low" instead, which
-        // still restores real reasoning over the interim "none" pin while
-        // keeping tail latency in budget.
-        reasoning: { effort: "low" },
-        text: { verbosity: "low" },
-        tools,
-        tool_choice: forceRespondToUser ? { type: "function", name: "respond_to_user" } : "required",
-        instructions,
-        input,
-      }),
-    );
+    const response = await openai.responses.create({
+      model: "gpt-5.6-luna",
+      // A schedule-narration hallucination once observed here (the model
+      // fabricating a class meeting not in its own tool result) was
+      // traced to the tool payload leaking a course-name list the model
+      // over-trusted, NOT to reasoning_effort -- escalating to "medium"
+      // was tried and did not stop it, and cost several extra seconds per
+      // call besides. Fixed at the payload layer instead (see
+      // toScheduleToolPayload's doc comment in schedule-loader.ts).
+      //
+      // Now on the Responses API instead of Chat Completions: gpt-5.6+
+      // models reject function tools combined with any reasoning_effort
+      // other than "none" on Chat Completions ("Function tools with
+      // reasoning_effort are not supported ... use /v1/responses or set
+      // reasoning_effort to 'none'"), confirmed empirically 2026-09-23.
+      // Responses is the only way to get tool calling + real reasoning
+      // together. Tried "medium" first (real reasoning-effort-dependent
+      // quality jump in prior testing) but measured against real e2e
+      // traffic it missed the ~10s response budget on 8.8% of turns
+      // (p95 14.7s, one spike to 26.8s) -- dropped to "low" instead, which
+      // still restores real reasoning over the interim "none" pin while
+      // keeping tail latency in budget.
+      reasoning: { effort: "low" },
+      text: { verbosity: "low" },
+      tools,
+      tool_choice: forceRespondToUser ? { type: "function", name: "respond_to_user" } : "required",
+      instructions,
+      input,
+    });
 
     // Cast needed: the SDK's ResponseOutputItem union (what a response
     // returns) and ResponseInputItem union (what's valid to echo back) are
@@ -776,21 +771,20 @@ export const runConversationTurn: RunConversationTurnFn = async (supabase, userI
         continue;
       }
 
-      const result = await timed(`tool dispatch (${toolCall.name})`, async () => {
-        try {
-          return await dispatchTool(toolCall, supabase, userId, activeConversationId, context, now);
-        } catch (error) {
-          // Malformed args (bad JSON, or a field that fails the tool's own
-          // schema, e.g. a non-UUID deadline_id) are recoverable the same
-          // way an "Unknown deadline_id"/"Unknown person_id" is: feed the
-          // problem back as a tool result and let the model try again this
-          // same turn, rather than aborting the whole turn on what's often
-          // just a malformed reference the model can self-correct from.
-          // Anything else (a real bug, a DB failure) still propagates.
-          if (error instanceof ToolArgsError) return { payload: { error: error.message } };
-          throw error;
-        }
-      });
+      let result: Awaited<ReturnType<typeof dispatchTool>>;
+      try {
+        result = await dispatchTool(toolCall, supabase, userId, activeConversationId, context, now);
+      } catch (error) {
+        // Malformed args (bad JSON, or a field that fails the tool's own
+        // schema, e.g. a non-UUID deadline_id) are recoverable the same
+        // way an "Unknown deadline_id"/"Unknown person_id" is: feed the
+        // problem back as a tool result and let the model try again this
+        // same turn, rather than aborting the whole turn on what's often
+        // just a malformed reference the model can self-correct from.
+        // Anything else (a real bug, a DB failure) still propagates.
+        if (error instanceof ToolArgsError) result = { payload: { error: error.message } };
+        else throw error;
+      }
       dispatchedPayloads.set(dedupeKey, result.payload);
       if (result.newConversationId) activeConversationId = result.newConversationId;
       if (result.citations && result.citations.length > 0) citations = dedupeCitationsBySourceId([...citations, ...result.citations]);
