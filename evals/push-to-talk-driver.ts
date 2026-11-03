@@ -1,29 +1,12 @@
 import { runConversationTurn } from "@/lib/voice/conversation-core";
 import { setDraftMutation } from "@/lib/voice/conversation-memory";
 import type { TurnRecord } from "./cases";
-import type { DriverId, TurnDriver } from "./drivers";
+import type { TurnDriver } from "./drivers";
 import type { EvalFixture } from "./fixture";
+import { freshConversation } from "./fresh-conversation";
 import { observe } from "./probe";
 
 const sum = (values: number[]) => values.reduce((a, b) => a + b, 0);
-
-/**
- * Each run gets its own conversation row, inserted already-ended so it never
- * collides with the partial unique index that allows only one active
- * conversation per user -- that is what lets runs share one fixture user and
- * still execute concurrently.
- */
-async function freshConversation(f: EvalFixture): Promise<string> {
-  const { data, error } = await f.admin
-    .from("voice_conversations")
-    // end_reason is constrained to be set exactly when ended_at is, and the
-    // enum only has "explicit" | "timeout".
-    .insert({ user_id: f.userId, ended_at: new Date().toISOString(), end_reason: "explicit" })
-    .select("id")
-    .single();
-  if (error) throw new Error(`failed to create eval conversation: ${error.message}`);
-  return data.id as string;
-}
 
 /** Mirrors the cross-turn state session.ts persists, so turn N+1 sees what production would. */
 async function persistTurn(f: EvalFixture, conversationId: string, record: TurnRecord): Promise<void> {
@@ -73,9 +56,4 @@ export const pushToTalkDriver: TurnDriver = {
     }
     return records;
   },
-};
-
-/** Every driver that can run today; the registry run.test.ts selects from. */
-export const DRIVERS: Partial<Record<DriverId, TurnDriver>> = {
-  pushtotalk: pushToTalkDriver,
 };

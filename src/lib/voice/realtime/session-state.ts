@@ -15,8 +15,10 @@ export async function buildCallInstructions(
   supabase: SupabaseClient<Database>,
   userId: string,
   now: Date = new Date(),
+  /** A specific conversation to build for. Defaults to the user's active one; the eval passes its own so concurrent cases stay isolated. */
+  conversationId?: string,
 ): Promise<{ instructions: string; timezone: string }> {
-  const conversation = await resolveActiveConversation(supabase, userId, now);
+  const conversation = { conversationId: conversationId ?? (await resolveActiveConversation(supabase, userId, now)).conversationId };
   const [timezone, context, todaySchedule, draft, history] = await Promise.all([
     loadUserTimezone(supabase, userId),
     loadEntityContext(supabase, userId),

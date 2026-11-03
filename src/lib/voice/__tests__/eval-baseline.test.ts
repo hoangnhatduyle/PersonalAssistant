@@ -15,6 +15,7 @@ import {
   type RunStats,
 } from "../../../../evals/baseline";
 import { selectDrivers, type TurnDriver } from "../../../../evals/drivers";
+import { describeDateKey, emptyDayOffset } from "../../../../evals/empty-day";
 
 const turn = (wallMs: number, inputTokens = 1000, cachedInputTokens = 800, modelCalls = 2) => ({ wallMs, inputTokens, cachedInputTokens, modelCalls });
 const result = (caseId: string, passed: boolean, turns = [turn(1000)]): ResultLike => ({ caseId, passed, turns });
@@ -217,5 +218,33 @@ describe("selectDrivers", () => {
   it("refuses a driver that is not registered yet rather than silently skipping it", () => {
     expect(() => selectDrivers("realtime", onlyPushToTalk)).toThrow(/not available yet/);
     expect(() => selectDrivers("both", onlyPushToTalk)).toThrow(/not available yet/);
+  });
+});
+
+describe("emptyDayOffset", () => {
+  // weekdayOf(n) for a run on weekday `today` (0 = Sunday): the day n days from today.
+  const runningOn = (today: number) => (offset: number) => (today + offset) % 7;
+
+  it.each([0, 1, 2, 3, 4, 5, 6])("lands on a Friday, Saturday or Sunday at least two weeks out when the eval runs on weekday %i", (today) => {
+    const offset = emptyDayOffset(runningOn(today));
+    expect(offset).toBeGreaterThanOrEqual(14);
+    expect(offset).toBeLessThanOrEqual(18);
+    expect([5, 6, 0]).toContain(runningOn(today)(offset));
+  });
+
+  it("is what the old fixed 21-day offset was not: on Monday through Thursday, 21 days out is a class day", () => {
+    for (const today of [1, 2, 3, 4]) expect([5, 6, 0]).not.toContain(runningOn(today)(21));
+  });
+
+  it("takes the earliest qualifying day", () => {
+    expect(emptyDayOffset(runningOn(5))).toBe(14); // run on a Friday: two weeks out is a Friday
+    expect(emptyDayOffset(runningOn(1))).toBe(18); // run on a Monday: two weeks out is a Monday, and Friday is the first day with no class
+  });
+});
+
+describe("describeDateKey", () => {
+  it("names the day the way a person would", () => {
+    expect(describeDateKey("2026-11-28")).toBe("Saturday, November 28");
+    expect(describeDateKey("2026-12-01")).toBe("Tuesday, December 1");
   });
 });

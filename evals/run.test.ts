@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { EVAL_CASES, type Check, type TurnRecord } from "./cases";
 import { compareToBaseline, loadBaseline, quantile, summarizeRun, writeBaseline } from "./baseline";
 import { selectDrivers, type TurnDriver } from "./drivers";
-import { DRIVERS } from "./push-to-talk-driver";
+import { DRIVERS } from "./registry";
 import { seedEvalFixture, type EvalFixture } from "./fixture";
 import { installProbe } from "./probe";
 
@@ -84,8 +84,8 @@ describe("assistant eval", () => {
       const drivers = selectDrivers(process.env.EVAL_DRIVER, DRIVERS);
       const fixture = await seedEvalFixture();
 
-      const selected = ONLY ? EVAL_CASES.filter((c) => ONLY.includes(c.id)) : EVAL_CASES;
-      expect(selected.length, `no cases matched EVAL_ONLY=${ONLY?.join(",")}`).toBeGreaterThan(0);
+      const requested = ONLY ? EVAL_CASES.filter((c) => ONLY.includes(c.id)) : EVAL_CASES;
+      expect(requested.length, `no cases matched EVAL_ONLY=${ONLY?.join(",")}`).toBeGreaterThan(0);
 
       const allFailures: string[] = [];
       const regressions: string[] = [];
@@ -94,6 +94,12 @@ describe("assistant eval", () => {
         const baseline = loadBaseline(driver.id);
         const reps = REPS_OVERRIDE ?? baseline?.reps ?? 1;
         out(`\n##### DRIVER: ${driver.id} (${reps} rep(s) per case${REPS_OVERRIDE === null && baseline ? ", the baseline's" : ""}) #####`);
+        // Some cases exist on one path only (a voice call has a confirm tool the text pipeline lacks).
+        const selected = requested.filter((c) => !c.drivers || c.drivers.includes(driver.id));
+        if (selected.length === 0) {
+          out(`\nNo selected case applies to the "${driver.id}" driver; skipping it.`);
+          continue;
+        }
         const queue = selected.flatMap((c) => Array.from({ length: reps }, (_, rep) => ({ evalCase: c, rep })));
         const results: CaseResult[] = [];
         let index = 0;

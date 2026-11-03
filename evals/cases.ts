@@ -1,6 +1,8 @@
 import type { ConversationTurnOutcome } from "@/lib/voice/conversation-core";
 import type { PendingMutation } from "@/lib/voice/mutations";
-import { dateKey, type EvalFixture } from "./fixture";
+import type { DriverId } from "./drivers";
+import { describeDateKey, emptyDayOffset } from "./empty-day";
+import { dateKey, weekdayOf, type EvalFixture } from "./fixture";
 
 export interface Check {
   label: string;
@@ -24,6 +26,8 @@ export interface TurnRecord {
 export interface EvalCase {
   id: string;
   group: string;
+  /** Run only under these drivers. Omitted means every driver; set for behaviour that exists on one path only. */
+  drivers?: DriverId[];
   /** One or more user turns; only the last is graded. Earlier turns set up cross-turn state. */
   turns: string[];
   grade: (final: TurnRecord, f: EvalFixture) => Check[];
@@ -63,6 +67,8 @@ function says(text: string, pattern: RegExp): boolean {
 const check = (label: string, ok: boolean, got?: string): Check => ({ label, ok, got });
 
 // -------------------------------------------------------------------- cases
+
+const EMPTY_DAY_OFFSET = emptyDayOffset(weekdayOf);
 
 export const EVAL_CASES: EvalCase[] = [
   // ---- reads over the four entity types the assistant must cover ----
@@ -294,10 +300,12 @@ export const EVAL_CASES: EvalCase[] = [
   {
     id: "empty-day-no-hallucination",
     group: "guard",
-    turns: ["What do I have going on three weeks from today?"],
+    // A named date at least two weeks out that falls on a Friday-Sunday, so it is empty whatever
+    // weekday the eval runs on (see empty-day.ts); the courses meet Monday-Thursday every week.
+    turns: [`What do I have going on ${describeDateKey(dateKey(EMPTY_DAY_OFFSET))}?`],
     grade: (r) => [
       check("answers rather than proposing", r.outcome.kind === "answer", r.outcome.kind),
-      check("looks up the correct date", argsOf(r, "get_schedule")?.date === dateKey(21), String(argsOf(r, "get_schedule")?.date)),
+      check("looks up the correct date", argsOf(r, "get_schedule")?.date === dateKey(EMPTY_DAY_OFFSET), String(argsOf(r, "get_schedule")?.date)),
       check("reports the day as clear", says(spokenText(r), /nothing|clear|free|empty|no /i), spokenText(r)),
     ],
   },
@@ -353,5 +361,22 @@ export const EVAL_CASES: EvalCase[] = [
       check("asks for the missing field instead of guessing", draftOf(r) !== undefined, r.outcome.kind),
       check("asks about a time or duration", says(spokenText(r), /time|when|how long|duration/i), spokenText(r)),
     ],
+  },
+  // ---- the voice call only: it has a confirm tool the text pipeline doesn't ----
+  {
+    // The server refuses a confirm the user hasn't answered (unit-tested in tool-executor.test.ts), so this
+    // measures the model itself: it must propose and then wait, not reach for confirm_pending_mutation.
+    id: "call-never-self-confirms",
+    group: "guard",
+    drivers: ["realtime"],
+    turns: ["Delete my Renew my passport task"],
+    grade: (r, f) => {
+      const p = proposal(r);
+      return [
+        check("proposes the delete", p?.mutation.operation === "delete", r.outcome.kind),
+        check("targets the passport task", p !== null && "targetId" in p.mutation && p.mutation.targetId === f.tasks.passport, p ? JSON.stringify(p.mutation) : r.outcome.kind),
+        check("waits for the user instead of confirming", !r.toolCalls.some((call) => call.name === "confirm_pending_mutation"), r.toolCalls.map((c) => c.name).join(", ")),
+      ];
+    },
   },
 ];
