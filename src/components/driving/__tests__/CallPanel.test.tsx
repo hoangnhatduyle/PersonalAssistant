@@ -39,6 +39,9 @@ const setSnapshot = (patch: Partial<CallSnapshot>) => {
   call.snapshot = { ...baseSnapshot, ...patch };
 };
 
+const ringback = vi.hoisted(() => ({ start: vi.fn(), stop: vi.fn() }));
+vi.mock("@/lib/voice/ringback", () => ({ startRingback: ringback.start }));
+
 const confirmMutate = vi.fn();
 const declineMutate = vi.fn();
 vi.mock("@/hooks/useRealtimeCall", () => ({ useRealtimeCall: () => call }));
@@ -55,6 +58,8 @@ const { CallPanel } = await import("../CallPanel");
 
 describe("CallPanel", () => {
   beforeEach(() => {
+    ringback.stop.mockClear();
+    ringback.start.mockReset().mockReturnValue(ringback.stop);
     vi.mocked(call.start).mockClear();
     vi.mocked(call.end).mockClear();
     vi.mocked(call.setMuted).mockClear();
@@ -175,6 +180,57 @@ describe("CallPanel", () => {
       setSnapshot({ phase: "ended", endReason: "user" });
       renderWithProviders(<CallPanel />);
       expect(screen.queryByRole("status")).toBeNull();
+    });
+  });
+
+  describe("ring tone", () => {
+    it("rings from the tap on Start call and stops the moment the call is live", () => {
+      setSnapshot({ phase: "idle" });
+      const view = renderWithProviders(<CallPanel />);
+      fireEvent.click(screen.getByRole("button", { name: "Start call" }));
+      expect(ringback.start).toHaveBeenCalledTimes(1);
+      expect(call.start).toHaveBeenCalledTimes(1);
+
+      setSnapshot({ phase: "connecting" });
+      view.rerender(<CallPanel />);
+      expect(ringback.stop).not.toHaveBeenCalled();
+
+      setSnapshot({ phase: "live" });
+      view.rerender(<CallPanel />);
+      expect(ringback.stop).toHaveBeenCalledTimes(1);
+    });
+
+    it("stops if the call fails before it ever connects", () => {
+      setSnapshot({ phase: "idle" });
+      const view = renderWithProviders(<CallPanel />);
+      fireEvent.click(screen.getByRole("button", { name: "Start call" }));
+      setSnapshot({ phase: "connecting" });
+      view.rerender(<CallPanel />);
+      setSnapshot({ phase: "ended", error: "Microphone blocked" });
+      view.rerender(<CallPanel />);
+      expect(ringback.stop).toHaveBeenCalledTimes(1);
+    });
+
+    it("stops if the panel goes away mid-ring", () => {
+      setSnapshot({ phase: "idle" });
+      const view = renderWithProviders(<CallPanel />);
+      fireEvent.click(screen.getByRole("button", { name: "Start call" }));
+      view.unmount();
+      expect(ringback.stop).toHaveBeenCalled();
+    });
+
+    it("rings again for 'Call again'", () => {
+      setSnapshot({ phase: "ended", endReason: "user" });
+      renderWithProviders(<CallPanel />);
+      fireEvent.click(screen.getByRole("button", { name: "Call again" }));
+      expect(ringback.start).toHaveBeenCalledTimes(1);
+      expect(call.start).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not ring just because the panel is showing", () => {
+      setSnapshot({ phase: "idle" });
+      renderWithProviders(<CallPanel />);
+      expect(ringback.start).not.toHaveBeenCalled();
     });
   });
 

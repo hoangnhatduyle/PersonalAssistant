@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useSyncExternalStore } from "react";
+import { useEffect, useRef, useSyncExternalStore } from "react";
 import { AssistantResponse } from "@/components/assistant/AssistantResponse";
 import { Button } from "@/components/ui/Button";
 import { GlassPanel } from "@/components/ui/GlassPanel";
 import { useConfirmVoiceTurn, useDeclineVoiceTurn } from "@/hooks/useVoiceTurn";
 import { useRealtimeCall } from "@/hooks/useRealtimeCall";
 import { useCallDiagnostics } from "@/hooks/useCallDiagnostics";
+import { startRingback } from "@/lib/voice/ringback";
 import type { CallActivity, CallDebug } from "@/lib/voice/realtime/call-controller";
 
 const ACTIVITY_LABEL: Record<CallActivity, string> = {
@@ -80,6 +81,21 @@ export function CallPanel({ onActiveChange }: Props) {
   const [debugFromSettings] = useCallDiagnostics();
   const debug = debugFromAddress || debugFromSettings;
 
+  // The ring is started inside the tap (iOS only plays sound begun by a user gesture) and runs
+  // while the call is connecting; anything else, live, failed or ended, silences it.
+  const stopRingback = useRef<(() => void) | null>(null);
+  const handleStart = () => {
+    stopRingback.current?.();
+    stopRingback.current = startRingback();
+    start();
+  };
+  useEffect(() => {
+    if (snapshot.phase === "connecting") return;
+    stopRingback.current?.();
+    stopRingback.current = null;
+  }, [snapshot.phase]);
+  useEffect(() => () => stopRingback.current?.(), []);
+
   const inCall = snapshot.phase === "connecting" || snapshot.phase === "live" || snapshot.phase === "ending";
   useEffect(() => {
     onActiveChange?.(inCall);
@@ -105,7 +121,7 @@ export function CallPanel({ onActiveChange }: Props) {
     const endedNote = snapshot.phase === "ended" ? (snapshot.error ?? END_REASON_LABEL[snapshot.endReason ?? ""] ?? null) : null;
     return (
       <div className="flex flex-col gap-3">
-        <Button variant="primary" size="md" className="w-full py-6 text-xl" onClick={start}>
+        <Button variant="primary" size="md" className="w-full py-6 text-xl" onClick={handleStart}>
           {snapshot.phase === "ended" ? "Call again" : "Start call"}
         </Button>
         {endedNote ? (
