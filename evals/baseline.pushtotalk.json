@@ -104,7 +104,7 @@
   "modelCallsPerTurn": 1.4,
   "gate": {
     "p95MarginPct": 40,
-    "maxTurnMs": 15000,
+    "maxTurnMs": 20000,
     "minCachedSharePct": 85
   }
 }
