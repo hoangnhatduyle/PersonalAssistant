@@ -22,7 +22,7 @@ function getSharedAudio(): HTMLAudioElement {
 
 // 44-byte silent WAV — just enough for a real play()/pause() cycle to run
 // during the gesture without any audible blip.
-const SILENT_WAV = "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=";
+export const SILENT_WAV = "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=";
 
 /**
  * Call synchronously during a user gesture (e.g. mic tap) to unlock audio

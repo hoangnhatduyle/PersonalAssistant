@@ -29,6 +29,7 @@ import {
 import { gateDeadlineRecurrence } from "@/lib/voice/deadline-recurrence-gate";
 import { gateTaskDuplicate } from "@/lib/voice/task-duplicate-gate";
 import { gateTransitionLegality } from "@/lib/voice/transition-legality-gate";
+import { repairIdsInArgs } from "@/lib/voice/id-repair";
 import type { PendingMutation } from "@/lib/voice/mutations";
 import {
   CONVERSATION_TOOLS,
@@ -42,7 +43,6 @@ import {
   type TriageEmailArgs,
 } from "@/lib/voice/tools";
 import { isBareAcknowledgement } from "@/lib/voice/spoken-input";
-import { timed } from "@/lib/voice/_perf-temp";
 
 export interface ConversationAnswer {
   kind: "answer";
@@ -235,7 +235,7 @@ function roundToMinute(now: Date): Date {
  * snapshot, open draft). Lives in `input[0]`, not `instructions`, so the
  * stable system prompt + tool schemas can be prompt-cached across turns.
  */
-function buildTurnContext(
+export function buildTurnContext(
   now: Date,
   timezone: string,
   context: EntityContext,
@@ -311,15 +311,41 @@ const proposeMutationMetaSchema = z.object({
  * for a well-formed-but-nonexistent id) rather than let it escape uncaught
  * and abort the whole turn into session.ts's generic apology fallback.
  */
-class ToolArgsError extends Error {}
+export class ToolArgsError extends Error {}
 
-function parseToolArgs<T>(schema: z.ZodType<T>, toolCall: OpenAI.Responses.ResponseFunctionToolCall): T {
+/**
+ * The two fields of a model tool call these helpers read. Narrower than the
+ * Responses API's ResponseFunctionToolCall (which satisfies it structurally),
+ * so the Realtime call path -- whose function calls arrive as events with the
+ * same name + JSON-string arguments -- can reuse them unchanged.
+ */
+export interface ToolCallLike {
+  name: string;
+  arguments: string;
+}
+
+/**
+ * Fixes entity ids the model copied imperfectly (see id-repair.ts) before any
+ * schema or membership check sees them, and logs each repair so how often the
+ * model needs it stays visible.
+ */
+function repairModelIds(raw: unknown, context: EntityContext, toolName: string): unknown {
+  const { value, repairs } = repairIdsInArgs(raw, context);
+  for (const repair of repairs) {
+    console.warn(`[voice] ${toolName}: repaired a garbled ${repair.field} (matched the one known id sharing its first 8 characters)`);
+  }
+  return value;
+}
+
+function parseToolArgs<T>(schema: z.ZodType<T>, toolCall: ToolCallLike, context?: EntityContext): T {
   let raw: unknown;
   try {
     raw = JSON.parse(toolCall.arguments);
   } catch {
     throw new ToolArgsError(`${toolCall.name} returned arguments that were not valid JSON`);
   }
+  // Only the tools whose arguments carry an entity id pass a context.
+  if (context) raw = repairModelIds(raw, context, toolCall.name);
   const result = schema.safeParse(raw);
   if (!result.success) {
     const issues = result.error.issues.map((issue) => `${issue.path.join(".") || "(root)"}: ${issue.message}`).join("; ");
@@ -344,8 +370,8 @@ function parseToolArgs<T>(schema: z.ZodType<T>, toolCall: OpenAI.Responses.Respo
  * did out of resolveIntent -- propagating uncaught out of runConversationTurn
  * for session.ts's existing friendly-clarification catch to handle.
  */
-function parseProposeMutationArgs(
-  toolCall: OpenAI.Responses.ResponseFunctionToolCall,
+export function parseProposeMutationArgs(
+  toolCall: ToolCallLike,
   now: Date,
   timezone: string,
   openDraft: DraftMutationRecord | null,
@@ -359,6 +385,7 @@ function parseProposeMutationArgs(
   } catch {
     throw new Error("propose_mutation returned arguments that were not valid JSON");
   }
+  raw = repairModelIds(raw, context, toolCall.name);
   const meta = proposeMutationMetaSchema.parse(raw);
 
   // A voice-created Deadline always gets asked "should this repeat?" (default
@@ -410,13 +437,17 @@ const saveMutationDraftMetaSchema: z.ZodType<SaveMutationDraftArgs> = z.object({
  * to be missing a required field for its operation; only structural
  * validity (right target_type/operation/enum values) is enforced here.
  */
-function parseSaveMutationDraftArgs(toolCall: OpenAI.Responses.ResponseFunctionToolCall): { question: string; mutation: RawMutation } {
+export function parseSaveMutationDraftArgs(
+  toolCall: ToolCallLike,
+  context: EntityContext,
+): { question: string; mutation: RawMutation } {
   let raw: unknown;
   try {
     raw = JSON.parse(toolCall.arguments);
   } catch {
     throw new Error("save_mutation_draft returned arguments that were not valid JSON");
   }
+  raw = repairModelIds(raw, context, toolCall.name);
   const meta = saveMutationDraftMetaSchema.parse(raw);
   const mutation = mutationDraftSchema.parse(raw);
   return { question: meta.question, mutation };
@@ -426,7 +457,7 @@ function dedupeCitationsBySourceId(citations: KnowledgeCitation[]): KnowledgeCit
   return [...new Map(citations.map((citation) => [citation.sourceId, citation])).values()];
 }
 
-interface ToolDispatchResult {
+export interface ToolDispatchResult {
   /** JSON-stringified as the {role: "tool"} message content the model reads next. */
   payload: unknown;
   newConversationId?: string;
@@ -442,8 +473,8 @@ interface ToolDispatchResult {
  * tool to CONVERSATION_TOOLS without a matching case here is a compile
  * error, not a silent no-op at runtime.
  */
-async function dispatchTool(
-  toolCall: OpenAI.Responses.ResponseFunctionToolCall,
+export async function dispatchTool(
+  toolCall: ToolCallLike,
   supabase: SupabaseClient<Database>,
   userId: string,
   conversationId: string,
@@ -458,7 +489,7 @@ async function dispatchTool(
       return { payload: toScheduleToolPayload(result) };
     }
     case "get_person_schedule": {
-      const args = parseToolArgs(getPersonScheduleArgsSchema, toolCall);
+      const args = parseToolArgs(getPersonScheduleArgsSchema, toolCall, context);
       // Enforcement point for "never invent a person_id" -- the model's
       // person_id is only trustworthy if it actually came from this turn's
       // own entity context (which is itself already user_id-scoped), never
@@ -479,7 +510,7 @@ async function dispatchTool(
       return { payload: { message: result.message }, usedPersonalizationSuggestions: true };
     }
     case "get_deadline_progress": {
-      const args = parseToolArgs(getDeadlineProgressArgsSchema, toolCall);
+      const args = parseToolArgs(getDeadlineProgressArgsSchema, toolCall, context);
       // Enforcement point for "never invent a deadline_id" -- same pattern
       // as get_person_schedule's person_id check above.
       if (!context.deadlines.some((deadline) => deadline.id === args.deadline_id)) {
@@ -540,15 +571,13 @@ const FINALIZING_TOOL_NAMES = new Set<ToolName>(["respond_to_user", "propose_mut
  */
 export const runConversationTurn: RunConversationTurnFn = async (supabase, userId, transcript, conversationId) => {
   const now = new Date();
-  const [history, timezone, context, todaySchedule, draft] = await timed("setup (history+timezone+entityContext+todaySchedule+draft)", () =>
-    Promise.all([
-      timed("  -> history", () => loadConversationHistory(supabase, userId, conversationId)),
-      timed("  -> timezone", () => loadUserTimezone(supabase, userId)),
-      timed("  -> entityContext", () => loadEntityContext(supabase, userId)),
-      timed("  -> todaySchedule", () => loadSchedule(supabase, userId, "today", now)),
-      timed("  -> draft", () => loadDraftMutation(supabase, userId, conversationId)),
-    ]),
-  );
+  const [history, timezone, context, todaySchedule, draft] = await Promise.all([
+    loadConversationHistory(supabase, userId, conversationId),
+    loadUserTimezone(supabase, userId),
+    loadEntityContext(supabase, userId),
+    loadSchedule(supabase, userId, "today", now),
+    loadDraftMutation(supabase, userId, conversationId),
+  ]);
 
   const instructions = CONVERSATION_SYSTEM_PROMPT;
   const input: OpenAI.Responses.ResponseInputItem[] = [
@@ -602,37 +631,35 @@ export const runConversationTurn: RunConversationTurnFn = async (supabase, userI
     // forced, possibly-rushed final turn.
     const isFinalIteration = iteration === MAX_TOOL_CALL_ITERATIONS - 1;
     const forceRespondToUser = isFinalIteration || sawRepeatedToolCall;
-    const response = await timed(`openai call (iteration ${iteration})`, () =>
-      openai.responses.create({
-        model: "gpt-5.6-luna",
-        // A schedule-narration hallucination once observed here (the model
-        // fabricating a class meeting not in its own tool result) was
-        // traced to the tool payload leaking a course-name list the model
-        // over-trusted, NOT to reasoning_effort -- escalating to "medium"
-        // was tried and did not stop it, and cost several extra seconds per
-        // call besides. Fixed at the payload layer instead (see
-        // toScheduleToolPayload's doc comment in schedule-loader.ts).
-        //
-        // Now on the Responses API instead of Chat Completions: gpt-5.6+
-        // models reject function tools combined with any reasoning_effort
-        // other than "none" on Chat Completions ("Function tools with
-        // reasoning_effort are not supported ... use /v1/responses or set
-        // reasoning_effort to 'none'"), confirmed empirically 2026-09-23.
-        // Responses is the only way to get tool calling + real reasoning
-        // together. Tried "medium" first (real reasoning-effort-dependent
-        // quality jump in prior testing) but measured against real e2e
-        // traffic it missed the ~10s response budget on 8.8% of turns
-        // (p95 14.7s, one spike to 26.8s) -- dropped to "low" instead, which
-        // still restores real reasoning over the interim "none" pin while
-        // keeping tail latency in budget.
-        reasoning: { effort: "low" },
-        text: { verbosity: "low" },
-        tools,
-        tool_choice: forceRespondToUser ? { type: "function", name: "respond_to_user" } : "required",
-        instructions,
-        input,
-      }),
-    );
+    const response = await openai.responses.create({
+      model: "gpt-5.6-luna",
+      // A schedule-narration hallucination once observed here (the model
+      // fabricating a class meeting not in its own tool result) was
+      // traced to the tool payload leaking a course-name list the model
+      // over-trusted, NOT to reasoning_effort -- escalating to "medium"
+      // was tried and did not stop it, and cost several extra seconds per
+      // call besides. Fixed at the payload layer instead (see
+      // toScheduleToolPayload's doc comment in schedule-loader.ts).
+      //
+      // Now on the Responses API instead of Chat Completions: gpt-5.6+
+      // models reject function tools combined with any reasoning_effort
+      // other than "none" on Chat Completions ("Function tools with
+      // reasoning_effort are not supported ... use /v1/responses or set
+      // reasoning_effort to 'none'"), confirmed empirically 2026-09-23.
+      // Responses is the only way to get tool calling + real reasoning
+      // together. Tried "medium" first (real reasoning-effort-dependent
+      // quality jump in prior testing) but measured against real e2e
+      // traffic it missed the ~10s response budget on 8.8% of turns
+      // (p95 14.7s, one spike to 26.8s) -- dropped to "low" instead, which
+      // still restores real reasoning over the interim "none" pin while
+      // keeping tail latency in budget.
+      reasoning: { effort: "low" },
+      text: { verbosity: "low" },
+      tools,
+      tool_choice: forceRespondToUser ? { type: "function", name: "respond_to_user" } : "required",
+      instructions,
+      input,
+    });
 
     // Cast needed: the SDK's ResponseOutputItem union (what a response
     // returns) and ResponseInputItem union (what's valid to echo back) are
@@ -667,7 +694,7 @@ export const runConversationTurn: RunConversationTurnFn = async (supabase, userI
         };
       }
       if (finalizingCall.name === "save_mutation_draft") {
-        const { question, mutation } = parseSaveMutationDraftArgs(finalizingCall);
+        const { question, mutation } = parseSaveMutationDraftArgs(finalizingCall, context);
         return {
           kind: "answer",
           message: question,
@@ -744,21 +771,20 @@ export const runConversationTurn: RunConversationTurnFn = async (supabase, userI
         continue;
       }
 
-      const result = await timed(`tool dispatch (${toolCall.name})`, async () => {
-        try {
-          return await dispatchTool(toolCall, supabase, userId, activeConversationId, context, now);
-        } catch (error) {
-          // Malformed args (bad JSON, or a field that fails the tool's own
-          // schema, e.g. a non-UUID deadline_id) are recoverable the same
-          // way an "Unknown deadline_id"/"Unknown person_id" is: feed the
-          // problem back as a tool result and let the model try again this
-          // same turn, rather than aborting the whole turn on what's often
-          // just a malformed reference the model can self-correct from.
-          // Anything else (a real bug, a DB failure) still propagates.
-          if (error instanceof ToolArgsError) return { payload: { error: error.message } };
-          throw error;
-        }
-      });
+      let result: Awaited<ReturnType<typeof dispatchTool>>;
+      try {
+        result = await dispatchTool(toolCall, supabase, userId, activeConversationId, context, now);
+      } catch (error) {
+        // Malformed args (bad JSON, or a field that fails the tool's own
+        // schema, e.g. a non-UUID deadline_id) are recoverable the same
+        // way an "Unknown deadline_id"/"Unknown person_id" is: feed the
+        // problem back as a tool result and let the model try again this
+        // same turn, rather than aborting the whole turn on what's often
+        // just a malformed reference the model can self-correct from.
+        // Anything else (a real bug, a DB failure) still propagates.
+        if (error instanceof ToolArgsError) result = { payload: { error: error.message } };
+        else throw error;
+      }
       dispatchedPayloads.set(dedupeKey, result.payload);
       if (result.newConversationId) activeConversationId = result.newConversationId;
       if (result.citations && result.citations.length > 0) citations = dedupeCitationsBySourceId([...citations, ...result.citations]);

@@ -1,6 +1,8 @@
 import type { ConversationTurnOutcome } from "@/lib/voice/conversation-core";
 import type { PendingMutation } from "@/lib/voice/mutations";
-import { dateKey, type EvalFixture } from "./fixture";
+import type { DriverId } from "./drivers";
+import { describeDateKey, emptyDayOffset } from "./empty-day";
+import { dateKey, weekdayOf, type EvalFixture } from "./fixture";
 
 export interface Check {
   label: string;
@@ -24,6 +26,8 @@ export interface TurnRecord {
 export interface EvalCase {
   id: string;
   group: string;
+  /** Run only under these drivers. Omitted means every driver; set for behaviour that exists on one path only. */
+  drivers?: DriverId[];
   /** One or more user turns; only the last is graded. Earlier turns set up cross-turn state. */
   turns: string[];
   grade: (final: TurnRecord, f: EvalFixture) => Check[];
@@ -46,8 +50,10 @@ function argsOf(r: TurnRecord, tool: string): Record<string, unknown> | null {
   }
 }
 
-function payloadOf(m: PendingMutation): Record<string, unknown> {
-  return "payload" in m ? (m.payload as Record<string, unknown>) : {};
+function payloadOf(m: PendingMutation | undefined): Record<string, unknown> {
+  // A missing proposal is already reported by the "proposes a mutation" check;
+  // grade the rest against an empty payload instead of crashing the whole run.
+  return m && "payload" in m ? (m.payload as Record<string, unknown>) : {};
 }
 
 /**
@@ -63,6 +69,8 @@ function says(text: string, pattern: RegExp): boolean {
 const check = (label: string, ok: boolean, got?: string): Check => ({ label, ok, got });
 
 // -------------------------------------------------------------------- cases
+
+const EMPTY_DAY_OFFSET = emptyDayOffset(weekdayOf);
 
 export const EVAL_CASES: EvalCase[] = [
   // ---- reads over the four entity types the assistant must cover ----
@@ -140,8 +148,8 @@ export const EVAL_CASES: EvalCase[] = [
       return [
         check("proposes a mutation", p !== null, r.outcome.kind),
         check("creates a deadline", p?.mutation.targetType === "deadline" && p.mutation.operation === "create", `${p?.mutation.targetType}/${p?.mutation.operation}`),
-        check("files it under the right course", payloadOf(p!.mutation).course_id === f.courses.writing, String(payloadOf(p!.mutation).course_id)),
-        check("carries the spoken title", says(String(payloadOf(p!.mutation).title ?? ""), /midterm essay/i), String(payloadOf(p!.mutation).title)),
+        check("files it under the right course", payloadOf(p?.mutation).course_id === f.courses.writing, String(payloadOf(p?.mutation).course_id)),
+        check("carries the spoken title", says(String(payloadOf(p?.mutation).title ?? ""), /midterm essay/i), String(payloadOf(p?.mutation).title)),
       ];
     },
   },
@@ -154,7 +162,7 @@ export const EVAL_CASES: EvalCase[] = [
       return [
         check("proposes a mutation", p !== null, r.outcome.kind),
         check("creates a task", p?.mutation.targetType === "task" && p.mutation.operation === "create", `${p?.mutation.targetType}/${p?.mutation.operation}`),
-        check("places it in the grocery list", payloadOf(p!.mutation).list_id === f.lists.grocery, String(payloadOf(p!.mutation).list_id)),
+        check("places it in the grocery list", payloadOf(p?.mutation).list_id === f.lists.grocery, String(payloadOf(p?.mutation).list_id)),
       ];
     },
   },
@@ -182,7 +190,7 @@ export const EVAL_CASES: EvalCase[] = [
       return [
         check("proposes a mutation", p !== null, r.outcome.kind),
         check("creates a board list", p?.mutation.targetType === "todo_list" && p.mutation.operation === "create", `${p?.mutation.targetType}/${p?.mutation.operation}`),
-        check("carries the spoken name", says(String(payloadOf(p!.mutation).name ?? ""), /weekend chores/i), String(payloadOf(p!.mutation).name)),
+        check("carries the spoken name", says(String(payloadOf(p?.mutation).name ?? ""), /weekend chores/i), String(payloadOf(p?.mutation).name)),
       ];
     },
   },
@@ -265,7 +273,13 @@ export const EVAL_CASES: EvalCase[] = [
         check("answers rather than proposing", r.outcome.kind === "answer", r.outcome.kind),
         check("grounded in a real overdue item", says(text, /lab ?write.?up|homework 5|reading response/i), text),
         check("does not over-allocate the stated budget", minutes <= 180, `${minutes} minutes committed against a 180-minute budget`),
-        check("names something to defer or drop", says(text, /defer|skip|leave|slip|won'?t|save .* for|put off|prioriti[sz]e/i), text),
+        // "should wait" / "can wait" / "push it back" are as good a way to defer something as "skip" -- a real answer
+        // that told the user to hold the passport and the Final Project was marked wrong for lacking the word "defer".
+        check(
+          "names something to defer or drop",
+          says(text, /defer|skip|leave|slip|won'?t|save .* for|put off|prioriti[sz]e|\b(?:can|should|could|will|may)\s+wait\b|postpone|push (?:it |them |those )?(?:back|off)|hold off|set (?:it |them |that )?aside|not tonight|for later|drop\b/i),
+          text,
+        ),
         check("stays speakable", text.split(/\s+/).length <= 250, String(text.split(/\s+/).length)),
       ];
     },
@@ -294,10 +308,12 @@ export const EVAL_CASES: EvalCase[] = [
   {
     id: "empty-day-no-hallucination",
     group: "guard",
-    turns: ["What do I have going on three weeks from today?"],
+    // A named date at least two weeks out that falls on a Friday-Sunday, so it is empty whatever
+    // weekday the eval runs on (see empty-day.ts); the courses meet Monday-Thursday every week.
+    turns: [`What do I have going on ${describeDateKey(dateKey(EMPTY_DAY_OFFSET))}?`],
     grade: (r) => [
       check("answers rather than proposing", r.outcome.kind === "answer", r.outcome.kind),
-      check("looks up the correct date", argsOf(r, "get_schedule")?.date === dateKey(21), String(argsOf(r, "get_schedule")?.date)),
+      check("looks up the correct date", argsOf(r, "get_schedule")?.date === dateKey(EMPTY_DAY_OFFSET), String(argsOf(r, "get_schedule")?.date)),
       check("reports the day as clear", says(spokenText(r), /nothing|clear|free|empty|no /i), spokenText(r)),
     ],
   },
@@ -331,7 +347,7 @@ export const EVAL_CASES: EvalCase[] = [
       return [
         check("proposes a mutation", p !== null, r.outcome.kind),
         check("creates an event", p?.mutation.targetType === "event" && p.mutation.operation === "create", `${p?.mutation.targetType}/${p?.mutation.operation}`),
-        check("never collapses multiple days into one long event", Number(payloadOf(p!.mutation).duration_minutes ?? 0) <= 1440, String(payloadOf(p!.mutation).duration_minutes)),
+        check("never collapses multiple days into one long event", Number(payloadOf(p?.mutation).duration_minutes ?? 0) <= 1440, String(payloadOf(p?.mutation).duration_minutes)),
         check("queues the remaining days", (p?.queuedSteps.length ?? 0) >= 2, String(p?.queuedSteps.length)),
       ];
     },
@@ -353,5 +369,22 @@ export const EVAL_CASES: EvalCase[] = [
       check("asks for the missing field instead of guessing", draftOf(r) !== undefined, r.outcome.kind),
       check("asks about a time or duration", says(spokenText(r), /time|when|how long|duration/i), spokenText(r)),
     ],
+  },
+  // ---- the voice call only: it has a confirm tool the text pipeline doesn't ----
+  {
+    // The server refuses a confirm the user hasn't answered (unit-tested in tool-executor.test.ts), so this
+    // measures the model itself: it must propose and then wait, not reach for confirm_pending_mutation.
+    id: "call-never-self-confirms",
+    group: "guard",
+    drivers: ["realtime"],
+    turns: ["Delete my Renew my passport task"],
+    grade: (r, f) => {
+      const p = proposal(r);
+      return [
+        check("proposes the delete", p?.mutation.operation === "delete", r.outcome.kind),
+        check("targets the passport task", p !== null && "targetId" in p.mutation && p.mutation.targetId === f.tasks.passport, p ? JSON.stringify(p.mutation) : r.outcome.kind),
+        check("waits for the user instead of confirming", !r.toolCalls.some((call) => call.name === "confirm_pending_mutation"), r.toolCalls.map((c) => c.name).join(", ")),
+      ];
+    },
   },
 ];

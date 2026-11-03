@@ -1,0 +1,70 @@
+name: Voice evals
+
+# Runs the live assistant eval (evals/) against a local Supabase stack with a
+# real OpenAI key. It spends real money (a full run is on the order of a few
+# dollars at the baseline's 5 repetitions) and takes several minutes, so it is
+# MANUAL only: run it locally (`npm run eval`) after a voice change, before
+# pushing. This workflow is only for starting it by hand from the Actions tab,
+# optionally choosing the driver(s) and repetitions. Do not add a push or
+# pull_request trigger: that would spend API money on every push.
+on:
+  workflow_dispatch:
+    inputs:
+      driver:
+        description: "Which path to grade: pushtotalk, realtime, or both"
+        default: "pushtotalk"
+        required: true
+      reps:
+        description: "Repetitions per case (blank = each baseline's own)"
+        required: false
+
+concurrency:
+  group: voice-evals
+  cancel-in-progress: false
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Require the OpenAI key
+        run: |
+          if [ -z "${{ secrets.OPENAI_API_KEY }}" ]; then
+            echo "::error::OPENAI_API_KEY secret is not set (Settings → Secrets and variables → Actions)."
+            exit 1
+          fi
+
+      - uses: actions/setup-node@v4
+        with:
+          # evals/setup.ts uses process.loadEnvFile (Node 20+); the runner script pins 24.
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Start local Supabase
+        run: supabase start -x studio,imgproxy,inbucket,edge-runtime,logflare,vector
+
+      - name: Write .env.local from the local stack
+        run: |
+          eval "$(supabase status -o env)"
+          {
+            echo "NEXT_PUBLIC_SUPABASE_URL=$API_URL"
+            echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=$ANON_KEY"
+            echo "SUPABASE_URL=$API_URL"
+            echo "SUPABASE_ANON_KEY=$ANON_KEY"
+            echo "SUPABASE_SERVICE_ROLE_KEY=$SERVICE_ROLE_KEY"
+            echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}"
+          } > .env.local
+
+      - name: Run the eval
+        env:
+          EVAL_DRIVER: ${{ inputs.driver || 'pushtotalk' }}
+          EVAL_REPS: ${{ inputs.reps }}
+        run: npm run eval -- --disableConsoleIntercept

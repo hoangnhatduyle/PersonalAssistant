@@ -16,7 +16,6 @@ import { loadQueuedSteps, resolveActiveConversation, setDraftMutation, setQueued
 import { runConversationTurn, type ConversationTurnOutcome, type RunConversationTurnFn } from "@/lib/voice/conversation-core";
 import { setTriageItemStatus } from "@/lib/email-triage/store";
 import { stripSpokenFillers } from "@/lib/voice/spoken-input";
-import { timed } from "@/lib/voice/_perf-temp";
 
 export class VoiceSessionNotFoundError extends Error {}
 export class VoiceSessionInvalidStateError extends Error {}
@@ -72,21 +71,14 @@ async function transition(
   if (!nextState) {
     throw new VoiceSessionInvalidStateError(`Cannot apply voice event "${event}" from state "${fromState}"`);
   }
-  // TEMPORARY perf diagnostic -- see _perf-temp.ts. Every transition() call
-  // is a blocking Supabase round trip on the request's critical path, none
-  // of which showed up in the existing intakeVoiceTurn perf breakdown
-  // (only "transcribe" and "runConversationTurn" were timed) -- this closes
-  // that gap so a real request's log shows where the rest of the time goes.
-  const { data, error } = await timed(`transition (${event})`, async () =>
-    supabase
-      .from("voice_sessions")
-      .update({ state: nextState, ...fields })
-      .eq("id", sessionId)
-      .eq("user_id", userId)
-      .eq("state", fromState)
-      .select("id")
-      .maybeSingle(),
-  );
+  const { data, error } = await supabase
+    .from("voice_sessions")
+    .update({ state: nextState, ...fields })
+    .eq("id", sessionId)
+    .eq("user_id", userId)
+    .eq("state", fromState)
+    .select("id")
+    .maybeSingle();
   if (error) throw error;
   if (!data) {
     throw new VoiceSessionInvalidStateError(
@@ -147,32 +139,13 @@ async function respondWithClarification(
  * src/lib/voice/conversation-core.ts's runConversationTurn (the default
  * when runConversationTurn is omitted from deps).
  */
-// TEMPORARY perf diagnostic wrapper — see _perf-temp.ts. Wraps the real
-// implementation (renamed below) purely to log total wall time across every
-// return path without restructuring each one.
 export async function intakeVoiceTurn(
   supabase: SupabaseClient<Database>,
   userId: string,
   input: VoiceTurnInput,
   deps: VoiceTurnDeps,
 ): Promise<VoiceTurnResult> {
-  const start = Date.now();
-  try {
-    return await intakeVoiceTurnInner(supabase, userId, input, deps);
-  } finally {
-    console.log(`[perf] intakeVoiceTurn total: ${Date.now() - start}ms`);
-  }
-}
-
-async function intakeVoiceTurnInner(
-  supabase: SupabaseClient<Database>,
-  userId: string,
-  input: VoiceTurnInput,
-  deps: VoiceTurnDeps,
-): Promise<VoiceTurnResult> {
-  const { data: created, error: insertError } = await timed("insert voice_sessions", async () =>
-    supabase.from("voice_sessions").insert({ user_id: userId }).select("id, state").single(),
-  );
+  const { data: created, error: insertError } = await supabase.from("voice_sessions").insert({ user_id: userId }).select("id, state").single();
   if (insertError) throw insertError;
   const sessionId = created.id;
 
@@ -209,10 +182,8 @@ async function intakeVoiceTurnInner(
   let conversationId: string | undefined;
   try {
     transcript =
-      "transcript" in input ? input.transcript : await timed("transcribe (STT)", () => deps.transcribe(input.audio, input.mimetype));
-    const { error: transcriptError } = await timed("update transcript", async () =>
-      supabase.from("voice_sessions").update({ transcript }).eq("id", sessionId).eq("user_id", userId),
-    );
+      "transcript" in input ? input.transcript : await deps.transcribe(input.audio, input.mimetype);
+    const { error: transcriptError } = await supabase.from("voice_sessions").update({ transcript }).eq("id", sessionId).eq("user_id", userId);
     if (transcriptError) throw transcriptError;
 
     // Deterministic guard, checked before the paid model call: silence (or
@@ -242,14 +213,12 @@ async function intakeVoiceTurnInner(
     // started with, or the very turn that triggered a reset would file
     // itself under the now-closed conversation and corrupt the next turn's
     // history lookup.
-    ({ conversationId } = await timed("resolveActiveConversation", () => resolveActiveConversation(supabase, userId)));
+    ({ conversationId } = await resolveActiveConversation(supabase, userId));
     // Non-null: just assigned above -- TS can't narrow a `let` captured by
     // the nested closure below, since it can't prove nothing reassigns it
     // before the closure runs (it doesn't).
     const activeConversationId = conversationId!;
-    outcome = await timed("runConversationTurn (merged LLM call)", () =>
-      (deps.runConversationTurn ?? runConversationTurn)(supabase, userId, spoken, activeConversationId),
-    );
+    outcome = await (deps.runConversationTurn ?? runConversationTurn)(supabase, userId, spoken, activeConversationId);
   } catch (error) {
     // Previously discarded entirely -- a failed turn left resolved_intent/
     // confidence_score both NULL with no way to tell why from the DB.
@@ -354,6 +323,27 @@ async function intakeVoiceTurnInner(
     );
   }
 
+  const message = await advanceProposalToAwaitingConfirmation(supabase, userId, sessionId, outcome);
+  return { sessionId, state: "AwaitingConfirmation", message };
+}
+
+type MutationProposalOutcome = Extract<ConversationTurnOutcome, { kind: "mutation_proposal" }>;
+
+/**
+ * Takes a session sitting in Transcribing with a proposal that already met
+ * the confidence bar, and walks it to AwaitingConfirmation: records the
+ * resolved intent, discloses a course delete's cascade, stores the pending
+ * mutation with its pre-arm expiry, and queues any additional steps. Returns
+ * the message to speak. Shared by the press-to-talk turn (intakeVoiceTurnInner)
+ * and the Realtime call path (proposeMutationForCall) so the two can never
+ * drift apart on what "proposed" means.
+ */
+async function advanceProposalToAwaitingConfirmation(
+  supabase: SupabaseClient<Database>,
+  userId: string,
+  sessionId: string,
+  outcome: MutationProposalOutcome,
+): Promise<string> {
   await transition(supabase, userId, sessionId, "Transcribing", "intent_resolved_high_confidence", {
     resolved_intent: outcome.summary,
     confidence_score: outcome.confidence,
@@ -393,7 +383,42 @@ async function intakeVoiceTurnInner(
   // confirmVoiceSession can pop and auto-propose them one at a time once
   // this first step is confirmed -- with no further LLM calls.
   await setQueuedSteps(supabase, userId, outcome.conversationId, outcome.queuedSteps.length > 0 ? outcome.queuedSteps : null);
-  return { sessionId, state: "AwaitingConfirmation", message };
+  return message;
+}
+
+export type CallProposalResult =
+  | { status: "awaiting_confirmation"; sessionId: string; message: string }
+  /** Below the confidence bar: nothing was recorded; the caller should ask the user to rephrase. */
+  | { status: "needs_rephrase"; summary: string };
+
+/**
+ * The Realtime call's equivalent of a press-to-talk turn's mutation-proposal
+ * branch. A call has no per-turn voice_sessions row of its own, so this mints
+ * one and walks it to AwaitingConfirmation exactly as intakeVoiceTurnInner
+ * does (same confidence bar, same cascade disclosure, same pre-arm expiry and
+ * queued steps). Confirmation is deliberately NOT done here: the user's yes
+ * goes through confirmVoiceSession like any other turn.
+ *
+ * `heardTranscript` is what the user said, as transcribed by the call; it is
+ * stored the same way a press-to-talk transcript is.
+ */
+export async function proposeMutationForCall(
+  supabase: SupabaseClient<Database>,
+  userId: string,
+  outcome: MutationProposalOutcome,
+  heardTranscript: string | null,
+): Promise<CallProposalResult> {
+  if (!meetsConfidenceBar(outcome.confidence)) return { status: "needs_rephrase", summary: outcome.summary };
+
+  const { data: created, error: insertError } = await supabase.from("voice_sessions").insert({ user_id: userId }).select("id, state").single();
+  if (insertError) throw insertError;
+  const sessionId = created.id;
+
+  await transition(supabase, userId, sessionId, created.state, "user_initiates_capture", {});
+  await transition(supabase, userId, sessionId, "Listening", "capture_ends", { transcript: heardTranscript ?? "(voice call)" });
+
+  const message = await advanceProposalToAwaitingConfirmation(supabase, userId, sessionId, outcome);
+  return { status: "awaiting_confirmation", sessionId, message };
 }
 
 export interface VoiceConfirmResult {

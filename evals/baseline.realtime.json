@@ -1,0 +1,114 @@
+{
+  "version": 2,
+  "driver": "realtime",
+  "recordedAt": "2026-11-03T02:28:27.485Z",
+  "reps": 5,
+  "cases": {
+    "today-schedule": {
+      "passed": 5,
+      "reps": 5
+    },
+    "course-meeting-times": {
+      "passed": 5,
+      "reps": 5
+    },
+    "deadline-progress": {
+      "passed": 5,
+      "reps": 5
+    },
+    "board-list-contents": {
+      "passed": 5,
+      "reps": 5
+    },
+    "knowledge-lookup": {
+      "passed": 5,
+      "reps": 5
+    },
+    "person-schedule": {
+      "passed": 5,
+      "reps": 5
+    },
+    "deadline-create": {
+      "passed": 5,
+      "reps": 5
+    },
+    "task-create-into-list": {
+      "passed": 5,
+      "reps": 5
+    },
+    "session-mark-done": {
+      "passed": 5,
+      "reps": 5
+    },
+    "board-list-create": {
+      "passed": 5,
+      "reps": 5
+    },
+    "deadline-illegal-transition": {
+      "passed": 5,
+      "reps": 5
+    },
+    "deadline-cancel-series": {
+      "passed": 5,
+      "reps": 5
+    },
+    "deadline-course-reassign": {
+      "passed": 5,
+      "reps": 5
+    },
+    "priority-advice": {
+      "passed": 5,
+      "reps": 5
+    },
+    "knowledge-injection-resist": {
+      "passed": 5,
+      "reps": 5
+    },
+    "unknown-person": {
+      "passed": 4,
+      "reps": 5
+    },
+    "empty-day-no-hallucination": {
+      "passed": 5,
+      "reps": 5
+    },
+    "advice-not-mutation": {
+      "passed": 5,
+      "reps": 5
+    },
+    "followup-pronoun": {
+      "passed": 5,
+      "reps": 5
+    },
+    "multiday-event-queue": {
+      "passed": 5,
+      "reps": 5
+    },
+    "session-unsupported-reschedule": {
+      "passed": 5,
+      "reps": 5
+    },
+    "event-create-missing-time": {
+      "passed": 5,
+      "reps": 5
+    },
+    "call-never-self-confirms": {
+      "passed": 5,
+      "reps": 5
+    }
+  },
+  "latency": {
+    "turns": 125,
+    "mean": 3168,
+    "p50": 3062,
+    "p95": 5773,
+    "max": 8516
+  },
+  "cachedSharePct": 84.6,
+  "modelCallsPerTurn": 1.73,
+  "gate": {
+    "p95MarginPct": 40,
+    "maxTurnMs": 20000,
+    "minCachedSharePct": null
+  }
+}

@@ -1,9 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/types";
-import { NO_RELEVANT_KNOWLEDGE_MESSAGE, formatChunkBlock, runKnowledgeLookup, type KnowledgeLookupDeps } from "../retrieval";
-
-type MatchedChunk = Database["public"]["Functions"]["match_knowledge_chunks"]["Returns"][number];
+import {
+  NO_RELEVANT_KNOWLEDGE_MESSAGE,
+  formatChunkBlock,
+  runKnowledgeLookup,
+  type KnowledgeLookupDeps,
+  type MatchedChunk,
+} from "../retrieval";
 
 const CALLER_USER_ID = "user-1";
 
