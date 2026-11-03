@@ -2,12 +2,11 @@ name: Voice evals
 
 # Runs the live assistant eval (evals/) against a local Supabase stack with a
 # real OpenAI key. It spends real money (a full run is on the order of a few
-# dollars at the baseline's 5 repetitions) and takes several minutes, so it is
-# MANUAL by default: start it from the Actions tab, optionally choosing the
-# driver(s) and repetitions.
-#
-# To also run it on pull requests that touch the voice code, uncomment the
-# pull_request block. That is a cost decision, so it is left off.
+# dollars at the baseline's 5 repetitions) and takes several minutes. It runs
+# on pull requests that touch the voice code (press-to-talk driver, each
+# baseline's own repetitions), and can be started by hand from the Actions tab,
+# optionally choosing the driver(s) and repetitions. Remove the pull_request
+# block to make it manual-only again if the cost is not worth it.
 on:
   workflow_dispatch:
     inputs:
@@ -18,12 +17,12 @@ on:
       reps:
         description: "Repetitions per case (blank = each baseline's own)"
         required: false
-  # pull_request:
-  #   paths:
-  #     - "src/lib/voice/**"
-  #     - "src/lib/knowledge/**"
-  #     - "evals/**"
-  #     - "supabase/migrations/**"
+  pull_request:
+    paths:
+      - "src/lib/voice/**"
+      - "src/lib/knowledge/**"
+      - "evals/**"
+      - "supabase/migrations/**"
 
 concurrency:
   group: voice-evals
