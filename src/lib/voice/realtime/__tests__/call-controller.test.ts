@@ -198,6 +198,19 @@ describe("starting a call", () => {
     await r.controller.start();
     expect(r.callsTo("/api/voice/realtime/session")).toHaveLength(1);
   });
+
+  it("starts a fresh call after the last one ended, so 'Call again' does something", async () => {
+    const r = await live();
+    r.controller.end("user");
+    expect(r.controller.getSnapshot().phase).toBe("ended");
+
+    await r.controller.start();
+
+    expect(r.callsTo("/api/voice/realtime/session")).toHaveLength(2);
+    expect(r.controller.getSnapshot().phase).toBe("live");
+    expect(r.controller.getSnapshot().endReason).toBeNull();
+    expect(r.controller.getSnapshot().error).toBeNull();
+  });
 });
 
 describe("tool calls", () => {

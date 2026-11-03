@@ -127,7 +127,11 @@ export class CallController {
     private readonly deps: CallControllerDeps,
     private readonly options: CallControllerOptions = {},
   ) {
-    this.snapshot = {
+    this.snapshot = this.initialSnapshot();
+  }
+
+  private initialSnapshot(): CallSnapshot {
+    return {
       phase: "idle",
       activity: "listening",
       muted: false,
@@ -181,6 +185,9 @@ export class CallController {
    * iOS, so they are issued before anything is awaited.
    */
   async start(): Promise<void> {
+    // A call that has ended leaves its last state on screen (the end note, the diagnostics);
+    // "Call again" starts a fresh one from a clean slate. A call in progress is left alone.
+    if (this.snapshot.phase === "ended") this.resetForNewCall();
     if (this.snapshot.phase !== "idle") return;
     this.update({ phase: "connecting", error: null });
 
@@ -200,6 +207,32 @@ export class CallController {
     } catch (error) {
       this.end("error", error instanceof Error ? friendlyStartError(error) : "Couldn't start the call.");
     }
+  }
+
+  /** Back to the state of a controller that has never made a call. Only ever called once the last call has fully ended. */
+  private resetForNewCall(): void {
+    // The old connection is closed, but detach its handlers so a late event from it
+    // cannot touch the next call's state.
+    if (this.pc) {
+      this.pc.ontrack = null;
+      this.pc.onconnectionstatechange = null;
+      this.pc.oniceconnectionstatechange = null;
+    }
+    if (this.dc) this.dc.onmessage = null;
+    this.pc = this.dc = this.stream = this.audio = this.wakeLock = null;
+    this.callId = null;
+    this.startedAt = this.lastActivityAt = 0;
+    this.warned = false;
+    this.lastUserTranscript = null;
+    this.untranscribed = new Set();
+    this.transcriptWaiters = [];
+    this.toolsInFlight = 0;
+    this.toolQueue = Promise.resolve();
+    this.endCallRequested = false;
+    this.armWanted = [];
+    this.armWaitingForSpeech = false;
+    this.speechStoppedAt = null;
+    this.update(this.initialSnapshot());
   }
 
   private async connect(clientSecret: string): Promise<void> {
