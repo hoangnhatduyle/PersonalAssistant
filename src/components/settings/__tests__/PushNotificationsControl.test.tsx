@@ -12,11 +12,11 @@ const hookState: UsePushSubscription = {
 };
 vi.mock("@/hooks/usePushSubscription", () => ({ usePushSubscription: () => hookState }));
 
-const { PushNotificationsCard } = await import("../PushNotificationsCard");
+const { PushNotificationsControl } = await import("../PushNotificationsControl");
 
 const setState = (overrides: Partial<UsePushSubscription>) => Object.assign(hookState, { status: "off", busy: false }, overrides);
 
-describe("PushNotificationsCard", () => {
+describe("PushNotificationsControl", () => {
   beforeEach(() => {
     vi.mocked(hookState.enable).mockReset().mockResolvedValue(undefined);
     vi.mocked(hookState.disable).mockReset().mockResolvedValue(undefined);
@@ -25,13 +25,13 @@ describe("PushNotificationsCard", () => {
 
   it("shows a loading placeholder, not a checkbox, while the state is unknown", () => {
     setState({ status: "loading" });
-    renderWithProviders(<PushNotificationsCard />);
+    renderWithProviders(<PushNotificationsControl />);
     expect(screen.queryByRole("checkbox")).toBeNull();
   });
 
   it("enables notifications from the checkbox, which is the click that carries the permission prompt", async () => {
     setState({ status: "off" });
-    renderWithProviders(<PushNotificationsCard />);
+    renderWithProviders(<PushNotificationsControl />);
     const checkbox = screen.getByRole("checkbox", { name: /enabled on this device/i }) as HTMLInputElement;
     expect(checkbox.checked).toBe(false);
     expect(screen.queryByRole("button", { name: /test notification/i })).toBeNull();
@@ -42,7 +42,7 @@ describe("PushNotificationsCard", () => {
 
   it("disables from the checked box and offers a test button only while on", async () => {
     setState({ status: "on" });
-    renderWithProviders(<PushNotificationsCard />);
+    renderWithProviders(<PushNotificationsControl />);
     const checkbox = screen.getByRole("checkbox", { name: /enabled on this device/i }) as HTMLInputElement;
     expect(checkbox.checked).toBe(true);
     expect(screen.getByRole("button", { name: /send test notification/i })).toBeTruthy();
@@ -53,7 +53,7 @@ describe("PushNotificationsCard", () => {
   it("sends a test and reports success", async () => {
     setState({ status: "on" });
     vi.mocked(hookState.sendTest).mockResolvedValue({ delivered: 1, removed: 0, failureReason: null });
-    renderWithProviders(<PushNotificationsCard />);
+    renderWithProviders(<PushNotificationsControl />);
     fireEvent.click(screen.getByRole("button", { name: /send test notification/i }));
     expect(await screen.findByText("Test notification sent")).toBeTruthy();
   });
@@ -61,7 +61,7 @@ describe("PushNotificationsCard", () => {
   it("surfaces the server's failure reason when the test could not be delivered", async () => {
     setState({ status: "on" });
     vi.mocked(hookState.sendTest).mockResolvedValue({ delivered: 0, removed: 0, failureReason: "Missing required environment variable: VAPID_PRIVATE_KEY" });
-    renderWithProviders(<PushNotificationsCard />);
+    renderWithProviders(<PushNotificationsControl />);
     fireEvent.click(screen.getByRole("button", { name: /send test notification/i }));
     expect(await screen.findByText(/VAPID_PRIVATE_KEY/)).toBeTruthy();
   });
@@ -69,7 +69,7 @@ describe("PushNotificationsCard", () => {
   it("shows an error toast instead of crashing when enabling throws", async () => {
     setState({ status: "off" });
     vi.mocked(hookState.enable).mockRejectedValue(new Error("409"));
-    renderWithProviders(<PushNotificationsCard />);
+    renderWithProviders(<PushNotificationsControl />);
     fireEvent.click(screen.getByRole("checkbox", { name: /enabled on this device/i }));
     expect(await screen.findByText("Could not change notifications for this device")).toBeTruthy();
   });
@@ -81,14 +81,14 @@ describe("PushNotificationsCard", () => {
     ["unsupported", /doesn't support push/],
   ] as const)("explains the %s state instead of offering a toggle", (status, copy) => {
     setState({ status });
-    renderWithProviders(<PushNotificationsCard />);
+    renderWithProviders(<PushNotificationsControl />);
     expect(screen.getByText(copy)).toBeTruthy();
     expect(screen.queryByRole("checkbox")).toBeNull();
   });
 
   it("locks the controls while a request is in flight", () => {
     setState({ status: "on", busy: true });
-    renderWithProviders(<PushNotificationsCard />);
+    renderWithProviders(<PushNotificationsControl />);
     expect((screen.getByRole("checkbox") as HTMLInputElement).disabled).toBe(true);
     expect((screen.getByRole("button", { name: /send test notification/i }) as HTMLButtonElement).disabled).toBe(true);
   });

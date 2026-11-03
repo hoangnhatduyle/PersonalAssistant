@@ -98,7 +98,6 @@ export function WeeklyReviewCard({ onDismiss }: Props) {
 
   if (dismissed) return null;
 
-  const voiceEnabled = settings?.voice_capture_enabled ?? false;
 
   return (
     <GlassPanel variant={ready ? "glow-warn" : "default"} className="flex flex-col gap-4 p-5">
@@ -141,7 +140,6 @@ export function WeeklyReviewCard({ onDismiss }: Props) {
       ) : review ? (
         <ReviewBody
           review={review}
-          voiceEnabled={voiceEnabled}
           isSpeaking={isSpeaking}
           onSpeak={() => speak([review.narrative, ...review.recommendations].join(" "))}
           onRefresh={generate}
@@ -170,13 +168,11 @@ function Stat({ label, value, caption, urgent = false }: { label: string; value:
 
 function ReviewBody({
   review,
-  voiceEnabled,
   isSpeaking,
   onSpeak,
   onRefresh,
 }: {
   review: WeeklyReviewResponse;
-  voiceEnabled: boolean;
   isSpeaking: boolean;
   onSpeak: () => void;
   onRefresh: () => void;
@@ -259,11 +255,9 @@ function ReviewBody({
       )}
 
       <div className="flex items-center gap-2">
-        {voiceEnabled && (
-          <Button size="sm" variant="secondary" isLoading={isSpeaking} onClick={onSpeak}>
-            Read aloud
-          </Button>
-        )}
+        <Button size="sm" variant="secondary" isLoading={isSpeaking} onClick={onSpeak}>
+          Read aloud
+        </Button>
         <Button size="sm" variant="ghost" onClick={onRefresh}>
           Refresh
         </Button>

@@ -215,7 +215,7 @@ export function CaptureChannel({ compact = false, large = false }: Props) {
             } catch {
               // Toast already surfaced by useSpeakVoiceResponse's onError.
             }
-            if (settings?.speak_suggestions_aloud) {
+            if (handsFree) {
               const { data: fresh } = await refetchSuggestions();
               if (fresh && fresh.rows.length > 0) {
                 await reviewAloud.start(fresh.rows);
@@ -223,7 +223,7 @@ export function CaptureChannel({ compact = false, large = false }: Props) {
             }
             // Bug fix: this used to resume regardless of needsFollowUp, so a
             // purely informational summary ("You have 2 suggestions", no
-            // suggestions to review, or speak_suggestions_aloud off) reopened
+            // suggestions to review, or hands-free voice off) reopened
             // the mic anyway -- the "hot mic" the confirmation-expiry feature
             // above now has to guard against. reviewAloud.start() above (when
             // it ran) already handled its own per-suggestion yes/no listening

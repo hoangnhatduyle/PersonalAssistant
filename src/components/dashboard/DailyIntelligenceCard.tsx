@@ -77,7 +77,7 @@ export function DailyIntelligenceCard({ onDismiss }: Props = {}) {
       // Refetch live suggestion list so Apply/Dismiss state is current
       const { data: fresh } = await refetchSuggestions();
 
-      if (settings?.speak_suggestions_aloud && fresh && fresh.rows.length > 0) {
+      if (settings?.hands_free_voice_enabled && fresh && fresh.rows.length > 0) {
         await reviewAloud.start(fresh.rows);
       }
     } catch {
@@ -85,7 +85,7 @@ export function DailyIntelligenceCard({ onDismiss }: Props = {}) {
     } finally {
       setLoading(false);
     }
-  }, [refetchSuggestions, reviewAloud, settings?.speak_suggestions_aloud]);
+  }, [refetchSuggestions, reviewAloud, settings?.hands_free_voice_enabled]);
 
   useEffect(() => {
     const cached = getCachedIntelligence();
@@ -97,7 +97,6 @@ export function DailyIntelligenceCard({ onDismiss }: Props = {}) {
 
   if (dismissed) return null;
 
-  const voiceEnabled = settings?.voice_capture_enabled ?? false;
   const pendingSuggestions = suggestions?.rows ?? [];
 
   return (
@@ -165,11 +164,9 @@ export function DailyIntelligenceCard({ onDismiss }: Props = {}) {
 
           {/* Action bar */}
           <div className="flex items-center gap-2">
-            {voiceEnabled && (
-              <Button size="sm" variant="secondary" isLoading={isSpeaking} onClick={() => speak(narrative)}>
-                Read aloud
-              </Button>
-            )}
+            <Button size="sm" variant="secondary" isLoading={isSpeaking} onClick={() => speak(narrative)}>
+              Read aloud
+            </Button>
             <Button
               size="sm"
               variant="ghost"

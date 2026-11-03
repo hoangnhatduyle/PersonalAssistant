@@ -9,7 +9,7 @@ vi.mock("@/lib/http/client", async (importOriginal) => ({
   apiFetch,
 }));
 
-const settings = vi.hoisted(() => ({ value: { timezone: "UTC", voice_capture_enabled: false } as Record<string, unknown> }));
+const settings = vi.hoisted(() => ({ value: { timezone: "UTC" } as Record<string, unknown> }));
 vi.mock("@/hooks/useSettings", () => ({ useSettings: () => ({ data: settings.value }) }));
 const speak = vi.hoisted(() => vi.fn());
 vi.mock("@/hooks/useSpeakVoiceResponse", () => ({ useSpeakVoiceResponse: () => ({ speak, isPending: false }) }));
@@ -42,7 +42,7 @@ beforeEach(() => {
   apiFetch.mockReset();
   speak.mockReset();
   localStorage.clear();
-  settings.value = { timezone: "UTC", voice_capture_enabled: false };
+  settings.value = { timezone: "UTC" };
   vi.useRealTimers();
 });
 
@@ -123,8 +123,7 @@ describe("WeeklyReviewCard", () => {
     expect(await screen.findByText("You finished 5 items last week.")).toBeInTheDocument();
   });
 
-  it("offers Read aloud only when voice is enabled and speaks the narrative plus recommendations", async () => {
-    settings.value = { timezone: "UTC", voice_capture_enabled: true };
+  it("always offers Read aloud, with no setting to turn it on, and speaks the narrative plus recommendations", async () => {
     apiFetch.mockResolvedValueOnce({ data: makeReview() });
     renderWithProviders(<WeeklyReviewCard />);
     fireEvent.click(screen.getByRole("button", { name: "Generate" }));
