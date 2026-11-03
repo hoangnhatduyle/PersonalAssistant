@@ -37,8 +37,8 @@
   "cachedSharePct": 93.6,
   "modelCallsPerTurn": 1.42,
   "gate": {
-    "p95MarginPct": null,
-    "maxTurnMs": null,
-    "minCachedSharePct": null
+    "p95MarginPct": 40,
+    "maxTurnMs": 15000,
+    "minCachedSharePct": 85
   }
 }

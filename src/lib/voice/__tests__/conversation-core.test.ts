@@ -1302,4 +1302,62 @@ describe("runConversationTurn", () => {
       expect(firstCallArgs.reasoning).toEqual({ effort: "low" });
     });
   });
+
+  // The model reliably copies the first group of an entity UUID and garbles
+  // the rest (seen live: roughly 4 in 10 runs of "cancel the quiz"). id-repair.ts
+  // maps such an id back onto the one known id sharing its first 8 characters;
+  // these tests pin that it is actually applied on every path that takes an id
+  // from the model, not just correct in isolation.
+  describe("garbled entity ids", () => {
+    const GARBLED_DEADLINE_ID = "44444444-4444-4444-8444-44444444ffff"; // DEADLINE_ID with a wrong tail
+    const emptyContext = { courses: [], deadlines: [], tasks: [], todoLists: [], sessions: [], appointments: [], knowledgeSources: [], people: [] };
+
+    it("repairs a garbled target_id on propose_mutation so the proposal targets the real record", async () => {
+      vi.mocked(loadEntityContext).mockResolvedValueOnce({
+        ...emptyContext,
+        tasks: [{ id: VALID_TARGET_ID, title: "Pay rent", list_id: null, status: "Open", validEvents: getValidTaskEvents("Open") }],
+      });
+      mocks.responsesCreate.mockReset();
+      mocks.responsesCreate.mockResolvedValueOnce(
+        toolCallResponse([
+          { id: "call_1", name: "propose_mutation", arguments: { ...validProposeMutationArgs, target_id: "11111111-1111-4111-8111-1111111fffff" } },
+        ]),
+      );
+
+      const result = await runConversationTurn(fakeSupabase, "user-1", "delete my task", "conv-1");
+
+      expect(result).toMatchObject({ kind: "mutation_proposal", mutation: { targetType: "task", operation: "delete", targetId: VALID_TARGET_ID } });
+    });
+
+    it("repairs a garbled deadline_id for get_deadline_progress", async () => {
+      vi.mocked(loadEntityContext).mockResolvedValueOnce({ ...emptyContext, deadlines: [contextDeadline({ id: DEADLINE_ID })] });
+      mocks.responsesCreate.mockReset();
+      mocks.responsesCreate
+        .mockResolvedValueOnce(toolCallResponse([{ id: "call_1", name: "get_deadline_progress", arguments: { deadline_id: GARBLED_DEADLINE_ID } }]))
+        .mockResolvedValueOnce(
+          toolCallResponse([{ id: "call_2", name: "respond_to_user", arguments: { message: "2 of 3 sessions done.", needs_follow_up: false } }]),
+        );
+
+      await runConversationTurn(fakeSupabase, "user-1", "how much progress on Homework 1?", "conv-1");
+
+      expect(runDeadlineProgressLookup).toHaveBeenCalledWith(fakeSupabase, "user-1", DEADLINE_ID);
+    });
+
+    it("still reports an id that matches nothing as unknown rather than guessing", async () => {
+      vi.mocked(loadEntityContext).mockResolvedValueOnce({ ...emptyContext, deadlines: [contextDeadline({ id: DEADLINE_ID })] });
+      mocks.responsesCreate.mockReset();
+      mocks.responsesCreate
+        .mockResolvedValueOnce(
+          toolCallResponse([{ id: "call_1", name: "get_deadline_progress", arguments: { deadline_id: "55555555-5555-4555-8555-555555555555" } }]),
+        )
+        .mockResolvedValueOnce(
+          toolCallResponse([{ id: "call_2", name: "respond_to_user", arguments: { message: "I don't have that deadline.", needs_follow_up: false } }]),
+        );
+
+      await runConversationTurn(fakeSupabase, "user-1", "how is that going?", "conv-1");
+
+      expect(runDeadlineProgressLookup).not.toHaveBeenCalled();
+      expect((mocks.responsesCreate.mock.calls[1][0].input.at(-2) as { output: string }).output).toContain("Unknown deadline_id");
+    });
+  });
 });

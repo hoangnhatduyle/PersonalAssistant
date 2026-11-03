@@ -29,6 +29,7 @@ import {
 import { gateDeadlineRecurrence } from "@/lib/voice/deadline-recurrence-gate";
 import { gateTaskDuplicate } from "@/lib/voice/task-duplicate-gate";
 import { gateTransitionLegality } from "@/lib/voice/transition-legality-gate";
+import { repairIdsInArgs } from "@/lib/voice/id-repair";
 import type { PendingMutation } from "@/lib/voice/mutations";
 import {
   CONVERSATION_TOOLS,
@@ -313,13 +314,28 @@ const proposeMutationMetaSchema = z.object({
  */
 class ToolArgsError extends Error {}
 
-function parseToolArgs<T>(schema: z.ZodType<T>, toolCall: OpenAI.Responses.ResponseFunctionToolCall): T {
+/**
+ * Fixes entity ids the model copied imperfectly (see id-repair.ts) before any
+ * schema or membership check sees them, and logs each repair so how often the
+ * model needs it stays visible.
+ */
+function repairModelIds(raw: unknown, context: EntityContext, toolName: string): unknown {
+  const { value, repairs } = repairIdsInArgs(raw, context);
+  for (const repair of repairs) {
+    console.warn(`[voice] ${toolName}: repaired a garbled ${repair.field} (matched the one known id sharing its first 8 characters)`);
+  }
+  return value;
+}
+
+function parseToolArgs<T>(schema: z.ZodType<T>, toolCall: OpenAI.Responses.ResponseFunctionToolCall, context?: EntityContext): T {
   let raw: unknown;
   try {
     raw = JSON.parse(toolCall.arguments);
   } catch {
     throw new ToolArgsError(`${toolCall.name} returned arguments that were not valid JSON`);
   }
+  // Only the tools whose arguments carry an entity id pass a context.
+  if (context) raw = repairModelIds(raw, context, toolCall.name);
   const result = schema.safeParse(raw);
   if (!result.success) {
     const issues = result.error.issues.map((issue) => `${issue.path.join(".") || "(root)"}: ${issue.message}`).join("; ");
@@ -359,6 +375,7 @@ function parseProposeMutationArgs(
   } catch {
     throw new Error("propose_mutation returned arguments that were not valid JSON");
   }
+  raw = repairModelIds(raw, context, toolCall.name);
   const meta = proposeMutationMetaSchema.parse(raw);
 
   // A voice-created Deadline always gets asked "should this repeat?" (default
@@ -410,13 +427,17 @@ const saveMutationDraftMetaSchema: z.ZodType<SaveMutationDraftArgs> = z.object({
  * to be missing a required field for its operation; only structural
  * validity (right target_type/operation/enum values) is enforced here.
  */
-function parseSaveMutationDraftArgs(toolCall: OpenAI.Responses.ResponseFunctionToolCall): { question: string; mutation: RawMutation } {
+function parseSaveMutationDraftArgs(
+  toolCall: OpenAI.Responses.ResponseFunctionToolCall,
+  context: EntityContext,
+): { question: string; mutation: RawMutation } {
   let raw: unknown;
   try {
     raw = JSON.parse(toolCall.arguments);
   } catch {
     throw new Error("save_mutation_draft returned arguments that were not valid JSON");
   }
+  raw = repairModelIds(raw, context, toolCall.name);
   const meta = saveMutationDraftMetaSchema.parse(raw);
   const mutation = mutationDraftSchema.parse(raw);
   return { question: meta.question, mutation };
@@ -458,7 +479,7 @@ async function dispatchTool(
       return { payload: toScheduleToolPayload(result) };
     }
     case "get_person_schedule": {
-      const args = parseToolArgs(getPersonScheduleArgsSchema, toolCall);
+      const args = parseToolArgs(getPersonScheduleArgsSchema, toolCall, context);
       // Enforcement point for "never invent a person_id" -- the model's
       // person_id is only trustworthy if it actually came from this turn's
       // own entity context (which is itself already user_id-scoped), never
@@ -479,7 +500,7 @@ async function dispatchTool(
       return { payload: { message: result.message }, usedPersonalizationSuggestions: true };
     }
     case "get_deadline_progress": {
-      const args = parseToolArgs(getDeadlineProgressArgsSchema, toolCall);
+      const args = parseToolArgs(getDeadlineProgressArgsSchema, toolCall, context);
       // Enforcement point for "never invent a deadline_id" -- same pattern
       // as get_person_schedule's person_id check above.
       if (!context.deadlines.some((deadline) => deadline.id === args.deadline_id)) {
@@ -667,7 +688,7 @@ export const runConversationTurn: RunConversationTurnFn = async (supabase, userI
         };
       }
       if (finalizingCall.name === "save_mutation_draft") {
-        const { question, mutation } = parseSaveMutationDraftArgs(finalizingCall);
+        const { question, mutation } = parseSaveMutationDraftArgs(finalizingCall, context);
         return {
           kind: "answer",
           message: question,

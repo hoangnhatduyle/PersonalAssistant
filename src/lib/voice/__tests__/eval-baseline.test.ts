@@ -10,7 +10,9 @@ import {
   summarizeRun,
   writeBaseline,
   type Baseline,
+  type CaseStat,
   type ResultLike,
+  type RunStats,
 } from "../../../../evals/baseline";
 import { selectDrivers, type TurnDriver } from "../../../../evals/drivers";
 
@@ -27,9 +29,9 @@ describe("quantile", () => {
 });
 
 describe("summarizeRun", () => {
-  it("marks a case passed only when every repetition passed", () => {
-    const stats = summarizeRun([result("a", true), result("a", false), result("b", true)]);
-    expect(stats.cases).toEqual({ a: false, b: true });
+  it("counts passes and repetitions per case", () => {
+    const stats = summarizeRun([result("a", true), result("a", false), result("a", true), result("b", true)]);
+    expect(stats.cases).toEqual({ a: { passed: 2, reps: 3 }, b: { passed: 1, reps: 1 } });
   });
 
   it("computes latency percentiles, cache share and round-trips per turn", () => {
@@ -45,54 +47,106 @@ describe("summarizeRun", () => {
 });
 
 describe("compareToBaseline", () => {
-  const baseline = (overrides: Partial<Baseline> = {}): Baseline => ({
-    version: 1,
+  const stat = (passed: number, reps: number): CaseStat => ({ passed, reps });
+  const baseline = (cases: Record<string, CaseStat>, overrides: Partial<Baseline> = {}): Baseline => ({
+    version: 2,
     driver: "pushtotalk",
     recordedAt: "2026-11-03T00:00:00.000Z",
-    reps: 1,
-    cases: { a: true, b: true, c: false },
+    reps: 3,
+    cases,
     latency: { turns: 3, mean: 2000, p50: 2000, p95: 4000, max: 5000 },
     cachedSharePct: 80,
     modelCallsPerTurn: 2,
     gate: { ...DEFAULT_GATE },
     ...overrides,
   });
-  const current = (cases: Record<string, boolean>, p95 = 4000, max = 5000, cachedSharePct: number | null = 80) => ({
+  const current = (cases: Record<string, CaseStat>, overrides: Partial<RunStats> = {}): RunStats => ({
     cases,
-    latency: { turns: 3, mean: 2000, p50: 2000, p95, max },
-    cachedSharePct,
+    latency: { turns: 3, mean: 2000, p50: 2000, p95: 4000, max: 5000 },
+    cachedSharePct: 80,
     modelCallsPerTurn: 2,
+    ...overrides,
   });
 
-  it("flags a case that passed in the baseline and fails now", () => {
-    expect(compareToBaseline(current({ a: true, b: false, c: false }), baseline(), true)).toEqual(['case "b" passed in the baseline and fails now']);
+  describe("case pass rates", () => {
+    it("holds when nothing got worse, including an improvement", () => {
+      const result = compareToBaseline(current({ a: stat(3, 3), b: stat(3, 3) }), baseline({ a: stat(3, 3), b: stat(2, 3) }), true);
+      expect(result).toEqual({ regressions: [], warnings: [] });
+    });
+
+    it("treats one failing rep out of three as a warning, not a regression (the model is not deterministic)", () => {
+      const result = compareToBaseline(current({ a: stat(2, 3) }), baseline({ a: stat(3, 3) }), true);
+      expect(result.regressions).toEqual([]);
+      expect(result.warnings).toEqual(['case "a" passed 3/3 in the baseline and 2/3 now (within noise for a non-deterministic model)']);
+    });
+
+    it("flags a drop of half or more as a regression when the run has as many reps as the baseline", () => {
+      const result = compareToBaseline(current({ a: stat(1, 3), b: stat(0, 3) }), baseline({ a: stat(3, 3), b: stat(3, 3) }), true);
+      expect(result.regressions).toEqual(['case "a" passed 3/3 in the baseline and 1/3 now', 'case "b" passed 3/3 in the baseline and 0/3 now']);
+    });
+
+    it("does NOT fail a 1-rep run against a 3-rep baseline, however badly that single sample went", () => {
+      // The reported bug: one flaky sample of a 3/3 case must not read as a regression.
+      const result = compareToBaseline(current({ a: stat(0, 1) }), baseline({ a: stat(3, 3) }), true);
+      expect(result.regressions).toEqual([]);
+      expect(result.warnings).toHaveLength(1);
+      expect(result.warnings[0]).toMatch(/only 1 rep\(s\) vs 3 in the baseline -- rerun with EVAL_REPS=3/);
+    });
+
+    it("never reports a case that was already failing in the baseline as a regression", () => {
+      expect(compareToBaseline(current({ a: stat(0, 3) }), baseline({ a: stat(0, 3) }), true)).toEqual({ regressions: [], warnings: [] });
+      expect(compareToBaseline(current({ a: stat(1, 3) }), baseline({ a: stat(2, 3) }), true).regressions).toEqual([]);
+    });
+
+    it("ignores baseline cases that were not run (EVAL_ONLY subset)", () => {
+      expect(compareToBaseline(current({ a: stat(3, 3) }), baseline({ a: stat(3, 3), b: stat(3, 3) }), false)).toEqual({ regressions: [], warnings: [] });
+    });
   });
 
-  it("does not flag a case that already failed in the baseline, or a new case", () => {
-    expect(compareToBaseline(current({ a: true, b: true, c: false, d: false }), baseline(), true)).toEqual([]);
+  describe("a case the baseline has never seen", () => {
+    it("is fine when it passes", () => {
+      expect(compareToBaseline(current({ fresh: stat(3, 3) }), baseline({}), true)).toEqual({ regressions: [], warnings: [] });
+    });
+
+    it("warns on an occasional failure and regresses on a mostly-failing one", () => {
+      expect(compareToBaseline(current({ fresh: stat(2, 3) }), baseline({}), true)).toEqual({
+        regressions: [],
+        warnings: ['new case "fresh" (not in the baseline) passed 2/3'],
+      });
+      expect(compareToBaseline(current({ fresh: stat(1, 3) }), baseline({}), true).regressions).toEqual(['new case "fresh" (not in the baseline) passed 1/3']);
+    });
+
+    it("only warns when the run has fewer reps than the baseline", () => {
+      const result = compareToBaseline(current({ fresh: stat(0, 1) }), baseline({}), true);
+      expect(result.regressions).toEqual([]);
+      expect(result.warnings).toHaveLength(1);
+    });
   });
 
-  it("ignores baseline cases that were not run (EVAL_ONLY subset)", () => {
-    expect(compareToBaseline(current({ a: true }), baseline(), false)).toEqual([]);
-  });
+  describe("latency and cache thresholds", () => {
+    it("are not enforced while the gate is unset", () => {
+      const worse = current({ a: stat(3, 3) }, { latency: { turns: 3, mean: 1, p50: 1, p95: 99_000, max: 99_000 }, cachedSharePct: 0 });
+      expect(compareToBaseline(worse, baseline({ a: stat(3, 3) }), true).regressions).toEqual([]);
+    });
 
-  it("does not enforce latency or cache thresholds while the gate is unset", () => {
-    expect(compareToBaseline(current({ a: true, b: true }, 99_000, 99_000, 0), baseline(), true)).toEqual([]);
-  });
+    it("are enforced on a full run once set", () => {
+      const gated = baseline({ a: stat(3, 3) }, { gate: { p95MarginPct: 25, maxTurnMs: 10_000, minCachedSharePct: 70 } });
+      const ok = current({ a: stat(3, 3) }, { latency: { turns: 3, mean: 1, p50: 1, p95: 5000, max: 9000 }, cachedSharePct: 75 });
+      expect(compareToBaseline(ok, gated, true).regressions).toEqual([]);
 
-  it("enforces the configured p95 margin, turn ceiling and cache floor on a full run", () => {
-    const gated = baseline({ gate: { p95MarginPct: 25, maxTurnMs: 10_000, minCachedSharePct: 70 } });
-    expect(compareToBaseline(current({ a: true, b: true }, 5000, 9000, 75), gated, true)).toEqual([]);
-    const problems = compareToBaseline(current({ a: true, b: true }, 5100, 12_000, 60), gated, true);
-    expect(problems).toHaveLength(3);
-    expect(problems[0]).toMatch(/p95 turn latency 5100ms/);
-    expect(problems[1]).toMatch(/slowest turn 12000ms/);
-    expect(problems[2]).toMatch(/cached input share 60%/);
-  });
+      const bad = current({ a: stat(3, 3) }, { latency: { turns: 3, mean: 1, p50: 1, p95: 5100, max: 12_000 }, cachedSharePct: 60 });
+      const { regressions } = compareToBaseline(bad, gated, true);
+      expect(regressions).toHaveLength(3);
+      expect(regressions[0]).toMatch(/p95 turn latency 5100ms/);
+      expect(regressions[1]).toMatch(/slowest turn 12000ms/);
+      expect(regressions[2]).toMatch(/cached input share 60%/);
+    });
 
-  it("skips aggregate thresholds on a partial run but still enforces case regressions", () => {
-    const gated = baseline({ gate: { p95MarginPct: 1, maxTurnMs: 1, minCachedSharePct: 99 } });
-    expect(compareToBaseline(current({ a: false }, 99_000, 99_000, 0), gated, false)).toEqual(['case "a" passed in the baseline and fails now']);
+    it("are skipped on a partial run, which says nothing about the whole suite", () => {
+      const gated = baseline({ a: stat(3, 3) }, { gate: { p95MarginPct: 1, maxTurnMs: 1, minCachedSharePct: 99 } });
+      const worse = current({ a: stat(3, 3) }, { latency: { turns: 1, mean: 1, p50: 1, p95: 99_000, max: 99_000 }, cachedSharePct: 0 });
+      expect(compareToBaseline(worse, gated, false).regressions).toEqual([]);
+    });
   });
 });
 
@@ -102,26 +156,46 @@ describe("baseline files", () => {
     if (dir) rmSync(dir, { recursive: true, force: true });
     dir = undefined;
   });
+  const tempDir = () => (dir = mkdtempSync(path.join(tmpdir(), "eval-baseline-")));
 
   it("returns null when no baseline exists", () => {
-    dir = mkdtempSync(path.join(tmpdir(), "eval-baseline-"));
-    expect(loadBaseline("pushtotalk", dir)).toBeNull();
+    expect(loadBaseline("pushtotalk", tempDir())).toBeNull();
   });
 
   it("round-trips a baseline and keeps hand-set gate thresholds when it is rewritten", () => {
-    dir = mkdtempSync(path.join(tmpdir(), "eval-baseline-"));
-    const stats = summarizeRun([result("a", true)]);
-    const first = writeBaseline("pushtotalk", 3, stats, dir);
-    expect(first.gate).toEqual(DEFAULT_GATE);
-    expect(first.reps).toBe(3);
+    const d = tempDir();
+    const first = writeBaseline("pushtotalk", 3, summarizeRun([result("a", true)]), d);
+    expect(first).toMatchObject({ version: 2, reps: 3, gate: DEFAULT_GATE });
 
-    const file = path.join(dir, "baseline.pushtotalk.json");
+    const file = path.join(d, "baseline.pushtotalk.json");
     const edited = { ...JSON.parse(readFileSync(file, "utf8")), gate: { p95MarginPct: 30, maxTurnMs: 12_000, minCachedSharePct: null } };
     writeFileSync(file, JSON.stringify(edited));
 
-    const second = writeBaseline("pushtotalk", 1, summarizeRun([result("a", false)]), dir);
+    const second = writeBaseline("pushtotalk", 1, summarizeRun([result("a", false)]), d);
     expect(second.gate).toEqual({ p95MarginPct: 30, maxTurnMs: 12_000, minCachedSharePct: null });
-    expect(loadBaseline("pushtotalk", dir)?.cases).toEqual({ a: false });
+    expect(loadBaseline("pushtotalk", d)?.cases).toEqual({ a: { passed: 0, reps: 1 } });
+  });
+
+  it("reads a first-format baseline: true is a full pass rate, false is read as 0 so it can never regress", () => {
+    const d = tempDir();
+    writeFileSync(
+      path.join(d, "baseline.pushtotalk.json"),
+      JSON.stringify({
+        version: 1,
+        driver: "pushtotalk",
+        recordedAt: "2026-11-03T00:55:30.406Z",
+        reps: 3,
+        cases: { solid: true, flaky: false },
+        latency: { turns: 72, mean: 3763, p50: 3402, p95: 6108, max: 6872 },
+        cachedSharePct: 93.6,
+        modelCallsPerTurn: 1.42,
+        gate: { p95MarginPct: null, maxTurnMs: null, minCachedSharePct: null },
+      }),
+    );
+    const loaded = loadBaseline("pushtotalk", d)!;
+    expect(loaded.version).toBe(2);
+    expect(loaded.cases).toEqual({ solid: { passed: 3, reps: 3 }, flaky: { passed: 0, reps: 3 } });
+    expect(loaded.latency.p95).toBe(6108);
   });
 });
 
