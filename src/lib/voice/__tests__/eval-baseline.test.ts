@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   compareToBaseline,
   DEFAULT_GATE,
+  INITIAL_GATES,
   loadBaseline,
   quantile,
   summarizeRun,
@@ -175,6 +176,13 @@ describe("baseline files", () => {
     const second = writeBaseline("pushtotalk", 1, summarizeRun([result("a", false)]), d);
     expect(second.gate).toEqual({ p95MarginPct: 30, maxTurnMs: 12_000, minCachedSharePct: null });
     expect(loadBaseline("pushtotalk", d)?.cases).toEqual({ a: { passed: 0, reps: 1 } });
+  });
+
+  it("starts the realtime baseline with its seeded thresholds, but leaves push-to-talk's off until chosen", () => {
+    const d = tempDir();
+    expect(writeBaseline("realtime", 5, summarizeRun([result("a", true)]), d).gate).toEqual(INITIAL_GATES.realtime);
+    expect(INITIAL_GATES.realtime).toMatchObject({ p95MarginPct: 40, minCachedSharePct: null });
+    expect(writeBaseline("pushtotalk", 5, summarizeRun([result("a", true)]), d).gate).toEqual(DEFAULT_GATE);
   });
 
   it("reads a first-format baseline: true is a full pass rate, false is read as 0 so it can never regress", () => {

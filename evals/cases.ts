@@ -271,7 +271,13 @@ export const EVAL_CASES: EvalCase[] = [
         check("answers rather than proposing", r.outcome.kind === "answer", r.outcome.kind),
         check("grounded in a real overdue item", says(text, /lab ?write.?up|homework 5|reading response/i), text),
         check("does not over-allocate the stated budget", minutes <= 180, `${minutes} minutes committed against a 180-minute budget`),
-        check("names something to defer or drop", says(text, /defer|skip|leave|slip|won'?t|save .* for|put off|prioriti[sz]e/i), text),
+        // "should wait" / "can wait" / "push it back" are as good a way to defer something as "skip" -- a real answer
+        // that told the user to hold the passport and the Final Project was marked wrong for lacking the word "defer".
+        check(
+          "names something to defer or drop",
+          says(text, /defer|skip|leave|slip|won'?t|save .* for|put off|prioriti[sz]e|\b(?:can|should|could|will|may)\s+wait\b|postpone|push (?:it |them |those )?(?:back|off)|hold off|set (?:it |them |that )?aside|not tonight|for later|drop\b/i),
+          text,
+        ),
         check("stays speakable", text.split(/\s+/).length <= 250, String(text.split(/\s+/).length)),
       ];
     },

@@ -72,6 +72,18 @@ export interface Comparison {
 
 export const DEFAULT_GATE: BaselineGate = { p95MarginPct: null, maxTurnMs: null, minCachedSharePct: null };
 
+/**
+ * Gate thresholds a driver's baseline starts with when none has been recorded
+ * yet (an existing baseline file always keeps its own). The Realtime driver is
+ * seeded from its first live run (p95 5.9 s, slowest turn 8.5 s) with the same
+ * 40% margin as push-to-talk, and no cache floor: every eval case opens a cold
+ * session, so its cached share (about 60%) says little about a real call, where
+ * the stable prefix is re-read turn after turn.
+ */
+export const INITIAL_GATES: Record<string, BaselineGate> = {
+  realtime: { p95MarginPct: 40, maxTurnMs: 20_000, minCachedSharePct: null },
+};
+
 const sum = (values: number[]) => values.reduce((a, b) => a + b, 0);
 const rate = (stat: CaseStat) => (stat.reps === 0 ? 0 : stat.passed / stat.reps);
 const fraction = (stat: CaseStat) => `${stat.passed}/${stat.reps}`;
@@ -189,7 +201,7 @@ export function loadBaseline(driver: string, dir = __dirname): Baseline | null {
 
 /** Rewrites the baseline from `stats`, keeping any gate thresholds already chosen. */
 export function writeBaseline(driver: string, reps: number, stats: RunStats, dir = __dirname): Baseline {
-  const gate = loadBaseline(driver, dir)?.gate ?? DEFAULT_GATE;
+  const gate = loadBaseline(driver, dir)?.gate ?? INITIAL_GATES[driver] ?? DEFAULT_GATE;
   const baseline: Baseline = { version: 2, driver, recordedAt: new Date().toISOString(), reps, ...stats, gate };
   writeFileSync(baselinePath(driver, dir), `${JSON.stringify(baseline, null, 2)}\n`);
   return baseline;
