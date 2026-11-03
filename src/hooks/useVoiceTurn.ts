@@ -22,7 +22,7 @@ export type VoiceTurnClientInput = { audio: Blob; mimetype: string } | { transcr
  * "invalidate broadly, it's cheap at this app's scale" approach rather than
  * trying to parse which entity a given turn affected.
  */
-function invalidateAfterMutation(queryClient: ReturnType<typeof useQueryClient>) {
+export function invalidateAfterMutation(queryClient: ReturnType<typeof useQueryClient>) {
   // course.delete is a real PendingMutation (src/lib/voice/mutations.ts) —
   // course must be included, not just its cascaded deadlines/notes.
   queryClient.invalidateQueries({ queryKey: courseKeys.all });

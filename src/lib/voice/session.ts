@@ -354,6 +354,27 @@ async function intakeVoiceTurnInner(
     );
   }
 
+  const message = await advanceProposalToAwaitingConfirmation(supabase, userId, sessionId, outcome);
+  return { sessionId, state: "AwaitingConfirmation", message };
+}
+
+type MutationProposalOutcome = Extract<ConversationTurnOutcome, { kind: "mutation_proposal" }>;
+
+/**
+ * Takes a session sitting in Transcribing with a proposal that already met
+ * the confidence bar, and walks it to AwaitingConfirmation: records the
+ * resolved intent, discloses a course delete's cascade, stores the pending
+ * mutation with its pre-arm expiry, and queues any additional steps. Returns
+ * the message to speak. Shared by the press-to-talk turn (intakeVoiceTurnInner)
+ * and the Realtime call path (proposeMutationForCall) so the two can never
+ * drift apart on what "proposed" means.
+ */
+async function advanceProposalToAwaitingConfirmation(
+  supabase: SupabaseClient<Database>,
+  userId: string,
+  sessionId: string,
+  outcome: MutationProposalOutcome,
+): Promise<string> {
   await transition(supabase, userId, sessionId, "Transcribing", "intent_resolved_high_confidence", {
     resolved_intent: outcome.summary,
     confidence_score: outcome.confidence,
@@ -393,7 +414,42 @@ async function intakeVoiceTurnInner(
   // confirmVoiceSession can pop and auto-propose them one at a time once
   // this first step is confirmed -- with no further LLM calls.
   await setQueuedSteps(supabase, userId, outcome.conversationId, outcome.queuedSteps.length > 0 ? outcome.queuedSteps : null);
-  return { sessionId, state: "AwaitingConfirmation", message };
+  return message;
+}
+
+export type CallProposalResult =
+  | { status: "awaiting_confirmation"; sessionId: string; message: string }
+  /** Below the confidence bar: nothing was recorded; the caller should ask the user to rephrase. */
+  | { status: "needs_rephrase"; summary: string };
+
+/**
+ * The Realtime call's equivalent of a press-to-talk turn's mutation-proposal
+ * branch. A call has no per-turn voice_sessions row of its own, so this mints
+ * one and walks it to AwaitingConfirmation exactly as intakeVoiceTurnInner
+ * does (same confidence bar, same cascade disclosure, same pre-arm expiry and
+ * queued steps). Confirmation is deliberately NOT done here: the user's yes
+ * goes through confirmVoiceSession like any other turn.
+ *
+ * `heardTranscript` is what the user said, as transcribed by the call; it is
+ * stored the same way a press-to-talk transcript is.
+ */
+export async function proposeMutationForCall(
+  supabase: SupabaseClient<Database>,
+  userId: string,
+  outcome: MutationProposalOutcome,
+  heardTranscript: string | null,
+): Promise<CallProposalResult> {
+  if (!meetsConfidenceBar(outcome.confidence)) return { status: "needs_rephrase", summary: outcome.summary };
+
+  const { data: created, error: insertError } = await supabase.from("voice_sessions").insert({ user_id: userId }).select("id, state").single();
+  if (insertError) throw insertError;
+  const sessionId = created.id;
+
+  await transition(supabase, userId, sessionId, created.state, "user_initiates_capture", {});
+  await transition(supabase, userId, sessionId, "Listening", "capture_ends", { transcript: heardTranscript ?? "(voice call)" });
+
+  const message = await advanceProposalToAwaitingConfirmation(supabase, userId, sessionId, outcome);
+  return { status: "awaiting_confirmation", sessionId, message };
 }
 
 export interface VoiceConfirmResult {

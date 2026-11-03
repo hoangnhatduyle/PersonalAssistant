@@ -2032,6 +2032,38 @@ export type Database = {
           },
         ]
       }
+      voice_realtime_calls: {
+        Row: {
+          ended_at: string | null
+          ended_reason: string | null
+          id: string
+          started_at: string
+          user_id: string
+        }
+        Insert: {
+          ended_at?: string | null
+          ended_reason?: string | null
+          id?: string
+          started_at?: string
+          user_id: string
+        }
+        Update: {
+          ended_at?: string | null
+          ended_reason?: string | null
+          id?: string
+          started_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "voice_realtime_calls_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       voice_sessions: {
         Row: {
           confidence_score: number | null
@@ -3088,6 +3120,7 @@ export type Database = {
         Args: { p_deadline_id: string }
         Returns: number
       }
+      close_open_voice_realtime_calls: { Args: never; Returns: undefined }
       complete_knowledge_import: {
         Args: { p_chunks: Json; p_raw_content: string; p_source_id: string }
         Returns: boolean
@@ -3237,6 +3270,10 @@ export type Database = {
         }
       }
       duplicate_task: { Args: { p_task_id: string }; Returns: string }
+      end_voice_realtime_call: {
+        Args: { p_call_id: string; p_reason?: string }
+        Returns: string
+      }
       fail_knowledge_import: {
         Args: { p_error_message: string; p_source_id: string }
         Returns: boolean

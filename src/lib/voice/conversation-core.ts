@@ -236,7 +236,7 @@ function roundToMinute(now: Date): Date {
  * snapshot, open draft). Lives in `input[0]`, not `instructions`, so the
  * stable system prompt + tool schemas can be prompt-cached across turns.
  */
-function buildTurnContext(
+export function buildTurnContext(
   now: Date,
   timezone: string,
   context: EntityContext,
@@ -312,7 +312,18 @@ const proposeMutationMetaSchema = z.object({
  * for a well-formed-but-nonexistent id) rather than let it escape uncaught
  * and abort the whole turn into session.ts's generic apology fallback.
  */
-class ToolArgsError extends Error {}
+export class ToolArgsError extends Error {}
+
+/**
+ * The two fields of a model tool call these helpers read. Narrower than the
+ * Responses API's ResponseFunctionToolCall (which satisfies it structurally),
+ * so the Realtime call path -- whose function calls arrive as events with the
+ * same name + JSON-string arguments -- can reuse them unchanged.
+ */
+export interface ToolCallLike {
+  name: string;
+  arguments: string;
+}
 
 /**
  * Fixes entity ids the model copied imperfectly (see id-repair.ts) before any
@@ -327,7 +338,7 @@ function repairModelIds(raw: unknown, context: EntityContext, toolName: string):
   return value;
 }
 
-function parseToolArgs<T>(schema: z.ZodType<T>, toolCall: OpenAI.Responses.ResponseFunctionToolCall, context?: EntityContext): T {
+function parseToolArgs<T>(schema: z.ZodType<T>, toolCall: ToolCallLike, context?: EntityContext): T {
   let raw: unknown;
   try {
     raw = JSON.parse(toolCall.arguments);
@@ -360,8 +371,8 @@ function parseToolArgs<T>(schema: z.ZodType<T>, toolCall: OpenAI.Responses.Respo
  * did out of resolveIntent -- propagating uncaught out of runConversationTurn
  * for session.ts's existing friendly-clarification catch to handle.
  */
-function parseProposeMutationArgs(
-  toolCall: OpenAI.Responses.ResponseFunctionToolCall,
+export function parseProposeMutationArgs(
+  toolCall: ToolCallLike,
   now: Date,
   timezone: string,
   openDraft: DraftMutationRecord | null,
@@ -427,8 +438,8 @@ const saveMutationDraftMetaSchema: z.ZodType<SaveMutationDraftArgs> = z.object({
  * to be missing a required field for its operation; only structural
  * validity (right target_type/operation/enum values) is enforced here.
  */
-function parseSaveMutationDraftArgs(
-  toolCall: OpenAI.Responses.ResponseFunctionToolCall,
+export function parseSaveMutationDraftArgs(
+  toolCall: ToolCallLike,
   context: EntityContext,
 ): { question: string; mutation: RawMutation } {
   let raw: unknown;
@@ -447,7 +458,7 @@ function dedupeCitationsBySourceId(citations: KnowledgeCitation[]): KnowledgeCit
   return [...new Map(citations.map((citation) => [citation.sourceId, citation])).values()];
 }
 
-interface ToolDispatchResult {
+export interface ToolDispatchResult {
   /** JSON-stringified as the {role: "tool"} message content the model reads next. */
   payload: unknown;
   newConversationId?: string;
@@ -463,8 +474,8 @@ interface ToolDispatchResult {
  * tool to CONVERSATION_TOOLS without a matching case here is a compile
  * error, not a silent no-op at runtime.
  */
-async function dispatchTool(
-  toolCall: OpenAI.Responses.ResponseFunctionToolCall,
+export async function dispatchTool(
+  toolCall: ToolCallLike,
   supabase: SupabaseClient<Database>,
   userId: string,
   conversationId: string,

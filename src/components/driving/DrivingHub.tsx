@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useDeadlines } from "@/hooks/useDeadlines";
 import { useTasks } from "@/hooks/useTasks";
@@ -13,11 +13,15 @@ import { buildDrivingQueue, type DrivingQueueItem } from "@/lib/driving/build-dr
 import { DrivingCardDeck, type DrivingCardMeta } from "@/components/driving/DrivingCardDeck";
 import type { DrivingCardRow } from "@/components/driving/DrivingCard";
 import { CaptureChannel } from "@/components/assistant/CaptureChannel";
+import { CallPanel } from "@/components/driving/CallPanel";
 import { Button } from "@/components/ui/Button";
 import { Skeleton } from "@/components/ui/Skeleton";
 
 export function DrivingHub() {
   const router = useRouter();
+  // While a voice call is live it holds the microphone and the audio output,
+  // so the push-to-talk control (which wants both) steps aside.
+  const [callActive, setCallActive] = useState(false);
   // Deadlines are owner-only everywhere now (People feature) — matches
   // Voice Assistant's get_person_schedule, which never returns a tracked
   // person's Deadlines either.
@@ -112,7 +116,9 @@ export function DrivingHub() {
 
       {isLoading ? <Skeleton className="h-72 w-full" /> : <DrivingCardDeck items={queue} getRow={getRow} getMeta={getMeta} />}
 
-      <CaptureChannel large />
+      <CallPanel onActiveChange={setCallActive} />
+
+      {callActive ? null : <CaptureChannel large />}
     </div>
   );
 }
