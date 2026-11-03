@@ -158,14 +158,40 @@ export async function executeCallTool(ports: CallToolPorts, input: ExecuteCallTo
   }
 }
 
+/**
+ * Says whose schedule a get_person_schedule result is. Asked about someone not
+ * on the list ("Tien"), the call model has been seen to look up the only person
+ * it does have and read that out as if it answered; naming the person in the
+ * result, at the moment it decides what to say, lets it notice the mismatch.
+ */
+function annotatePersonSchedule(call: ToolCallLike, state: CallState, output: Record<string, unknown>): Record<string, unknown> {
+  if (call.name !== "get_person_schedule" || "error" in output) return output;
+  let requested: unknown;
+  try {
+    requested = (JSON.parse(call.arguments) as { person_id?: unknown }).person_id;
+  } catch {
+    return output;
+  }
+  const ids = state.context.people.map((person) => person.id);
+  const id = typeof requested === "string" && ids.includes(requested) ? requested : repairId(requested, ids);
+  const person = state.context.people.find((candidate) => candidate.id === id);
+  if (!person) return output;
+  return {
+    ...output,
+    schedule_for: { name: person.name, relationship: person.relationship },
+    reminder: `This is ${person.name}'s schedule only. If the user asked about someone with a different name, do not read it out: say you don't have anyone tracked by that name.`,
+  };
+}
+
 async function dispatchData(ports: CallToolPorts, call: ToolCallLike, now: Date): Promise<CallToolResult> {
   const state = await ports.loadState();
   const result = await ports.dispatch(call, state, now);
   const ui: CallToolUi = {};
   if (result.citations?.length) ui.citations = result.citations;
   if (result.extractionLabel) ui.extractionLabel = result.extractionLabel;
+  const payload = typeof result.payload === "object" && result.payload !== null ? (result.payload as Record<string, unknown>) : { result: result.payload };
   return {
-    output: typeof result.payload === "object" && result.payload !== null ? (result.payload as Record<string, unknown>) : { result: result.payload },
+    output: annotatePersonSchedule(call, state, payload),
     ...(Object.keys(ui).length > 0 ? { ui } : {}),
   };
 }

@@ -119,6 +119,36 @@ describe("executeCallTool: data tools", () => {
   });
 });
 
+describe("executeCallTool: person schedules", () => {
+  const PERSON_ID = "77777777-7777-4777-8777-777777777777";
+  const withPeople = () =>
+    makePorts({
+      loadState: vi.fn(async () => ({
+        context: { ...context, people: [{ id: PERSON_ID, name: "Châu", relationship: "sister" }] } as never,
+        timezone: "America/New_York",
+        conversationId: CONVERSATION_ID,
+      })),
+      dispatch: vi.fn(async () => ({ payload: { rankedSchedule: [], overdueItems: [] } })),
+    });
+
+  it("says whose schedule it is, and tells the model not to read it out for a different name", async () => {
+    const result = await run(withPeople(), "get_person_schedule", { person_id: PERSON_ID, window: "date", date: "2026-11-04" });
+    expect(result.output).toMatchObject({ rankedSchedule: [], schedule_for: { name: "Châu", relationship: "sister" } });
+    expect(String(result.output.reminder)).toMatch(/Châu's schedule only.*different name.*don't have anyone tracked by that name/);
+  });
+
+  it("still names the person when the model garbled the id", async () => {
+    const result = await run(withPeople(), "get_person_schedule", { person_id: "77777777-7777-4777-8777-7777777fffff", window: "date", date: "2026-11-04" });
+    expect(result.output).toMatchObject({ schedule_for: { name: "Châu" } });
+  });
+
+  it("leaves an error result, and every other tool's result, exactly as it was", async () => {
+    const failing = makePorts({ dispatch: vi.fn(async () => ({ payload: { error: "Unknown person_id" } })) });
+    expect((await run(failing, "get_person_schedule", { person_id: PERSON_ID, window: "date", date: null })).output).toEqual({ error: "Unknown person_id" });
+    expect((await run(withPeople(), "get_schedule", { window: "week", date: null })).output).toEqual({ rankedSchedule: [], overdueItems: [] });
+  });
+});
+
 describe("executeCallTool: proposing a change", () => {
   it("records a proposal, clears any open draft, and tells the screen to show Confirm / Cancel", async () => {
     const ports = makePorts();

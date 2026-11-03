@@ -44,6 +44,11 @@ describe("buildRealtimeInstructions", () => {
     expect(REALTIME_ADAPTATION).toMatch(/end_call/);
   });
 
+  it("forbids substituting the only tracked person for a name that isn't on the list", () => {
+    expect(REALTIME_ADAPTATION).toMatch(/not in the "people" list, say you don't have anyone tracked by that name/);
+    expect(REALTIME_ADAPTATION).toMatch(/even when the list holds only one person, never substitute/);
+  });
+
   it("includes only the most recent turns of earlier conversation, labelled as history", () => {
     const history = Array.from({ length: 12 }, (_, i) => ({ role: i % 2 ? ("assistant" as const) : ("user" as const), content: `turn ${i}` }));
     const text = buildRealtimeInstructions({ ...base, history } as never);
