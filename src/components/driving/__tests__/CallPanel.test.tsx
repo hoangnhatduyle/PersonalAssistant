@@ -3,6 +3,7 @@ import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { renderWithProviders } from "@/test/render";
 import type { CallSnapshot } from "@/lib/voice/realtime/call-controller";
 import type { UseRealtimeCall } from "@/hooks/useRealtimeCall";
+import { CALL_DIAGNOSTICS_STORAGE_KEY } from "@/hooks/useCallDiagnostics";
 
 const baseSnapshot: CallSnapshot = {
   phase: "idle",
@@ -182,6 +183,18 @@ describe("CallPanel", () => {
       setSnapshot({ phase: "live" });
       renderWithProviders(<CallPanel />);
       expect(screen.queryByText(/reply latency/)).toBeNull();
+    });
+
+    it("also show when the Settings toggle is on for this device, with no ?debug=1 in the address", async () => {
+      window.history.pushState({}, "", "/driving");
+      window.localStorage.setItem(CALL_DIAGNOSTICS_STORAGE_KEY, "1");
+      setSnapshot({ phase: "live" });
+      try {
+        renderWithProviders(<CallPanel />);
+        expect(await screen.findByText(/reply latency 640 ms median/)).toBeTruthy();
+      } finally {
+        window.localStorage.clear();
+      }
     });
 
     it("show the mic settings, reply latency and cache share with ?debug=1", async () => {

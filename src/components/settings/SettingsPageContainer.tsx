@@ -8,6 +8,7 @@ import { PushNotificationsCard } from "@/components/settings/PushNotificationsCa
 import { PeopleManagementCard } from "@/components/settings/PeopleManagementCard";
 import { AppUpdatesCard } from "@/components/settings/AppUpdatesCard";
 import { FaceIdLockToggleCard } from "@/components/settings/FaceIdLockToggleCard";
+import { CallDiagnosticsToggleCard } from "@/components/settings/CallDiagnosticsToggleCard";
 import { KnowledgeSection } from "@/components/knowledge/KnowledgeSection";
 
 type Props = {
@@ -53,6 +54,7 @@ export function SettingsPageContainer({ userId, userEmail }: Props) {
         </h2>
         <AppUpdatesCard />
         <FaceIdLockToggleCard userId={userId} userEmail={userEmail} />
+        <CallDiagnosticsToggleCard />
       </section>
     </div>
   );

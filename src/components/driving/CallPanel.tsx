@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { GlassPanel } from "@/components/ui/GlassPanel";
 import { useConfirmVoiceTurn, useDeclineVoiceTurn } from "@/hooks/useVoiceTurn";
 import { useRealtimeCall } from "@/hooks/useRealtimeCall";
+import { useCallDiagnostics } from "@/hooks/useCallDiagnostics";
 import type { CallActivity, CallDebug } from "@/lib/voice/realtime/call-controller";
 
 const ACTIVITY_LABEL: Record<CallActivity, string> = {
@@ -32,7 +33,7 @@ function median(values: number[]): number | null {
   return sorted[Math.floor(sorted.length / 2)];
 }
 
-/** `?debug=1`: what the browser actually gave the call, and how it is performing. */
+/** `?debug=1` or the Settings toggle: what the browser actually gave the call, and how it is performing. */
 function DebugOverlay({ debug }: { debug: CallDebug }) {
   const latency = median(debug.responseLatenciesMs);
   const cachedShare = debug.usage.inputTokens > 0 ? Math.round((debug.usage.cachedInputTokens / debug.usage.inputTokens) * 100) : null;
@@ -75,7 +76,9 @@ export function CallPanel({ onActiveChange }: Props) {
   const { snapshot, start, end, setMuted, reportScreenDecision } = useRealtimeCall();
   const confirmTurn = useConfirmVoiceTurn();
   const declineTurn = useDeclineVoiceTurn();
-  const debug = useSyncExternalStore(subscribeNever, readDebugFlag, () => false);
+  const debugFromAddress = useSyncExternalStore(subscribeNever, readDebugFlag, () => false);
+  const [debugFromSettings] = useCallDiagnostics();
+  const debug = debugFromAddress || debugFromSettings;
 
   const inCall = snapshot.phase === "connecting" || snapshot.phase === "live" || snapshot.phase === "ending";
   useEffect(() => {
