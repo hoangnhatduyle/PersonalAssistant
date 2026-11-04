@@ -1,16 +1,16 @@
 /**
  * Realtime voice call limits and defaults. The caps are cost controls on a
- * metered model (agreed with the user: 5 minutes a call, 15 a day), enforced
+ * metered model (agreed with the user: 10 minutes a call, 20 a day), enforced
  * from server-side records (see budget.ts and 0058_voice_realtime_calls.sql),
  * with the client timers in useRealtimeCall as the first line of defence.
  */
 
-/** Hard cap on one call. Also hard-coded in 0058's end_voice_realtime_call; a unit test keeps them equal. */
-export const REALTIME_MAX_CALL_SECONDS = 300;
+/** Hard cap on one call. Also hard-coded in the newest migration defining end_voice_realtime_call (0059); a unit test keeps them equal. */
+export const REALTIME_MAX_CALL_SECONDS = 600;
 /** Total call time per user per local day. */
-export const REALTIME_DAILY_SECONDS = 900;
+export const REALTIME_DAILY_SECONDS = 1200;
 /** The assistant tells the user the call is about to end this far in. */
-export const REALTIME_WARNING_AT_SECONDS = 270;
+export const REALTIME_WARNING_AT_SECONDS = 570;
 /** Hang up after this long with nobody speaking, so a forgotten open call stops costing. */
 export const REALTIME_IDLE_TIMEOUT_SECONDS = 60;
 /** Hang up if the app has been in the background this long (the call cannot be heard anyway). */

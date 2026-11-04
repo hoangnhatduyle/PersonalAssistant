@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { callSeconds, computeCallBudget, localDayStart, usedSeconds } from "../budget";
@@ -36,21 +36,21 @@ describe("computeCallBudget", () => {
   });
 
   it("sums the day's calls and shrinks the next call to what is left", () => {
-    const rows = [call(5000, 4800), call(4000, 3700), call(3000, 2750)]; // 200 + 300 + 250 = 750
-    expect(computeCallBudget(rows, NOW)).toEqual({ usedSeconds: 750, remainingSeconds: 150, maxSeconds: 150, allowed: true });
+    const rows = [call(5000, 4800), call(4000, 3400), call(3000, 2750)]; // 200 + 600 + 250 = 1050
+    expect(computeCallBudget(rows, NOW)).toEqual({ usedSeconds: 1050, remainingSeconds: 150, maxSeconds: 150, allowed: true });
   });
 
   it("refuses a new call once less than the minimum remains", () => {
-    const rows = [call(9000, 8700), call(8000, 7700), call(7000, 6710)]; // 300 + 300 + 290 = 890, 10 left
+    const rows = [call(9000, 8400), call(8000, 7410)]; // 600 + 590 = 1190, 10 left
     expect(computeCallBudget(rows, NOW)).toMatchObject({ remainingSeconds: 10, allowed: true });
-    const spent = [...rows, call(600, 595)]; // +5 => 895, 5 left
+    const spent = [...rows, call(600, 595)]; // +5 => 1195, 5 left
     expect(computeCallBudget(spent, NOW)).toMatchObject({ remainingSeconds: 5, maxSeconds: 5, allowed: false });
     expect(REALTIME_MIN_START_SECONDS).toBe(10);
   });
 
   it("never goes negative when the day is overspent", () => {
-    const rows = [call(9000, 8700), call(8000, 7700), call(7000, 6700), call(6000, 5700)];
-    expect(computeCallBudget(rows, NOW)).toMatchObject({ usedSeconds: 1200, remainingSeconds: 0, maxSeconds: 0, allowed: false });
+    const rows = [call(9000, 8400), call(8000, 7400), call(7000, 6400)]; // three full 600s calls = 1800
+    expect(computeCallBudget(rows, NOW)).toMatchObject({ usedSeconds: 1800, remainingSeconds: 0, maxSeconds: 0, allowed: false });
   });
 
   it("counts a call that was never ended against the day", () => {
@@ -76,9 +76,16 @@ describe("localDayStart", () => {
 });
 
 describe("limits stay consistent across layers", () => {
-  const migration = readFileSync(path.join(__dirname, "../../../../../supabase/migrations/0058_voice_realtime_calls.sql"), "utf8");
+  // The call cap lives in SQL too (end_voice_realtime_call and close_open_voice_realtime_calls clamp the
+  // recorded end time). Every migration that redefines them supersedes the last, so check the newest.
+  const migrationsDir = path.join(__dirname, "../../../../../supabase/migrations");
+  const newest = readdirSync(migrationsDir)
+    .filter((file) => file.endsWith(".sql") && readFileSync(path.join(migrationsDir, file), "utf8").includes("function public.end_voice_realtime_call"))
+    .sort()
+    .at(-1)!;
+  const migration = readFileSync(path.join(migrationsDir, newest), "utf8");
 
-  it("0058's SQL call cap equals REALTIME_MAX_CALL_SECONDS everywhere it appears", () => {
+  it("the newest migration defining the call functions uses REALTIME_MAX_CALL_SECONDS everywhere it appears", () => {
     const caps = [...migration.matchAll(/interval '(\d+) seconds'/g)].map((m) => Number(m[1]));
     expect(caps.length).toBeGreaterThanOrEqual(2);
     expect(new Set(caps)).toEqual(new Set([REALTIME_MAX_CALL_SECONDS]));
@@ -87,5 +94,10 @@ describe("limits stay consistent across layers", () => {
   it("the warning comes before the cap, and the daily budget fits whole calls", () => {
     expect(REALTIME_WARNING_AT_SECONDS).toBeLessThan(REALTIME_MAX_CALL_SECONDS);
     expect(REALTIME_DAILY_SECONDS % REALTIME_MAX_CALL_SECONDS).toBe(0);
+  });
+
+  it("is the 10-minute call and 20-minute day the user agreed", () => {
+    expect(REALTIME_MAX_CALL_SECONDS).toBe(600);
+    expect(REALTIME_DAILY_SECONDS).toBe(1200);
   });
 });

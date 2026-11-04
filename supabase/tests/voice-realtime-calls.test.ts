@@ -1,9 +1,11 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { adminClient, createAuthenticatedUser, type TestUser } from "./helpers";
+import { REALTIME_MAX_CALL_SECONDS } from "@/lib/voice/realtime/constants";
 
-// 0058_voice_realtime_calls.sql: the server-owned record behind the voice call
-// caps. What matters is that a client can neither rewrite nor remove its own
-// rows, and that the end time is the server's clock capped at 300 s.
+// 0058_voice_realtime_calls.sql (cap raised to 600 s by 0059): the server-owned
+// record behind the voice call caps. What matters is that a client can neither
+// rewrite nor remove its own rows, and that the end time is the server's clock
+// capped at REALTIME_MAX_CALL_SECONDS.
 describe("voice_realtime_calls", () => {
   const admin = adminClient();
   let userA: TestUser;
@@ -75,7 +77,7 @@ describe("voice_realtime_calls", () => {
       expect(row!.ended_reason).toBe("user");
     });
 
-    it("caps the recorded length at 300 seconds, however late the end is reported", async () => {
+    it("caps the recorded length at the per-call cap (10 minutes), however late the end is reported", async () => {
       const id = await startCall(userA);
       // Make the call look 20 minutes old (service role only; clients cannot touch started_at).
       const startedAt = new Date(Date.now() - 20 * 60_000).toISOString();
@@ -84,7 +86,8 @@ describe("voice_realtime_calls", () => {
       await userA.client.rpc("end_voice_realtime_call", { p_call_id: id, p_reason: "user" });
       const { data: row } = await admin.from("voice_realtime_calls").select("started_at, ended_at").eq("id", id).single();
       const seconds = (new Date(row!.ended_at as string).getTime() - new Date(row!.started_at as string).getTime()) / 1000;
-      expect(seconds).toBe(300);
+      expect(seconds).toBe(REALTIME_MAX_CALL_SECONDS);
+      expect(seconds).toBe(600);
     });
 
     it("is harmless to repeat: the second call changes nothing and returns null", async () => {
