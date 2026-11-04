@@ -19,6 +19,8 @@ import { useDeleteLibraryEmployer, useLibraryEmployer, useUpdateLibraryEmployer 
 import { ApiError } from "@/lib/http/client";
 import { funnelCounts } from "@/lib/library/application-status";
 import { safeExternalHref } from "@/lib/library/url";
+import { formatDate } from "@/lib/format/zoned-datetime";
+import { useUserTimezone } from "@/hooks/useUserTimezone";
 import type { LibraryApplicationPayload, LibraryEmployerPayload } from "@/lib/api/library-schemas";
 import type { LibraryEmployerDetail } from "@/lib/api/entity-types";
 
@@ -73,6 +75,7 @@ function ExternalLink({ url, label }: { url: string | null; label: string }) {
 function EmployerDetailBody({ employer, onBack }: { employer: LibraryEmployerDetail; onBack: () => void }) {
   const router = useRouter();
   const { showToast } = useToast();
+  const timeZone = useUserTimezone();
   const [isEditOpen, setEditOpen] = useState(false);
   const [isAddRoleOpen, setAddRoleOpen] = useState(false);
   const [isDeleteOpen, setDeleteOpen] = useState(false);
@@ -111,7 +114,7 @@ function EmployerDetailBody({ employer, onBack }: { employer: LibraryEmployerDet
     }
   };
 
-  const added = new Date(employer.created_at).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+  const added = formatDate(employer.created_at, timeZone, { year: "numeric", month: "short", day: "numeric" });
 
   return (
     <article className="library-atmosphere flex flex-col gap-6 rounded-panel">

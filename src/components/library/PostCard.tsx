@@ -1,4 +1,8 @@
+"use client";
+
 import Link from "next/link";
+import { formatDate } from "@/lib/format/zoned-datetime";
+import { useUserTimezone } from "@/hooks/useUserTimezone";
 import type { LibraryPostImage, LibraryPostWithRelations } from "@/lib/api/entity-types";
 import { computeTargetSize } from "@/lib/library/image-sizing";
 import { THUMB_MAX_EDGE } from "@/lib/library/constants";
@@ -13,8 +17,8 @@ export function postImageSrc(image: Pick<LibraryPostImage, "id">, size: "thumb" 
   return `/api/library/post-images/${image.id}/file?size=${size}`;
 }
 
-function formatSaved(createdAt: string): string {
-  return new Date(createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+function formatSaved(createdAt: string, timeZone: string): string {
+  return formatDate(createdAt, timeZone, { month: "short", day: "numeric" });
 }
 
 type Props = {
@@ -23,10 +27,11 @@ type Props = {
 
 /** One compact saved post: stacked-layer cover (depth ~ screenshot count; a platform default cover when there are none), mono eyebrow, display title, tags. Favorites carry a star. */
 export function PostCard({ post }: Props) {
+  const timeZone = useUserTimezone();
   const cover = post.images[0];
   const layers = Math.min(post.images.length, MAX_LAYERS) - 1;
   const host = displayHost(post.url);
-  const eyebrow = [platformLabel(post.platform), host && host !== `${post.platform}.com` ? host : null, formatSaved(post.created_at)]
+  const eyebrow = [platformLabel(post.platform), host && host !== `${post.platform}.com` ? host : null, formatSaved(post.created_at, timeZone)]
     .filter(Boolean)
     .join(" · ");
   const thumbSize = cover ? computeTargetSize(cover.width, cover.height, THUMB_MAX_EDGE) : null;

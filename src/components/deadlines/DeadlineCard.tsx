@@ -9,6 +9,8 @@ import { DeadlineNotesPreview } from "@/components/notes/DeadlineNotesPreview";
 import type { DeadlineRow } from "@/lib/api/entity-types";
 import type { SessionProgress } from "@/lib/deadlines/session-progress";
 import { formatDeadlineRecurrence } from "@/lib/deadlines/recurrence";
+import { formatDateTime } from "@/lib/format/zoned-datetime";
+import { useUserTimezone } from "@/hooks/useUserTimezone";
 
 type Props = {
   deadline: DeadlineRow;
@@ -19,6 +21,7 @@ type Props = {
 
 export function DeadlineCard({ deadline, courseName, sessionProgress }: Props) {
   const recurrenceLabel = formatDeadlineRecurrence(deadline.recurrence_days, deadline.recurrence_end_date);
+  const timeZone = useUserTimezone();
   return (
     <GlassPanel className="flex flex-col gap-3 p-4">
       <div className="flex items-start justify-between gap-3">
@@ -26,7 +29,7 @@ export function DeadlineCard({ deadline, courseName, sessionProgress }: Props) {
           <Link href={`/courses/deadlines/${deadline.id}`} className="font-display text-base font-medium text-text-primary hover:underline">
             {deadline.title}
           </Link>
-          <p className="mt-0.5 font-mono text-xs text-text-secondary">Due {new Date(deadline.due_at).toLocaleString()}</p>
+          <p className="mt-0.5 font-mono text-xs text-text-secondary">Due {formatDateTime(deadline.due_at, timeZone)}</p>
           {courseName && <p className="mt-0.5 text-xs text-text-secondary">{courseName}</p>}
           {recurrenceLabel && <p className="mt-0.5 font-mono text-xs text-accent-indigo">{recurrenceLabel}</p>}
         </div>

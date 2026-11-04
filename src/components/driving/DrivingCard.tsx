@@ -9,6 +9,8 @@ import { DeadlineTransitionMenu } from "@/components/deadlines/DeadlineTransitio
 import { TaskTransitionMenu } from "@/components/board/TaskTransitionMenu";
 import { SessionTransitionButtons } from "@/components/deadlines/SessionsSection";
 import { DEADLINE_STATUS_TONE, TASK_STATUS_TONE, SESSION_STATUS_TONE } from "@/lib/status-colors";
+import { formatDate } from "@/lib/format/zoned-datetime";
+import { useUserTimezone } from "@/hooks/useUserTimezone";
 import type { AppointmentRow, DeadlineRow, TaskRow } from "@/lib/api/entity-types";
 import type { DrivingQueueItem } from "@/lib/driving/build-driving-queue";
 
@@ -30,9 +32,9 @@ const BADGE_CLASS = "w-fit px-4 py-1.5 text-base";
 const ACTION_BUTTON_CLASS = "px-6 py-3 text-base";
 
 /** "Mon, Sep 7 · 11:42 PM" -- same weekday/month/day shape as SessionsSection's formatSessionDate. */
-function formatDateTime(at: Date): string {
-  const date = at.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
-  const time = at.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+function formatWhen(at: Date, timeZone: string): string {
+  const date = formatDate(at, timeZone, { weekday: "short", month: "short", day: "numeric" });
+  const time = formatDate(at, timeZone, { hour: "numeric", minute: "2-digit" });
   return `${date} · ${time}`;
 }
 
@@ -94,12 +96,13 @@ function cardBadgeAndActions(item: DrivingQueueItem, row: DrivingCardRow): { bad
 
 export function DrivingCard({ item, row, subtitle, tags, personLabel }: Props) {
   const router = useRouter();
+  const timeZone = useUserTimezone();
   const { badge, actions } = cardBadgeAndActions(item, row);
 
   return (
     <GlassPanel variant="raised" className="flex h-96 w-full flex-col gap-4 overflow-y-auto p-8">
       <div className="flex flex-col gap-2">
-        <span className="text-lg uppercase tracking-wide text-text-eyebrow">{formatDateTime(item.at)}</span>
+        <span className="text-lg uppercase tracking-wide text-text-eyebrow">{formatWhen(item.at, timeZone)}</span>
         <h2 className="font-display text-3xl font-semibold text-text-primary">{item.title}</h2>
         {subtitle && <p className="text-base text-text-secondary">{subtitle}</p>}
         {tags && tags.length > 0 && (

@@ -15,6 +15,8 @@ import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
 import { DEADLINE_STATUS_TONE } from "@/lib/status-colors";
 import { formatDeadlineRecurrence } from "@/lib/deadlines/recurrence";
+import { formatDateTime } from "@/lib/format/zoned-datetime";
+import { useUserTimezone } from "@/hooks/useUserTimezone";
 import type { DeadlinePayload } from "@/lib/api/schemas";
 
 type Props = {
@@ -26,6 +28,7 @@ export function DeadlineDetailContainer({ deadlineId }: Props) {
   const { data: course } = useCourse(deadline?.course_id ?? "");
   const updateDeadline = useUpdateDeadline(deadlineId);
   const { showToast } = useToast();
+  const timeZone = useUserTimezone();
   const [isEditing, setIsEditing] = useState(false);
 
   if (isLoading) return <Skeleton className="h-64 w-full" />;
@@ -50,7 +53,7 @@ export function DeadlineDetailContainer({ deadlineId }: Props) {
           <div>
             <p className="font-mono text-xs uppercase tracking-wide text-text-eyebrow">{course?.name ?? "Deadline"}</p>
             <h1 className="mt-1 font-display text-2xl font-semibold text-text-primary">{deadline.title}</h1>
-            <p className="mt-1 font-mono text-xs text-text-secondary">Due {new Date(deadline.due_at).toLocaleString()}</p>
+            <p className="mt-1 font-mono text-xs text-text-secondary">Due {formatDateTime(deadline.due_at, timeZone)}</p>
             {recurrenceLabel && <p className="mt-1 font-mono text-xs text-accent-indigo">{recurrenceLabel}</p>}
           </div>
           <StatusPill status={deadline.status} tone={DEADLINE_STATUS_TONE[deadline.status]} />

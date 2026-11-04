@@ -5,6 +5,8 @@ import { CSS } from "@dnd-kit/utilities";
 import { Badge } from "@/components/ui/Badge";
 import { LabelChip } from "@/components/ui/LabelChip";
 import { ITEM_PRIORITY_TONE } from "@/lib/status-colors";
+import { formatDate } from "@/lib/format/zoned-datetime";
+import { useUserTimezone } from "@/hooks/useUserTimezone";
 import type { TaskWithLabels } from "@/lib/api/entity-types";
 
 type Props = {
@@ -14,11 +16,8 @@ type Props = {
   onOpenCard: (taskId: string) => void;
 };
 
-function formatDueDate(dueAt: string): string {
-  return new Date(dueAt).toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-  });
+function formatDueDate(dueAt: string, timeZone: string): string {
+  return formatDate(dueAt, timeZone, { month: "short", day: "numeric" });
 }
 
 /** One draggable card in a Board column — compact by design (title, due date, priority, person, labels); open it for the full detail/transition/notes view. */
@@ -34,6 +33,7 @@ export function BoardCard({ task, personName, onOpenCard }: Props) {
     id: task.id,
     data: { type: "card", listId: task.list_id },
   });
+  const timeZone = useUserTimezone();
 
   const isResolved = task.status !== "Open";
   const isOverdue =
@@ -74,7 +74,7 @@ export function BoardCard({ task, personName, onOpenCard }: Props) {
               <span
                 className={`font-mono text-[11px] ${isOverdue ? "text-status-urgent" : "text-text-secondary"}`}
               >
-                {formatDueDate(task.due_at)}
+                {formatDueDate(task.due_at, timeZone)}
               </span>
             )}
             {task.is_long_term && <Badge tone="purple">Long-term</Badge>}

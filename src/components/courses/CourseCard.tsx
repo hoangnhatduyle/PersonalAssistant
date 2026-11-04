@@ -6,6 +6,8 @@ import { GlassPanel } from "@/components/ui/GlassPanel";
 import { Badge } from "@/components/ui/Badge";
 import { formatBlocksSummary } from "@/lib/calendar/recurrence";
 import { formatLeadMinutes } from "@/lib/reminders/lead-time";
+import { formatDate } from "@/lib/format/zoned-datetime";
+import { useUserTimezone } from "@/hooks/useUserTimezone";
 import type { CourseWorkloadPreview } from "@/lib/courses/course-workload";
 import type { CourseRow } from "@/lib/api/entity-types";
 
@@ -28,6 +30,7 @@ const EMPTY_PREVIEW: CourseWorkloadPreview = {
 };
 
 export function CourseCard({ course, personName, personColor, preview = EMPTY_PREVIEW }: Props) {
+  const timeZone = useUserTimezone();
   const [isExpanded, setIsExpanded] = useState(false);
   const hasPreviewItems = preview.nextDeadlines.length > 0 || preview.openTasks.length > 0;
 
@@ -83,7 +86,7 @@ export function CourseCard({ course, personName, personColor, preview = EMPTY_PR
                   className="flex items-baseline justify-between gap-2 text-xs text-text-secondary hover:text-text-primary hover:underline"
                 >
                   <span className="truncate">{deadline.title}</span>
-                  <span className="shrink-0 font-mono">{new Date(deadline.due_at).toLocaleDateString()}</span>
+                  <span className="shrink-0 font-mono">{formatDate(deadline.due_at, timeZone)}</span>
                 </Link>
               ))}
               {preview.openTasks.map((task) => (

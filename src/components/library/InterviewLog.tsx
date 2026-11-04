@@ -9,6 +9,8 @@ import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Dialog } from "@/components/ui/Dialog";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { useToast } from "@/components/ui/Toast";
+import { formatDateTime } from "@/lib/format/zoned-datetime";
+import { useUserTimezone } from "@/hooks/useUserTimezone";
 import { INTERVIEW_KIND_LABEL, INTERVIEW_OUTCOME_LABEL } from "@/lib/library/labels";
 import type { InterviewOutcome } from "@/lib/library/constants";
 import type { StatusTone } from "@/lib/status-colors";
@@ -17,9 +19,9 @@ import type { LibraryInterviewWithPerson } from "@/lib/api/entity-types";
 
 const OUTCOME_TONE: Record<InterviewOutcome, StatusTone> = { pending: "warn", passed: "ok", failed: "urgent", cancelled: "neutral" };
 
-export function formatInterviewWhen(iso: string | null): string {
+export function formatInterviewWhen(iso: string | null, timeZone: string): string {
   if (!iso) return "Not scheduled";
-  return new Date(iso).toLocaleString(undefined, { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
+  return formatDateTime(iso, timeZone, { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
 }
 
 type Props = {
@@ -31,6 +33,7 @@ type Props = {
 /** The interview rounds of one application: add / edit (in a Dialog, single level) / delete. */
 export function InterviewLog({ applicationId, applicationLabel }: Props) {
   const { showToast } = useToast();
+  const timeZone = useUserTimezone();
   const { data: interviews, isLoading, isError } = useLibraryInterviews(applicationId);
   const createInterview = useCreateInterview(applicationId);
   const updateInterview = useUpdateInterview();
@@ -88,7 +91,7 @@ export function InterviewLog({ applicationId, applicationLabel }: Props) {
                 </div>
               </div>
               <p className="font-mono text-[0.7rem] uppercase tracking-wide text-text-eyebrow">
-                {formatInterviewWhen(interview.scheduled_at)}
+                {formatInterviewWhen(interview.scheduled_at, timeZone)}
                 {interview.interviewer ? ` · with ${interview.interviewer.name}` : ""}
               </p>
               {interview.notes && <p className="whitespace-pre-wrap text-sm text-text-secondary">{interview.notes}</p>}

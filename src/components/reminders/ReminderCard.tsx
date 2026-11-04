@@ -9,6 +9,8 @@ import { SnoozeUntilPicker } from "@/components/reminders/SnoozeUntilPicker";
 import { useAckReminder } from "@/hooks/useReminders";
 import { useToast } from "@/components/ui/Toast";
 import { REMINDER_STATUS_TONE } from "@/lib/status-colors";
+import { formatDateTime } from "@/lib/format/zoned-datetime";
+import { useUserTimezone } from "@/hooks/useUserTimezone";
 import type { ReminderRow } from "@/lib/api/entity-types";
 
 type Props = {
@@ -23,6 +25,7 @@ export function ReminderCard({ reminder, targetTitle, personLabel }: Props) {
   const [isSnoozing, setIsSnoozing] = useState(false);
   const ack = useAckReminder(reminder.id);
   const { showToast } = useToast();
+  const timeZone = useUserTimezone();
 
   const handleAck = async (event: "user_acknowledges" | "user_dismisses") => {
     try {
@@ -51,7 +54,7 @@ export function ReminderCard({ reminder, targetTitle, personLabel }: Props) {
             <p className="font-display text-base font-medium text-text-primary">{targetTitle}</p>
             {personLabel && <Badge tone="accent">For {personLabel}</Badge>}
           </div>
-          <p className="mt-0.5 font-mono text-xs text-text-secondary">Triggered {new Date(reminder.trigger_at).toLocaleString()}</p>
+          <p className="mt-0.5 font-mono text-xs text-text-secondary">Triggered {formatDateTime(reminder.trigger_at, timeZone)}</p>
         </div>
         <StatusPill status={reminder.acknowledgment_state} tone={REMINDER_STATUS_TONE[reminder.acknowledgment_state]} />
       </div>

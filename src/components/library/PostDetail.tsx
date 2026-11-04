@@ -18,6 +18,8 @@ import { Switch } from "@/components/ui/Switch";
 import { useToast } from "@/components/ui/Toast";
 import { ApiError } from "@/lib/http/client";
 import { displayHost, safeExternalHref } from "@/lib/library/url";
+import { formatDate } from "@/lib/format/zoned-datetime";
+import { useUserTimezone } from "@/hooks/useUserTimezone";
 import type { LibraryPostPayload } from "@/lib/api/library-schemas";
 import type { LibraryPostImage, LibraryPostWithRelations } from "@/lib/api/entity-types";
 
@@ -62,6 +64,7 @@ export function PostDetail({ id }: Props) {
 function PostDetailBody({ post, onBack }: { post: LibraryPostWithRelations; onBack: () => void }) {
   const router = useRouter();
   const { showToast } = useToast();
+  const timeZone = useUserTimezone();
   const [isEditOpen, setEditOpen] = useState(false);
   const [isDeleteOpen, setDeleteOpen] = useState(false);
   const updatePost = useUpdateLibraryPost(post.id);
@@ -81,7 +84,7 @@ function PostDetailBody({ post, onBack }: { post: LibraryPostWithRelations; onBa
 
   const href = safeExternalHref(post.url);
   const host = displayHost(post.url);
-  const saved = new Date(post.created_at).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+  const saved = formatDate(post.created_at, timeZone, { year: "numeric", month: "short", day: "numeric" });
 
   const patch = async (changes: Parameters<typeof updatePost.mutateAsync>[0], message?: string) => {
     try {

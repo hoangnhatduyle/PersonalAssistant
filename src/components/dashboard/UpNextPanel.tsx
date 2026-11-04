@@ -15,6 +15,8 @@ import {
 import { buildOccurrenceStatusMap, occurrenceStatusMapKey } from "@/lib/appointments/occurrence-status";
 import { toDateOnly } from "@/lib/calendar/recurrence";
 import { formatRelativeTime } from "@/lib/format-relative-time";
+import { formatDateTime } from "@/lib/format/zoned-datetime";
+import { useUserTimezone } from "@/hooks/useUserTimezone";
 import { formatRingCountdown, ringFillFraction } from "@/lib/dashboard/countdown-rings";
 import { DEADLINE_STATUS_TONE, EVENT_STATUS_TONE, SESSION_STATUS_TONE, TASK_STATUS_TONE, type StatusTone } from "@/lib/status-colors";
 import { ITEM_KIND_BG_CLASS, ITEM_KIND_LABEL, ITEM_KIND_STROKE_CLASS } from "@/lib/dashboard/item-kind";
@@ -437,7 +439,8 @@ type RingTooltipProps = {
 function RingTooltip({ hovered, now, resolveStatus }: RingTooltipProps) {
   const { item, x, y } = hovered;
   const { status, tone } = resolveStatus(item);
-  const fullDateTime = item.at.toLocaleString(undefined, {
+  const timeZone = useUserTimezone();
+  const fullDateTime = formatDateTime(item.at, timeZone, {
     weekday: "short",
     month: "short",
     day: "numeric",

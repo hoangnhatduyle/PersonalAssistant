@@ -2,11 +2,13 @@
 
 import { useApplicationTimeline } from "@/hooks/useLibraryInterviews";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { formatDate } from "@/lib/format/zoned-datetime";
+import { useUserTimezone } from "@/hooks/useUserTimezone";
 import { APPLICATION_STATUS_LABEL } from "@/lib/library/application-status";
 import { INTERVIEW_KIND_LABEL, INTERVIEW_OUTCOME_LABEL } from "@/lib/library/labels";
 import type { LibraryTimelineEntry } from "@/lib/api/entity-types";
 
-const formatDay = (iso: string) => new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+const formatDay = (iso: string, timeZone: string) => formatDate(iso, timeZone, { month: "short", day: "numeric", year: "numeric" });
 
 function describeEntry(entry: LibraryTimelineEntry): { title: string; detail: string | null } {
   if (entry.type === "status") {
@@ -29,6 +31,7 @@ type Props = {
 /** Vertical rail merging the DB-written status history with the interview log, oldest first. */
 export function ApplicationTimeline({ applicationId, applicationLabel }: Props) {
   const { data: timeline, isLoading, isError } = useApplicationTimeline(applicationId);
+  const timeZone = useUserTimezone();
 
   return (
     <section aria-label={`Timeline for ${applicationLabel}`} className="flex flex-col gap-3">
@@ -48,7 +51,7 @@ export function ApplicationTimeline({ applicationId, applicationLabel }: Props) 
                 <span aria-hidden="true" className="dossier-node" />
                 <p className="text-sm font-medium text-text-primary">{title}</p>
                 <p className="font-mono text-[0.7rem] uppercase tracking-wide text-text-eyebrow">
-                  {formatDay(entry.at)}
+                  {formatDay(entry.at, timeZone)}
                   {detail ? ` · ${detail}` : ""}
                 </p>
               </li>

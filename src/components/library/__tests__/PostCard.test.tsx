@@ -1,5 +1,11 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
+import { renderWithProviders as render } from "@/test/render";
+
+vi.mock("@/hooks/useSettings", () => ({
+  useSettings: () => ({ data: { timezone: "America/Detroit" } }),
+}));
+
 import { PostCard } from "@/components/library/PostCard";
 import type { LibraryPostImage, LibraryPostWithRelations } from "@/lib/api/entity-types";
 
@@ -38,5 +44,13 @@ describe("PostCard cover", () => {
     const { container } = render(<PostCard post={post({ images: [image] })} />);
     expect(screen.queryByTestId("default-post-cover")).not.toBeInTheDocument();
     expect(container.querySelector("img")?.getAttribute("src")).toBe("/api/library/post-images/img1/file?size=thumb");
+  });
+});
+
+describe("PostCard saved date", () => {
+  it("shows the day the post was saved in the profile's time zone, not UTC", () => {
+    // Midnight UTC on Jan 1 is still the evening of Dec 31 in Detroit.
+    render(<PostCard post={post({ created_at: "2026-01-01T00:00:00Z" })} />);
+    expect(screen.getByText(/Dec 31/)).toBeInTheDocument();
   });
 });
