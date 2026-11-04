@@ -1,4 +1,5 @@
 import { HandsFreeVoiceToggleCard } from "@/components/settings/HandsFreeVoiceToggleCard";
+import { TimeZoneCard } from "@/components/settings/TimeZoneCard";
 import { ReminderCadenceCard } from "@/components/settings/ReminderCadenceCard";
 import { ReminderNotificationsCard } from "@/components/settings/ReminderNotificationsCard";
 import { PeopleManagementCard } from "@/components/settings/PeopleManagementCard";
@@ -13,6 +14,7 @@ export function SettingsPageContainer() {
           Preferences
         </h2>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <TimeZoneCard />
           <ReminderCadenceCard />
           <ReminderNotificationsCard />
           <HandsFreeVoiceToggleCard />

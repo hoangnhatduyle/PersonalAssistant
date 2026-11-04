@@ -3,6 +3,7 @@ import { render, screen, within } from "@testing-library/react";
 
 // Each card is stubbed to its own name: this test is about which cards the page
 // shows and in which section, not about how a card works.
+vi.mock("@/components/settings/TimeZoneCard", () => ({ TimeZoneCard: () => <div data-testid="card">Time zone</div> }));
 vi.mock("@/components/settings/ReminderCadenceCard", () => ({ ReminderCadenceCard: () => <div data-testid="card">Reminder cadence</div> }));
 vi.mock("@/components/settings/ReminderNotificationsCard", () => ({ ReminderNotificationsCard: () => <div data-testid="card">Reminder notifications</div> }));
 vi.mock("@/components/settings/HandsFreeVoiceToggleCard", () => ({ HandsFreeVoiceToggleCard: () => <div data-testid="card">Hands-free voice</div> }));
@@ -18,9 +19,9 @@ const cardsIn = (headingName: string) => {
 };
 
 describe("SettingsPageContainer", () => {
-  it("groups reminders, voice and call diagnostics under Preferences, in that order", () => {
+  it("groups time zone, reminders, voice and call diagnostics under Preferences, in that order", () => {
     render(<SettingsPageContainer />);
-    expect(cardsIn("Preferences")).toEqual(["Reminder cadence", "Reminder notifications", "Hands-free voice", "Call diagnostics"]);
+    expect(cardsIn("Preferences")).toEqual(["Time zone", "Reminder cadence", "Reminder notifications", "Hands-free voice", "Call diagnostics"]);
   });
 
   it("keeps only the app updates card under App", () => {
