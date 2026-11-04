@@ -40,6 +40,8 @@ export interface UseRealtimeCall {
   start: () => void;
   end: () => void;
   setMuted: (muted: boolean) => void;
+  /** Ask the assistant something with a button instead of a voice (see CallController.sendUserText). */
+  sendText: (text: string) => void;
   /** The user answered a pending change with the on-screen button; tell the model. */
   reportScreenDecision: (decision: { outcome: "executed" | "declined"; summary: string }) => void;
 }
@@ -81,7 +83,8 @@ export function useRealtimeCall(): UseRealtimeCall {
   const start = useCallback(() => void controller.start(), [controller]);
   const end = useCallback(() => controller.end("user"), [controller]);
   const setMuted = useCallback((muted: boolean) => controller.setMuted(muted), [controller]);
+  const sendText = useCallback((text: string) => controller.sendUserText(text), [controller]);
   const reportScreenDecision = useCallback<UseRealtimeCall["reportScreenDecision"]>((decision) => controller.reportScreenDecision(decision), [controller]);
 
-  return { snapshot, start, end, setMuted, reportScreenDecision };
+  return { snapshot, start, end, setMuted, sendText, reportScreenDecision };
 }

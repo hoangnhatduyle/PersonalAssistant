@@ -547,6 +547,22 @@ export class CallController {
     if (decision.outcome === "executed") void this.refreshContext();
   }
 
+  /**
+   * A request made with a button instead of a voice (the "Today" button): sent
+   * to the model as if the user had said it. Ignored unless the call is live
+   * and the assistant is not already mid-reply (the API refuses a second
+   * response while one is active), and shown as the user's last line so the
+   * captions read like the conversation.
+   */
+  sendUserText(text: string): void {
+    const trimmed = text.trim();
+    if (!trimmed || this.snapshot.phase !== "live" || this.snapshot.activity !== "listening") return;
+    this.touch();
+    this.update({ userLine: trimmed, activity: "thinking" });
+    this.send({ type: "conversation.item.create", item: { type: "message", role: "user", content: [{ type: "input_text", text: trimmed }] } });
+    this.send({ type: "response.create" });
+  }
+
   // -------------------------------------------------------------- control
 
   setMuted(muted: boolean): void {

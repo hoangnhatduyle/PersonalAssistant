@@ -285,3 +285,14 @@ body {
   .pipeline-card:focus-within,
   .pipeline-card:active { transform: none; }
 }
+
+/* Driving Mode call screen — CallScreen.tsx. A ring that swells off the avatar while the
+   call rings and while it is live. Hidden (not frozen mid-swell) for reduced motion. */
+@keyframes call-ring {
+  0% { transform: scale(0.92); opacity: 0.7; }
+  100% { transform: scale(1.35); opacity: 0; }
+}
+.call-ring { opacity: 0; }
+@media (prefers-reduced-motion: no-preference) {
+  .call-ring { animation: call-ring 2.2s ease-out infinite; }
+}

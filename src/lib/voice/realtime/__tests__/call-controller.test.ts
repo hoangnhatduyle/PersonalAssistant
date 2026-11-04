@@ -542,3 +542,40 @@ describe("conversation state", () => {
     expect(listener.mock.calls.length).toBe(count);
   });
 });
+
+describe("sending a request from a button (sendUserText)", () => {
+  const TODAY = "What's on my plate today?";
+
+  it("sends the words as a user message, asks for a reply, and shows them as what the user said", async () => {
+    const r = await live();
+    r.dc.sent.length = 0;
+    r.controller.sendUserText(TODAY);
+
+    const items = r.dc.sentOfType("conversation.item.create");
+    expect(items).toHaveLength(1);
+    expect(items[0].item).toMatchObject({ type: "message", role: "user", content: [{ type: "input_text", text: TODAY }] });
+    expect(r.dc.sent.map((event) => event.type)).toEqual(["conversation.item.create", "response.create"]);
+    expect(r.controller.getSnapshot()).toMatchObject({ userLine: TODAY, activity: "thinking" });
+  });
+
+  it("does nothing before the call is live", () => {
+    const r = rig();
+    r.controller.sendUserText(TODAY);
+    expect(r.dc.sent).toEqual([]);
+  });
+
+  it("does nothing while the assistant is speaking, so two replies are never asked for at once", async () => {
+    const r = await live();
+    r.dc.receive({ type: "output_audio_buffer.started" });
+    r.dc.sent.length = 0;
+    r.controller.sendUserText(TODAY);
+    expect(r.dc.sent).toEqual([]);
+  });
+
+  it("ignores blank text", async () => {
+    const r = await live();
+    r.dc.sent.length = 0;
+    r.controller.sendUserText("   ");
+    expect(r.dc.sent).toEqual([]);
+  });
+});

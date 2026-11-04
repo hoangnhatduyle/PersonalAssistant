@@ -1,32 +1,21 @@
 "use client";
 
 import { useEffect, useRef, useSyncExternalStore } from "react";
-import { AssistantResponse } from "@/components/assistant/AssistantResponse";
+import { createPortal } from "react-dom";
+import { CallScreen } from "@/components/driving/CallScreen";
 import { Button } from "@/components/ui/Button";
 import { GlassPanel } from "@/components/ui/GlassPanel";
 import { useConfirmVoiceTurn, useDeclineVoiceTurn } from "@/hooks/useVoiceTurn";
 import { useRealtimeCall } from "@/hooks/useRealtimeCall";
 import { useCallDiagnostics } from "@/hooks/useCallDiagnostics";
 import { startRingback } from "@/lib/voice/ringback";
-import type { CallActivity, CallDebug } from "@/lib/voice/realtime/call-controller";
-
-const ACTIVITY_LABEL: Record<CallActivity, string> = {
-  listening: "Listening…",
-  thinking: "Thinking…",
-  speaking: "Speaking…",
-};
+import type { CallDebug } from "@/lib/voice/realtime/call-controller";
 
 const END_REASON_LABEL: Record<string, string> = {
   cap: "The call reached its time limit.",
   idle: "The call ended after a quiet minute.",
   hidden: "The call ended because the app was in the background.",
 };
-
-function formatClock(totalSeconds: number): string {
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${minutes}:${String(seconds).padStart(2, "0")}`;
-}
 
 function median(values: number[]): number | null {
   if (values.length === 0) return null;
@@ -74,7 +63,7 @@ interface Props {
 }
 
 export function CallPanel({ onActiveChange }: Props) {
-  const { snapshot, start, end, setMuted, reportScreenDecision } = useRealtimeCall();
+  const { snapshot, start, end, setMuted, sendText, reportScreenDecision } = useRealtimeCall();
   const confirmTurn = useConfirmVoiceTurn();
   const declineTurn = useDeclineVoiceTurn();
   const debugFromAddress = useSyncExternalStore(subscribeNever, readDebugFlag, () => false);
@@ -124,6 +113,7 @@ export function CallPanel({ onActiveChange }: Props) {
         <Button variant="primary" size="md" className="w-full py-6 text-xl" onClick={handleStart}>
           {snapshot.phase === "ended" ? "Call again" : "Start call"}
         </Button>
+        <p className="text-center text-xs text-text-secondary">Keep the screen on during the call. Locking it ends the call.</p>
         {endedNote ? (
           <p role="status" className={`text-center text-sm ${snapshot.error ? "text-status-urgent" : "text-text-secondary"}`}>
             {endedNote}
@@ -135,51 +125,17 @@ export function CallPanel({ onActiveChange }: Props) {
   }
 
   const busyTapping = confirmTurn.isPending || declineTurn.isPending;
-  return (
-    <div className="flex flex-col gap-4">
-      <GlassPanel className="flex items-center justify-between gap-4 p-4">
-        <div className="flex flex-col">
-          <span className="font-display text-xl font-semibold text-text-primary" aria-live="polite">
-            {snapshot.phase === "connecting" ? "Connecting…" : snapshot.phase === "ending" ? "Ending…" : ACTIVITY_LABEL[snapshot.activity]}
-          </span>
-          {snapshot.phase === "live" ? <span className="text-sm text-text-secondary">{formatClock(snapshot.secondsLeft)} left</span> : null}
-        </div>
-        <div className="flex gap-3">
-          <Button variant="secondary" size="md" className="px-6 py-3 text-base" onClick={() => setMuted(!snapshot.muted)} disabled={snapshot.phase !== "live"} aria-pressed={snapshot.muted}>
-            {snapshot.muted ? "Unmute" : "Mute"}
-          </Button>
-          <Button variant="destructive" size="md" className="px-6 py-3 text-base" onClick={end} disabled={snapshot.phase === "ending"}>
-            End call
-          </Button>
-        </div>
-      </GlassPanel>
-
-      {snapshot.userLine ? (
-        <p className="px-1 text-sm text-text-secondary">
-          <span className="text-text-eyebrow">You: </span>
-          {snapshot.userLine}
-        </p>
-      ) : null}
-      {snapshot.assistantLine ? <AssistantResponse message={snapshot.assistantLine} citations={snapshot.citations} extractionLabel={snapshot.extractionLabel ?? undefined} /> : null}
-
-      {snapshot.pending ? (
-        <GlassPanel className="flex flex-col gap-3 p-4">
-          <p className="text-base text-text-primary">{snapshot.pending.summary}</p>
-          <p className="text-sm text-text-secondary">
-            {snapshot.pending.requiresTap ? "This one needs you to tap Confirm." : "Say yes or no, or tap a button."}
-          </p>
-          <div className="flex gap-3">
-            <Button variant="success" size="md" className="flex-1 py-4 text-lg" onClick={() => handleTap("executed")} disabled={busyTapping}>
-              Confirm
-            </Button>
-            <Button variant="secondary" size="md" className="flex-1 py-4 text-lg" onClick={() => handleTap("declined")} disabled={busyTapping}>
-              Cancel
-            </Button>
-          </div>
-        </GlassPanel>
-      ) : null}
-
-      {debug ? <DebugOverlay debug={snapshot.debug} /> : null}
-    </div>
+  // Portalled to <body> so no ancestor's transform or filter can pin the full-screen view to a smaller box.
+  return createPortal(
+    <CallScreen
+      snapshot={snapshot}
+      onEnd={end}
+      onMuteChange={setMuted}
+      onAsk={sendText}
+      onDecision={handleTap}
+      isDeciding={busyTapping}
+      diagnostics={debug ? <DebugOverlay debug={snapshot.debug} /> : null}
+    />,
+    document.body,
   );
 }

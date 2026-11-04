@@ -33,6 +33,7 @@ const call: UseRealtimeCall = {
   start: vi.fn(),
   end: vi.fn(),
   setMuted: vi.fn(),
+  sendText: vi.fn(),
   reportScreenDecision: vi.fn(),
 };
 const setSnapshot = (patch: Partial<CallSnapshot>) => {
@@ -63,6 +64,7 @@ describe("CallPanel", () => {
     vi.mocked(call.start).mockClear();
     vi.mocked(call.end).mockClear();
     vi.mocked(call.setMuted).mockClear();
+    vi.mocked(call.sendText).mockClear();
     vi.mocked(call.reportScreenDecision).mockClear();
     confirmMutate.mockReset().mockResolvedValue({ result: { summary: "Deleted the task Pay rent." } });
     declineMutate.mockReset().mockResolvedValue({ message: "Okay, I won't delete it." });
@@ -90,19 +92,43 @@ describe("CallPanel", () => {
     expect(onActiveChange).toHaveBeenLastCalledWith(false);
   });
 
-  it("shows connecting with controls that cannot be misused yet", () => {
-    setSnapshot({ phase: "connecting" });
-    renderWithProviders(<CallPanel />);
-    expect(screen.getByText("Connecting…")).toBeTruthy();
-    expect((screen.getByRole("button", { name: "Mute" }) as HTMLButtonElement).disabled).toBe(true);
-    expect((screen.getByRole("button", { name: "End call" }) as HTMLButtonElement).disabled).toBe(false);
+  it("tells the user to keep the screen on before they start, and again after a call", () => {
+    const view = renderWithProviders(<CallPanel />);
+    expect(screen.getByText("Keep the screen on during the call. Locking it ends the call.")).toBeTruthy();
+    setSnapshot({ phase: "ended", endReason: "user" });
+    view.rerender(<CallPanel />);
+    expect(screen.getByText("Keep the screen on during the call. Locking it ends the call.")).toBeTruthy();
   });
 
-  it("shows who is talking and the time left on a live call", () => {
-    setSnapshot({ phase: "live", activity: "speaking", secondsLeft: 125 });
+  it("takes over the whole screen as a dialog while the call is connecting, with controls that cannot be misused yet", () => {
+    setSnapshot({ phase: "connecting" });
+    renderWithProviders(<CallPanel />);
+    expect(screen.getByRole("dialog", { name: "Call with Cadence" })).toBeTruthy();
+    expect(screen.getByText("Calling…")).toBeTruthy();
+    expect((screen.getByRole("button", { name: "Mute" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "End call" }) as HTMLButtonElement).disabled).toBe(false);
+    expect(screen.queryByRole("button", { name: "Start call" })).toBeNull();
+  });
+
+  it("shows who is talking and how long the call has run, with no countdown until the last minute", () => {
+    setSnapshot({ phase: "live", activity: "speaking", maxSeconds: 300, secondsLeft: 125 });
     renderWithProviders(<CallPanel />);
     expect(screen.getByText("Speaking…")).toBeTruthy();
-    expect(screen.getByText("2:05 left")).toBeTruthy();
+    expect(screen.getByText("2:55")).toBeTruthy();
+    expect(screen.queryByText(/left/)).toBeNull();
+  });
+
+  it("shows the time left once the last minute starts", () => {
+    setSnapshot({ phase: "live", maxSeconds: 300, secondsLeft: 45 });
+    renderWithProviders(<CallPanel />);
+    expect(screen.getByText("4:15 · 0:45 left")).toBeTruthy();
+  });
+
+  it("asks what is on today from the Today button", () => {
+    setSnapshot({ phase: "live", activity: "listening" });
+    renderWithProviders(<CallPanel />);
+    fireEvent.click(screen.getByRole("button", { name: "Today" }));
+    expect(call.sendText).toHaveBeenCalledWith("What's on my plate today?");
   });
 
   it("ends the call and toggles mute from the buttons", () => {
@@ -121,9 +147,11 @@ describe("CallPanel", () => {
     expect(call.setMuted).toHaveBeenCalledWith(false);
   });
 
-  it("shows the latest words from both sides", () => {
+  it("shows the latest words from both sides once captions are switched on", () => {
     setSnapshot({ phase: "live", userLine: "what's due today", assistantLine: "You have two things due." });
     renderWithProviders(<CallPanel />);
+    expect(screen.queryByText("what's due today")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Captions" }));
     expect(screen.getByText("what's due today")).toBeTruthy();
     expect(screen.getByTestId("assistant-line").textContent).toBe("You have two things due.");
   });
