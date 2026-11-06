@@ -331,6 +331,56 @@ describe("loadSchedule", () => {
     expect(courseTitles).not.toContain("My Recurring Course");
   });
 
+  describe("a Course with per-date exceptions", () => {
+    async function courseMeetingToday(name: string) {
+      const { userId: freshUserId, client } = await createAuthenticatedUser();
+      const now = new Date();
+      const courseId = await createCourse(admin, freshUserId, {
+        name,
+        meeting_blocks: [{ days: [now.getUTCDay()], startMinutes: 510, endMinutes: 990 }],
+      });
+      const todayKey = now.toISOString().slice(0, 10);
+      const tomorrowKey = new Date(now.getTime() + 86_400_000).toISOString().slice(0, 10);
+      const override = async (fields: Record<string, unknown>) => {
+        const { error } = await admin.from("occurrence_overrides").insert({
+          user_id: freshUserId,
+          course_id: courseId,
+          original_date: todayKey,
+          original_start_minutes: 510,
+          ...fields,
+        });
+        expect(error).toBeNull();
+      };
+      return { client, freshUserId, now, todayKey, tomorrowKey, override };
+    }
+
+    it("leaves a cancelled occurrence out of today's schedule", async () => {
+      const { client, freshUserId, now, override } = await courseMeetingToday("Cancelled Today Course");
+      await override({ is_cancelled: true });
+      const result = await loadSchedule(client, freshUserId, "today", now);
+      expect(result.scheduleItems.map((item) => item.title)).not.toContain("Cancelled Today Course");
+    });
+
+    it("describes a shortened occurrence by its new hours (the half day off)", async () => {
+      const { client, freshUserId, now, todayKey, override } = await courseMeetingToday("Half Day Course");
+      await override({ new_date: todayKey, new_start_minutes: 780, new_end_minutes: 990 });
+      const result = await loadSchedule(client, freshUserId, "today", now);
+      const item = result.scheduleItems.find((candidate) => candidate.title === "Half Day Course");
+      expect(item?.context).toBe("1 PM–4:30 PM");
+    });
+
+    it("shows an occurrence moved to tomorrow tomorrow, not today", async () => {
+      const { client, freshUserId, now, tomorrowKey, override } = await courseMeetingToday("Moved Course");
+      await override({ new_date: tomorrowKey, new_start_minutes: 600, new_end_minutes: 660 });
+
+      const today = await loadSchedule(client, freshUserId, "today", now);
+      expect(today.scheduleItems.map((item) => item.title)).not.toContain("Moved Course");
+      const tomorrow = await loadSchedule(client, freshUserId, "tomorrow", now);
+      const item = tomorrow.scheduleItems.find((candidate) => candidate.title === "Moved Course");
+      expect(item?.context).toBe("10 AM–11 AM");
+    });
+  });
+
   it("excludes a Course meeting occurrence once recurrence_end_date has passed, even on a matching weekday", async () => {
     const { userId: freshUserId, client } = await createAuthenticatedUser();
     const now = new Date();

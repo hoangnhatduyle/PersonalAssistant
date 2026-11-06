@@ -80,8 +80,10 @@ export interface ProposeMutationArgs {
     | "user_cancels"
     | "user_marks_session_done"
     | "user_marks_session_skipped"
+    | "user_reopens_session"
     | "user_marks_event_done"
     | "user_marks_event_missed"
+    | "user_reopens_event"
     | null;
   snooze_until: string | null;
   // Course (name/code/term) and Board List (name only, reusing the
@@ -207,12 +209,14 @@ const MUTATION_FIELD_PROPERTIES_BASE = {
       "user_cancels",
       "user_marks_session_done",
       "user_marks_session_skipped",
+      "user_reopens_session",
       "user_marks_event_done",
       "user_marks_event_missed",
+      "user_reopens_event",
       null,
     ],
     description:
-      'Required for operation "transition"/"acknowledge". Deadline: user_marks_in_progress/user_marks_submitted/user_confirms_done/user_cancels. Task: user_marks_done/user_cancels. Session: user_marks_session_done/user_marks_session_skipped. Event: user_marks_event_done/user_marks_event_missed. Reminder (acknowledge): user_acknowledges/user_dismisses/user_snoozes. Null otherwise.',
+      'Required for operation "transition"/"acknowledge". Deadline: user_marks_in_progress/user_marks_submitted/user_confirms_done/user_cancels. Task: user_marks_done/user_cancels. Session: user_marks_session_done/user_marks_session_skipped/user_reopens_session (back to planned). Event: user_marks_event_done/user_marks_event_missed/user_reopens_event (back to planned). Reminder (acknowledge): user_acknowledges/user_dismisses/user_snoozes. Null otherwise.',
   },
   snooze_until: { type: ["string", "null"], description: "Reminder acknowledge with event user_snoozes only." },
   name: { type: ["string", "null"], description: "Course name, or a new Board List's name." },

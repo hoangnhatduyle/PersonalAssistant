@@ -60,6 +60,42 @@ describe("gateTransitionLegality", () => {
     }
   });
 
+  it("offers reopen when a done event is asked to be marked missed", () => {
+    const EVENT_ID = "33333333-3333-4333-8333-333333333333";
+    const raw = mutationDraftSchema.parse({
+      target_type: "event",
+      operation: "transition",
+      target_id: EVENT_ID,
+      title: null,
+      date: null,
+      time: null,
+      duration_minutes: null,
+      location: null,
+      triage_item_id: null,
+      event: "user_marks_event_missed",
+    });
+    const result = gateTransitionLegality(
+      raw,
+      emptyContext({
+        appointments: [
+          {
+            id: EVENT_ID,
+            title: "Dentist visit",
+            date: "2026-11-06",
+            time: "3:00 PM",
+            status: "done",
+            validEvents: ["user_reopens_event"],
+          } as unknown as EntityContext["appointments"][number],
+        ],
+      }),
+    );
+    expect(result.kind).toBe("ask");
+    if (result.kind === "ask") {
+      expect(result.question).toMatch(/currently done/);
+      expect(result.question).toMatch(/reopen it/);
+    }
+  });
+
   it("proceeds when the event is legal from the current status", () => {
     const raw = deadlineTransition("user_marks_in_progress");
     expect(gateTransitionLegality(raw, emptyContext({ deadlines: [contextDeadline({ id: DEADLINE_ID })] }))).toEqual({

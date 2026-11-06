@@ -41,15 +41,22 @@ describe("SessionTransitionButtons", () => {
     expect(screen.getAllByRole("button")).toHaveLength(2);
   });
 
-  it("skipped offers Mark Done only — a make-up session, never re-skipping", () => {
+  it("skipped offers Mark Done and Reopen — a make-up session or back to planned, never re-skipping", () => {
     renderWithProviders(<SessionTransitionButtons session={makeSession("skipped")} />);
     expect(screen.getByRole("button", { name: "Mark Done" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Reopen" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Mark Skipped" })).not.toBeInTheDocument();
+    expect(screen.getAllByRole("button")).toHaveLength(2);
+  });
+
+  it("done offers only Reopen", () => {
+    renderWithProviders(<SessionTransitionButtons session={makeSession("done")} />);
+    expect(screen.getByRole("button", { name: "Reopen" })).toBeInTheDocument();
     expect(screen.getAllByRole("button")).toHaveLength(1);
   });
 
-  it("done offers nothing — the terminal state", () => {
-    const { container } = renderWithProviders(<SessionTransitionButtons session={makeSession("done")} />);
-    expect(container).toBeEmptyDOMElement();
+  it("planned never offers Reopen", () => {
+    renderWithProviders(<SessionTransitionButtons session={makeSession("planned")} />);
+    expect(screen.queryByRole("button", { name: "Reopen" })).not.toBeInTheDocument();
   });
 });

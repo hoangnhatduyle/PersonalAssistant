@@ -11,6 +11,7 @@ import { FormField } from "@/components/ui/FormField";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { DateTimeField } from "@/components/ui/DateTimeField";
+import { DatePicker } from "@/components/ui/DatePicker";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Checkbox } from "@/components/ui/Checkbox";
@@ -149,6 +150,7 @@ export function DeadlineForm({
             <DateTimeField
               id="due_at"
               value={field.value}
+              defaultTime="23:59"
               onChange={(value) => field.onChange(value ?? "")}
               invalid={Boolean(errors.due_at)}
             />
@@ -176,11 +178,17 @@ export function DeadlineForm({
             />
           </FormField>
           <FormField label="Repeat until (optional)" htmlFor="recurrence_end_date" error={errors.recurrence_end_date?.message}>
-            <Input
-              id="recurrence_end_date"
-              type="date"
-              invalid={Boolean(errors.recurrence_end_date)}
-              {...register("recurrence_end_date", { setValueAs: emptyToNull })}
+            <Controller
+              control={control}
+              name="recurrence_end_date"
+              render={({ field }) => (
+                <DatePicker
+                  id="recurrence_end_date"
+                  value={field.value ?? ""}
+                  invalid={Boolean(errors.recurrence_end_date)}
+                  onChange={(next) => field.onChange(emptyToNull(next))}
+                />
+              )}
             />
           </FormField>
           <p className="font-mono text-xs text-text-secondary">

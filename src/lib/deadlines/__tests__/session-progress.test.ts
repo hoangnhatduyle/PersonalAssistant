@@ -15,6 +15,16 @@ describe("buildSessionProgress", () => {
     expect(result).toEqual([{ deadlineId: "d-1", done: 1, total: 3, ratio: 1 / 3 }]);
   });
 
+  it("drops done by one (4/5 -> 3/5) when a done session is reopened back to planned", () => {
+    const sessions = ["done", "done", "done", "done", "planned"] as const;
+    const before = buildSessionProgress(sessions.map((session_status) => ({ deadline_id: "d-1", session_status })));
+    expect(before).toEqual([{ deadlineId: "d-1", done: 4, total: 5, ratio: 4 / 5 }]);
+
+    const reopened = ["done", "done", "done", "planned", "planned"] as const;
+    const after = buildSessionProgress(reopened.map((session_status) => ({ deadline_id: "d-1", session_status })));
+    expect(after).toEqual([{ deadlineId: "d-1", done: 3, total: 5, ratio: 3 / 5 }]);
+  });
+
   it("groups multiple deadlines independently", () => {
     const result = buildSessionProgress([
       { deadline_id: "d-1", session_status: "done" },

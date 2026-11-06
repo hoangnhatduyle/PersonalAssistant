@@ -8,6 +8,11 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push }),
 }));
 
+vi.mock("@/hooks/useUserTimezone", () => ({
+  useUserTimezone: () => "America/Detroit",
+  useUserTimezoneReady: () => true,
+}));
+
 const duplicateMutateAsync = vi.fn();
 const updateMutateAsync = vi.fn();
 const useUpdateTask = vi.fn();
@@ -56,12 +61,13 @@ describe("DuplicateTaskButton", () => {
     renderWithProviders(<DuplicateTaskButton taskId="task-1" onOpenTask={onOpenTask} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Duplicate as new" }));
-    const input = await screen.findByLabelText("Due date");
-    fireEvent.change(input, { target: { value: "2026-10-05T09:00" } });
+    fireEvent.change(await screen.findByLabelText("Due date"), { target: { value: "2026-10-05" } });
+    fireEvent.change(screen.getByLabelText("Time"), { target: { value: "09:00" } });
     fireEvent.click(screen.getByRole("button", { name: "Save due date" }));
 
     await waitFor(() => expect(onOpenTask).toHaveBeenCalledWith("task-copy"));
-    expect(updateMutateAsync).toHaveBeenCalledWith({ due_at: new Date("2026-10-05T09:00").toISOString() });
+    // 9:00 AM in the profile zone (Detroit, EDT = UTC-4 on Oct 5), not the machine's zone.
+    expect(updateMutateAsync).toHaveBeenCalledWith({ due_at: "2026-10-05T13:00:00.000Z" });
   });
 
   it("navigates to the standalone card page when there is no dialog to switch", async () => {

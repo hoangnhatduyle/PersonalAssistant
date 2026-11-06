@@ -90,4 +90,58 @@ test.describe("POST /api/appointments/[id]/transition: recurring occurrence writ
     const { data: occurrenceRows } = await admin.from("appointment_occurrence_status").select("id").eq("appointment_id", appointmentId);
     expect(occurrenceRows ?? []).toHaveLength(0);
   });
+
+  test("reopening a done occurrence writes planned for that occurrence only; a one-off event reopens via event_status", async ({
+    page,
+  }) => {
+    const user = await createUserAndSignIn(page);
+
+    const meetingBlocks: MeetingBlock[] = [{ days: [0, 1, 2, 3, 4, 5, 6], startMinutes: 0, endMinutes: 23 * 60 + 59 }];
+    const recurringId = await createAppointment(admin, user.userId, {
+      title: "Recurring standup",
+      time: null,
+      duration_minutes: null,
+      meeting_blocks: meetingBlocks,
+      recurrence_start_date: null,
+      recurrence_end_date: null,
+    });
+    const occurrenceDate = getRelevantOccurrenceDateKey(meetingBlocks, new Date(), null, null) as string;
+    const otherOccurrenceDate = "2099-01-01";
+
+    for (const date of [occurrenceDate, otherOccurrenceDate]) {
+      const done = await page.request.post(`/api/appointments/${recurringId}/transition`, {
+        data: { event: "user_marks_event_done", occurrenceDate: date },
+      });
+      expect(done.ok()).toBe(true);
+    }
+
+    const reopen = await page.request.post(`/api/appointments/${recurringId}/transition`, {
+      data: { event: "user_reopens_event", occurrenceDate },
+    });
+    expect(reopen.ok()).toBe(true);
+
+    const { data: rows } = await admin
+      .from("appointment_occurrence_status")
+      .select("occurrence_date, status")
+      .eq("appointment_id", recurringId);
+    const byDate = Object.fromEntries((rows ?? []).map((row) => [row.occurrence_date, row.status]));
+    expect(byDate[occurrenceDate]).toBe("planned");
+    expect(byDate[otherOccurrenceDate]).toBe("done");
+
+    // A planned occurrence cannot be "reopened" again.
+    const again = await page.request.post(`/api/appointments/${recurringId}/transition`, {
+      data: { event: "user_reopens_event", occurrenceDate },
+    });
+    expect(again.ok()).toBe(false);
+
+    // One-off: done -> reopen -> planned on the row itself.
+    const oneOffId = await createAppointment(admin, user.userId, { title: "One-off checkup" });
+    await page.request.post(`/api/appointments/${oneOffId}/transition`, { data: { event: "user_marks_event_missed" } });
+    const oneOffReopen = await page.request.post(`/api/appointments/${oneOffId}/transition`, {
+      data: { event: "user_reopens_event" },
+    });
+    expect(oneOffReopen.ok()).toBe(true);
+    const { data: oneOffRow } = await admin.from("appointments").select("event_status").eq("id", oneOffId).single();
+    expect(oneOffRow?.event_status).toBe("planned");
+  });
 });

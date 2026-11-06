@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useForm, FormProvider } from "react-hook-form";
 import { FormField } from "@/components/ui/FormField";
+import { DatePicker } from "@/components/ui/DatePicker";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Checkbox } from "@/components/ui/Checkbox";
@@ -11,6 +12,8 @@ import { RecurrencePicker } from "@/components/recurrence/RecurrencePicker";
 import { RecurrencePreview } from "@/components/recurrence/RecurrencePreview";
 import { APPOINTMENT_CATEGORIES } from "@/lib/appointments/types";
 import { splitLinks } from "@/lib/text/linkify";
+import { useUserTimezone } from "@/hooks/useUserTimezone";
+import { todayInZone } from "@/lib/format/zoned-datetime";
 import type { AppointmentRow } from "@/lib/api/entity-types";
 import type { AppointmentPayload } from "@/lib/api/schemas";
 
@@ -50,6 +53,7 @@ export function AppointmentForm({
   onSubmit,
   onCancel,
 }: Props) {
+  const timeZone = useUserTimezone();
   const [isRecurring, setIsRecurring] = useState(() => (appointment?.meeting_blocks?.length ?? 0) > 0);
   const [title, setTitle] = useState(appointment?.title ?? defaultTitle ?? "");
   const [category, setCategory] = useState(appointment?.category ?? APPOINTMENT_CATEGORIES[0]);
@@ -103,7 +107,7 @@ export function AppointmentForm({
         // date stays required by the stored row (see 0035_appointment_recurrence.sql's
         // comment) even though it's not user-facing here — recurrence_start_date
         // (or today, if that's also unset) stands in for it.
-        date: recurrence_start_date ?? new Date().toISOString().slice(0, 10),
+        date: recurrence_start_date ?? todayInZone(timeZone),
         category,
         time: null,
         duration_minutes: null,
@@ -168,7 +172,7 @@ export function AppointmentForm({
         <>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <FormField label="Date" htmlFor="appointment-date" error={!date ? error ?? undefined : undefined}>
-              <Input id="appointment-date" type="date" value={date} onChange={(event) => setDate(event.target.value)} />
+              <DatePicker id="appointment-date" value={date} onChange={setDate} />
             </FormField>
             <FormField label="Time" htmlFor="appointment-time" error={!time ? error ?? undefined : undefined}>
               <Input id="appointment-time" type="time" required value={time} onChange={(event) => setTime(event.target.value)} />

@@ -20,6 +20,7 @@ function makeDeadline(id: string, courseId: string, title: string): DeadlineRow 
     recurrence_end_date: null,
     recurrence_series_id: null,
     recurrence_spawned_at: null,
+    recurrence_anchor_due_at: null,
     person_id: null,
     completed_at: null,
     acknowledged_at: null,

@@ -98,13 +98,15 @@ test.describe("board: Duplicate as new", () => {
     await openCard(page, "Read Paper B");
     await page.getByRole("button", { name: "Duplicate as new" }).click();
 
-    await page.getByLabel("Due date").fill("2099-10-05T09:00");
+    await page.getByLabel("Due date").fill("2099-10-05");
+    await page.getByLabel("Time").fill("09:00");
     await page.getByRole("button", { name: "Save due date" }).click();
     await expect(page.getByRole("heading", { name: "Due date for the new card" })).toBeHidden();
 
     const copy = (await liveCopies(user.userId, "Read Paper B")).find((card) => card.id !== taskId)!;
     expect(copy.status).toBe("Open");
-    expect(new Date(copy.due_at!).getTime()).toBe(new Date("2099-10-05T09:00").getTime());
+    // A new account's time zone is UTC (user_preferences default), and the picker reads/writes in the profile zone.
+    expect(new Date(copy.due_at!).getTime()).toBe(Date.UTC(2099, 9, 5, 9, 0));
   });
 
   test("the original stays Done, so completion stats keep counting it", async ({ page }) => {

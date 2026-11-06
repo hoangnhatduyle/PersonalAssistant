@@ -13,6 +13,7 @@ import {
   type TestUser,
 } from "../../../../supabase/tests/helpers";
 import { executePendingMutation, MutationTargetNotFoundError, type PendingMutation } from "../mutations";
+import { addDaysToDateKey } from "@/lib/format/date-key";
 import { getRelevantOccurrenceDateKey, type MeetingBlock } from "@/lib/calendar/recurrence";
 
 describe("executePendingMutation", () => {
@@ -398,7 +399,36 @@ describe("executePendingMutation", () => {
       expect((result.data as { session_status: string }).session_status).toBe("done");
     });
 
-    it("rejects a transition from the terminal 'done' status", async () => {
+    it("reopens a done session back to planned", async () => {
+      const courseId = await createCourse(admin, userId);
+      const deadlineId = await createDeadline(admin, userId, courseId);
+      const sessionId = await createSession(admin, userId, deadlineId);
+      await walkTransitions(admin, "appointments", sessionId, "session_status", ["done"]);
+      const result = await executePendingMutation(user.client, userId, {
+        targetType: "session",
+        operation: "transition",
+        targetId: sessionId,
+        event: "user_reopens_session",
+      });
+      expect((result.data as { session_status: string }).session_status).toBe("planned");
+      expect(result.summary).toBe("Session reopened.");
+    });
+
+    it("rejects reopening a session that is already planned", async () => {
+      const courseId = await createCourse(admin, userId);
+      const deadlineId = await createDeadline(admin, userId, courseId);
+      const sessionId = await createSession(admin, userId, deadlineId);
+      await expect(
+        executePendingMutation(user.client, userId, {
+          targetType: "session",
+          operation: "transition",
+          targetId: sessionId,
+          event: "user_reopens_session",
+        }),
+      ).rejects.toThrow(/Cannot apply/);
+    });
+
+    it("rejects marking a done session skipped directly", async () => {
       const courseId = await createCourse(admin, userId);
       const deadlineId = await createDeadline(admin, userId, courseId);
       const sessionId = await createSession(admin, userId, deadlineId);
@@ -566,7 +596,20 @@ describe("executePendingMutation", () => {
       expect((result.data as { event_status: string }).event_status).toBe("missed");
     });
 
-    it("rejects a transition from the terminal 'done' status", async () => {
+    it("reopens a done event back to planned", async () => {
+      const eventId = await createAppointment(admin, userId);
+      await walkTransitions(admin, "appointments", eventId, "event_status", ["done"]);
+      const result = await executePendingMutation(user.client, userId, {
+        targetType: "event",
+        operation: "transition",
+        targetId: eventId,
+        event: "user_reopens_event",
+      });
+      expect((result.data as { event_status: string }).event_status).toBe("planned");
+      expect(result.summary).toBe("Appointment reopened.");
+    });
+
+    it("rejects marking a done event missed directly", async () => {
       const eventId = await createAppointment(admin, userId);
       await walkTransitions(admin, "appointments", eventId, "event_status", ["done"]);
       await expect(
@@ -625,6 +668,34 @@ describe("executePendingMutation", () => {
         expect(occurrenceRow?.status).toBe("done");
       });
 
+      it("skips a cancelled occurrence: marking done applies to the next one that actually happens", async () => {
+        const eventId = await createAppointment(admin, userId, {
+          time: null,
+          duration_minutes: null,
+          meeting_blocks: ALL_DAY_EVERY_DAY,
+        });
+        const cancelledDate = getRelevantOccurrenceDateKey(ALL_DAY_EVERY_DAY, new Date(), null, null) as string;
+        const { error: overrideError } = await admin.from("occurrence_overrides").insert({
+          user_id: userId,
+          appointment_id: eventId,
+          original_date: cancelledDate,
+          original_start_minutes: 0,
+          is_cancelled: true,
+        });
+        expect(overrideError).toBeNull();
+
+        await executePendingMutation(user.client, userId, {
+          targetType: "event",
+          operation: "transition",
+          targetId: eventId,
+          event: "user_marks_event_done",
+        });
+
+        const { data: rows } = await admin.from("appointment_occurrence_status").select("occurrence_date, status").eq("appointment_id", eventId);
+        // The cancelled date gets no status; the day after it does.
+        expect(rows).toEqual([{ occurrence_date: addDaysToDateKey(cancelledDate, 1), status: "done" }]);
+      });
+
       it("leaves a different occurrence's pre-existing status untouched by marking today's occurrence done", async () => {
         const eventId = await createAppointment(admin, userId, {
           time: null,
@@ -650,6 +721,34 @@ describe("executePendingMutation", () => {
           .eq("occurrence_date", otherOccurrenceDate)
           .single();
         expect(otherRow?.status).toBe("missed");
+      });
+
+      it("reopens only the relevant occurrence, leaving other occurrences' status untouched", async () => {
+        const eventId = await createAppointment(admin, userId, {
+          time: null,
+          duration_minutes: null,
+          meeting_blocks: ALL_DAY_EVERY_DAY,
+        });
+        const occurrenceDate = getRelevantOccurrenceDateKey(ALL_DAY_EVERY_DAY, new Date(), null, null);
+        await admin.from("appointment_occurrence_status").insert([
+          { appointment_id: eventId, occurrence_date: occurrenceDate as string, status: "done" },
+          { appointment_id: eventId, occurrence_date: "2099-01-01", status: "done" },
+        ]);
+
+        await executePendingMutation(user.client, userId, {
+          targetType: "event",
+          operation: "transition",
+          targetId: eventId,
+          event: "user_reopens_event",
+        });
+
+        const { data: rows } = await admin
+          .from("appointment_occurrence_status")
+          .select("occurrence_date, status")
+          .eq("appointment_id", eventId);
+        const byDate = Object.fromEntries((rows ?? []).map((r) => [r.occurrence_date, r.status]));
+        expect(byDate[occurrenceDate as string]).toBe("planned");
+        expect(byDate["2099-01-01"]).toBe("done");
       });
 
       it("throws when a recurring appointment has no more occurrences (recurrence_end_date has passed)", async () => {

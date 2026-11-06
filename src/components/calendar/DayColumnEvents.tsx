@@ -1,12 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import { EventBlock } from "@/components/calendar/EventBlock";
+import { CalendarEventItem } from "@/components/calendar/CalendarEventItem";
 import { OverlapEventPicker } from "@/components/calendar/OverlapEventPicker";
 import { EmptySlotCreatePicker, type CreateEntityType } from "@/components/calendar/EmptySlotCreatePicker";
 import { useCurrentMinuteOfDay } from "@/hooks/useCurrentMinuteOfDay";
 import { formatMinutesOfDay } from "@/lib/calendar/recurrence";
 import { pxToMinutes, PIXELS_PER_MINUTE, type LayoutedCalendarEvent } from "@/lib/calendar/layout-day-events";
+import type { CalendarEvent } from "@/lib/calendar/build-week-events";
+import type { EventTimes } from "@/lib/calendar/drag-math";
 
 export type CreateRequest = { type: CreateEntityType; date: string; minutes: number };
 
@@ -18,6 +20,10 @@ type Props = {
   windowStart: number;
   gridHeightPx: number;
   onCreateRequest: (request: CreateRequest) => void;
+  /** A drag or resize ended: this block now sits at `times`. Omitted = blocks are display-only. */
+  onEditEvent?: (event: CalendarEvent, times: EventTimes) => void;
+  /** Open the Adjust time form for a block. */
+  onAdjustTime?: (event: CalendarEvent) => void;
 };
 
 type OpenPicker = {
@@ -30,7 +36,7 @@ type OpenCreatePicker = {
   minutes: number;
 };
 
-export function DayColumnEvents({ isToday, date, events, hourMarks, windowStart, gridHeightPx, onCreateRequest }: Props) {
+export function DayColumnEvents({ isToday, date, events, hourMarks, windowStart, gridHeightPx, onCreateRequest, onEditEvent, onAdjustTime }: Props) {
   const [elevatedEventId, setElevatedEventId] = useState<string | null>(null);
   const [picker, setPicker] = useState<OpenPicker | null>(null);
   const [createPicker, setCreatePicker] = useState<OpenCreatePicker | null>(null);
@@ -49,6 +55,8 @@ export function DayColumnEvents({ isToday, date, events, hourMarks, windowStart,
 
   return (
     <div
+      data-testid="day-column"
+      data-date={date}
       className={`relative overflow-visible border-l ${isToday ? "bg-panel/40" : ""} border-panel-border cursor-pointer`}
       style={{ height: gridHeightPx }}
       onMouseLeave={() => {
@@ -59,7 +67,9 @@ export function DayColumnEvents({ isToday, date, events, hourMarks, windowStart,
         // Same background-only gate as the click handler below — hovering an
         // EventBlock (or its stack-count badge) hides the preview instead of
         // showing a start time for a slot the click wouldn't actually use.
-        if (event.target !== event.currentTarget) {
+        // A held mouse button means a block is being dragged across this column (see
+        // useEventDrag), not that the user is hovering to pick a slot to create in.
+        if (event.target !== event.currentTarget || event.buttons !== 0) {
           setHoverMinutes(null);
           return;
         }
@@ -108,24 +118,15 @@ export function DayColumnEvents({ isToday, date, events, hourMarks, windowStart,
         </div>
       )}
       {events.map((event) => (
-        <EventBlock
+        <CalendarEventItem
           key={event.id}
-          title={event.title}
-          timeLabel={event.timeLabel}
-          subtitle={event.subtitle}
-          topPx={event.topPx}
-          heightPx={event.heightPx}
-          visibleHeightPx={event.visibleHeightPx}
-          leftPx={event.leftPx}
-          widthPx={event.widthPx}
-          stackIndex={event.stackIndex}
-          stackSize={event.stackSize}
+          event={event}
+          windowStart={windowStart}
           isElevated={elevatedEventId === event.id}
-          tone={event.tone}
-          href={event.href}
-          color={event.color}
           onElevate={() => setElevatedEventId(event.id)}
           onOpenPicker={(anchorRect) => setPicker({ clusterId: event.clusterId, anchorRect })}
+          onEditEvent={onEditEvent}
+          onAdjustTime={onAdjustTime}
         />
       ))}
       {picker && pickerEvents.length > 0 && (

@@ -112,4 +112,49 @@ describe("findCourseConflictingAppointmentIds", () => {
     );
     expect(ids.size).toBe(0);
   });
+
+  describe("with per-date exceptions to the course", () => {
+    // The Monday 11:15-12:20 class on 2026-01-05; the appointment is 11:00-12:00 that day (a conflict).
+    const classOverride = (fields: Partial<NonNullable<CourseRow["occurrence_overrides"]>[number]>) => ({
+      original_date: "2026-01-05",
+      original_start_minutes: 11 * 60 + 15,
+      is_cancelled: false,
+      new_date: "2026-01-05",
+      new_start_minutes: 13 * 60,
+      new_end_minutes: 15 * 60,
+      ...fields,
+    });
+
+    it("still conflicts with the ordinary class (baseline)", () => {
+      expect(findCourseConflictingAppointmentIds([makeAppointment()], [makeCourse()]).has("appt-1")).toBe(true);
+    });
+
+    it("stops conflicting once that day's class is cancelled", () => {
+      const cancelled = makeCourse({
+        occurrence_overrides: [classOverride({ is_cancelled: true, new_date: null, new_start_minutes: null, new_end_minutes: null })],
+      });
+      expect(findCourseConflictingAppointmentIds([makeAppointment()], [cancelled]).size).toBe(0);
+    });
+
+    it("stops conflicting when the class is shortened to start after the appointment (the half day off)", () => {
+      const halfDay = makeCourse({ occurrence_overrides: [classOverride({})] });
+      expect(findCourseConflictingAppointmentIds([makeAppointment()], [halfDay]).size).toBe(0);
+      // ...but an appointment during the new, later hours does conflict.
+      expect(findCourseConflictingAppointmentIds([makeAppointment({ time: "13:30" })], [halfDay]).has("appt-1")).toBe(true);
+    });
+
+    it("does not change the following week's class", () => {
+      const halfDay = makeCourse({ occurrence_overrides: [classOverride({})] });
+      const nextMonday = makeAppointment({ date: "2026-01-12" }); // 11:00-12:00, class 11:15-12:20
+      expect(findCourseConflictingAppointmentIds([nextMonday], [halfDay]).has("appt-1")).toBe(true);
+    });
+
+    it("conflicts on a day the class was moved onto", () => {
+      const movedToTuesday = makeCourse({
+        occurrence_overrides: [classOverride({ new_date: "2026-01-06", new_start_minutes: 11 * 60, new_end_minutes: 12 * 60 })],
+      });
+      const tuesdayMorning = makeAppointment({ id: "appt-2", date: "2026-01-06", time: "11:30" });
+      expect(findCourseConflictingAppointmentIds([tuesdayMorning], [movedToTuesday]).has("appt-2")).toBe(true);
+    });
+  });
 });

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { Controller, useFieldArray, useFormContext, type FieldArrayPath, type FieldPath } from "react-hook-form";
 import { DayOfWeekToggle } from "@/components/recurrence/DayOfWeekToggle";
+import { DatePicker } from "@/components/ui/DatePicker";
 import { FormField } from "@/components/ui/FormField";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
@@ -46,7 +47,6 @@ const emptyToNull = (value: string) => (value === "" ? null : value);
 export function RecurrencePicker<T extends RecurrenceFormFields>() {
   const {
     control,
-    register,
     formState: { errors },
   } = useFormContext<T>();
   const { data: settings } = useSettings();
@@ -123,19 +123,31 @@ export function RecurrencePicker<T extends RecurrenceFormFields>() {
 
       <div className="grid gap-4 sm:grid-cols-2">
         <FormField label="Recurrence starts" htmlFor="recurrence_start_date" error={recurrenceStartError?.message}>
-          <Input
-            id="recurrence_start_date"
-            type="date"
-            invalid={Boolean(recurrenceStartError)}
-            {...register("recurrence_start_date" as FieldPath<T>, { setValueAs: emptyToNull })}
+          <Controller
+            control={control}
+            name={"recurrence_start_date" as FieldPath<T>}
+            render={({ field }) => (
+              <DatePicker
+                id="recurrence_start_date"
+                value={(field.value as string | null | undefined) ?? ""}
+                invalid={Boolean(recurrenceStartError)}
+                onChange={(next) => field.onChange(emptyToNull(next))}
+              />
+            )}
           />
         </FormField>
         <FormField label="Recurrence ends" htmlFor="recurrence_end_date" error={recurrenceEndError?.message}>
-          <Input
-            id="recurrence_end_date"
-            type="date"
-            invalid={Boolean(recurrenceEndError)}
-            {...register("recurrence_end_date" as FieldPath<T>, { setValueAs: emptyToNull })}
+          <Controller
+            control={control}
+            name={"recurrence_end_date" as FieldPath<T>}
+            render={({ field }) => (
+              <DatePicker
+                id="recurrence_end_date"
+                value={(field.value as string | null | undefined) ?? ""}
+                invalid={Boolean(recurrenceEndError)}
+                onChange={(next) => field.onChange(emptyToNull(next))}
+              />
+            )}
           />
         </FormField>
       </div>

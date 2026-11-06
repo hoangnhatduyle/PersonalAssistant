@@ -138,7 +138,7 @@ describe("EmailActionDialog", () => {
     );
 
     expect(await screen.findByDisplayValue("Interview with Acme")).toBeInTheDocument();
-    expect(screen.getByDisplayValue("2026-10-20")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("10/20/2026")).toBeInTheDocument();
     expect(screen.getByDisplayValue("14:30")).toBeInTheDocument();
     expect(screen.getByDisplayValue("45")).toBeInTheDocument();
   });

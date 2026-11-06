@@ -10,7 +10,7 @@ import { useTasks } from "@/hooks/useTasks";
 import { FormField } from "@/components/ui/FormField";
 import { Textarea } from "@/components/ui/Textarea";
 import { Select } from "@/components/ui/Select";
-import { Input } from "@/components/ui/Input";
+import { DatePicker } from "@/components/ui/DatePicker";
 import { Button } from "@/components/ui/Button";
 import { TagInput } from "@/components/ui/TagInput";
 import { MarkdownBody } from "@/components/notes/MarkdownBody";
@@ -132,7 +132,13 @@ export function NoteForm({ note, onSubmit, onCancel, submitLabel = "Save note" }
         </FormField>
 
         <FormField label="Date" htmlFor="linked_date">
-          <Input id="linked_date" type="date" {...register("linked_date", { setValueAs: emptyToNull })} />
+          <Controller
+            name="linked_date"
+            control={control}
+            render={({ field }) => (
+              <DatePicker id="linked_date" value={field.value ?? ""} onChange={(next) => field.onChange(emptyToNull(next))} />
+            )}
+          />
         </FormField>
       </div>
 

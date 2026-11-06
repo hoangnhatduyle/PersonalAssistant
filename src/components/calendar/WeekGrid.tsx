@@ -4,7 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { DayColumnEvents, type CreateRequest } from "@/components/calendar/DayColumnEvents";
 import { formatMinutesOfDay } from "@/lib/calendar/recurrence";
 import { layoutDayEvents, PIXELS_PER_MINUTE, weekGridHeightPx } from "@/lib/calendar/layout-day-events";
-import type { DayColumn } from "@/lib/calendar/build-week-events";
+import type { CalendarEvent, DayColumn } from "@/lib/calendar/build-week-events";
+import type { EventTimes } from "@/lib/calendar/drag-math";
 
 type Props = {
   days: DayColumn[];
@@ -12,12 +13,14 @@ type Props = {
   windowStart: number;
   windowEnd: number;
   onCreateRequest: (request: CreateRequest) => void;
+  onEditEvent?: (event: CalendarEvent, times: EventTimes) => void;
+  onAdjustTime?: (event: CalendarEvent) => void;
 };
 
 const TIME_AXIS_WIDTH_PX = 64;
 const MIN_DAY_COLUMN_WIDTH_PX = 110;
 
-export function WeekGrid({ days, hourMarks, windowStart, windowEnd, onCreateRequest }: Props) {
+export function WeekGrid({ days, hourMarks, windowStart, windowEnd, onCreateRequest, onEditEvent, onAdjustTime }: Props) {
   const gridRef = useRef<HTMLDivElement>(null);
   const [dayColumnWidthPx, setDayColumnWidthPx] = useState(MIN_DAY_COLUMN_WIDTH_PX);
   const gridHeightPx = weekGridHeightPx(windowStart, windowEnd);
@@ -38,7 +41,7 @@ export function WeekGrid({ days, hourMarks, windowStart, windowEnd, onCreateRequ
   }, []);
 
   return (
-    <div className="max-h-[75vh] overflow-auto">
+    <div data-calendar-scroll className="isolate max-h-[75vh] overflow-auto">
       <div ref={gridRef} className="grid min-w-[860px] grid-cols-[64px_repeat(7,1fr)]">
         <div />
         {days.map((day) => (
@@ -74,6 +77,8 @@ export function WeekGrid({ days, hourMarks, windowStart, windowEnd, onCreateRequ
             windowStart={windowStart}
             gridHeightPx={gridHeightPx}
             onCreateRequest={onCreateRequest}
+            onEditEvent={onEditEvent}
+            onAdjustTime={onAdjustTime}
           />
         ))}
       </div>

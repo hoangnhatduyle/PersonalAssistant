@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 import { requireAuthenticatedContext } from "@/lib/api/auth";
+import { OCCURRENCE_OVERRIDES_EMBED } from "@/lib/api/occurrence-overrides";
 import { parsePagination, wantsIncludeDeleted } from "@/lib/api/pagination";
 import { coursePayloadSchema } from "@/lib/api/schemas";
 import { successResponse, validationErrorResponse, notFoundResponse, serverErrorResponse } from "@/lib/api/response";
@@ -20,7 +21,7 @@ export async function GET(request: NextRequest) {
 
   let query = supabase
     .from("courses")
-    .select("*", { count: "exact" })
+    .select(`*, ${OCCURRENCE_OVERRIDES_EMBED}`, { count: "exact" })
     .eq("user_id", user.id)
     .order("created_at", { ascending: false })
     .range(from, to);

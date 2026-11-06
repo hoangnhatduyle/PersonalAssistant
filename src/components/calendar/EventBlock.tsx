@@ -7,6 +7,8 @@ import { STACK_PEEK_PX } from "@/lib/calendar/layout-day-events";
 import { toneClasses, type StatusTone } from "@/lib/status-colors";
 
 type Props = {
+  /** CalendarEvent.id — rendered as data-event-id so tests and tooling can find a specific block. */
+  eventId?: string;
   title: string;
   timeLabel: string;
   subtitle: string;
@@ -22,6 +24,14 @@ type Props = {
   tone: StatusTone;
   href: string;
   color?: string;
+  /** Show a grab cursor: the block can be dragged to a new time. */
+  isEditable?: boolean;
+  /** This occurrence of a recurring event differs from its weekly pattern (moved or resized for this date only). */
+  isAdjusted?: boolean;
+  /** This block is mid-drag; it dims in place while a preview shows where it will land. */
+  isDragging?: boolean;
+  /** Starts a drag (see useEventDrag). */
+  onPointerDown?: (event: React.PointerEvent<HTMLAnchorElement>) => void;
   onElevate: () => void;
   onOpenPicker: (anchorRect: DOMRect) => void;
 };
@@ -43,6 +53,7 @@ function glowShadow(color?: string): string {
  * without needing a StatusTone entry per person.
  */
 export function EventBlock({
+  eventId,
   title,
   timeLabel,
   subtitle,
@@ -57,6 +68,10 @@ export function EventBlock({
   tone,
   href,
   color,
+  isEditable = false,
+  isAdjusted = false,
+  isDragging = false,
+  onPointerDown,
   onElevate,
   onOpenPicker,
 }: Props) {
@@ -69,6 +84,13 @@ export function EventBlock({
   return (
     <Link
       href={href}
+      data-testid="calendar-event"
+      data-event-id={eventId}
+      data-adjusted={isAdjusted ? "true" : undefined}
+      // A link is natively draggable; the browser's link drag would fight ours.
+      draggable={false}
+      onDragStart={(event) => event.preventDefault()}
+      onPointerDown={onPointerDown}
       title={isTitleOnly ? undefined : `${title} · ${timeLabel}${subtitle ? ` · ${subtitle}` : ""}`}
       aria-describedby={isTitleOnly && hoverRect ? tooltipId : undefined}
       onMouseEnter={(event) => {
@@ -92,9 +114,9 @@ export function EventBlock({
           onElevate();
         }
       }}
-      className={`absolute overflow-hidden rounded-control border px-2 ${isTitleOnly ? "py-0.5" : "py-1.5"} text-xs transition-[box-shadow,transform,filter,left,width] duration-150 ${
-        color ? "" : toneClasses(tone)
-      } ${isElevated ? "z-50 scale-[1.02] brightness-125" : ""}`}
+      className={`absolute overflow-hidden rounded-control border ${isAdjusted ? "border-dashed" : ""} px-2 ${isTitleOnly ? "py-0.5" : "py-1.5"} text-xs ${
+        isDragging ? "opacity-40" : "transition-[box-shadow,transform,filter,left,width] duration-150"
+      } ${isEditable ? "cursor-grab" : ""} ${color ? "" : toneClasses(tone)} ${isElevated ? "z-50 scale-[1.02] brightness-125" : ""}`}
       style={{
         top: topPx,
         left: isElevated ? 4 : leftPx,
@@ -130,7 +152,10 @@ export function EventBlock({
         {!isTitleOnly && (
           <>
             <p className="line-clamp-1 text-[10px] leading-tight opacity-80">{timeLabel}</p>
-            <p className="line-clamp-1 text-[10px] leading-tight opacity-80">{subtitle}</p>
+            <p className="line-clamp-1 text-[10px] leading-tight opacity-80">
+              {isAdjusted && <span className="mr-1 rounded-full bg-bg-void/70 px-1.5 font-mono text-[9px] uppercase tracking-wide">Adjusted</span>}
+              {subtitle}
+            </p>
           </>
         )}
       </div>

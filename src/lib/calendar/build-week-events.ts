@@ -1,10 +1,37 @@
-import { expandBlockInWeek, formatMinutesOfDay, parseTimeToMinutes } from "@/lib/calendar/recurrence";
+import { formatMinutesOfDay, parseTimeToMinutes } from "@/lib/calendar/recurrence";
+import { resolveOccurrencesInWeek, type ResolvedOccurrence } from "@/lib/calendar/occurrence-overrides";
+import { isoToZonedParts, todayInZone } from "@/lib/format/zoned-datetime";
 import { isOpenDeadline, isOpenTask } from "@/lib/dashboard/upcoming-items";
 import { DEADLINE_STATUS_TONE, TASK_STATUS_TONE, type StatusTone } from "@/lib/status-colors";
 import type { CourseRow, DeadlineRow, TaskRow, PersonRow, AppointmentRow } from "@/lib/api/entity-types";
 
+/** Which occurrence of a recurring course/appointment a block is: where the weekly series puts it, and whether an exception has changed it. */
+export interface RecurringOccurrenceRef {
+  /** The series' own date for this occurrence — the key an exception and (for appointments) its done/missed status are filed under. */
+  originalDate: string;
+  originalStartMinutes: number;
+  /** True when a per-date exception moved, resized or otherwise changed it. */
+  isOverridden: boolean;
+}
+
+/** What a calendar block is — decides how an edit to it is written (see src/hooks/useCalendarEventEdit.ts). */
+export type CalendarEventKind = "course" | "recurring-appointment" | "appointment" | "deadline" | "task";
+
 export interface CalendarEvent {
   id: string;
+  kind: CalendarEventKind;
+  /** The course / appointment / deadline / task row this block belongs to. */
+  entityId: string;
+  /** YYYY-MM-DD of the column this block sits on — for a recurring item, the date of this occurrence. */
+  occurrenceDate: string;
+  /** Index into the parent's meeting_blocks for a recurring occurrence; null for everything else. */
+  blockIndex: number | null;
+  /** For a recurring course/appointment occurrence, which one of the series it is; null for everything else. */
+  occurrence: RecurringOccurrenceRef | null;
+  /** A deadline that repeats weekly (each occurrence is its own row): moving it asks "This occurrence / All occurrences". */
+  recurringDeadline?: boolean;
+  /** Whether the calendar may change it directly. False for a tracked person's events. */
+  editable: boolean;
   title: string;
   /** The meeting's start–end time range (e.g. "12:30–1:50 PM") or a due-time marker. */
   timeLabel: string;
@@ -67,6 +94,35 @@ function toDateKey(date: Date): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
+const occurrenceRef = (occurrence: ResolvedOccurrence): RecurringOccurrenceRef => ({
+  originalDate: occurrence.originalDate,
+  originalStartMinutes: occurrence.originalStartMinutes,
+  isOverridden: occurrence.isOverridden,
+});
+
+/**
+ * `course-{id}-{block}-{weekday}` (or `appointment-…`) — stable and unchanged for an ordinary occurrence. A
+ * changed one adds the series date it came from, since an occurrence moved onto a day can sit beside that day's own
+ * occurrence of the same block and the ids must stay unique (they are React keys).
+ */
+function occurrenceEventId(prefix: "course" | "appointment", entityId: string, occurrence: ResolvedOccurrence, dayOfWeek: number): string {
+  const base = `${prefix}-${entityId}-${occurrence.blockIndex}-${dayOfWeek}`;
+  return occurrence.isOverridden ? `${base}-from-${occurrence.originalDate}` : base;
+}
+
+/** An instant's calendar date and minutes-of-day, in `timeZone` (the profile zone) or, when none is given, the device's. Null for an invalid value. */
+function instantParts(iso: string, timeZone: string | undefined): { dateKey: string; minutes: number } | null {
+  if (timeZone) {
+    const parts = isoToZonedParts(iso, timeZone);
+    if (!parts) return null;
+    const [hours, minutes] = parts.time.split(":").map(Number);
+    return { dateKey: parts.date, minutes: hours * HOUR + minutes };
+  }
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return null;
+  return { dateKey: toDateKey(date), minutes: date.getHours() * HOUR + date.getMinutes() };
+}
+
 /**
  * Composes the current week's grid from already-fetched Courses (recurring
  * meeting_blocks, each expanded to this week's matching weekdays and bounded
@@ -90,6 +146,14 @@ function toDateKey(date: Date): string {
  * events that belong to someone other than the account owner. No
  * `/api/calendar` route exists — this is client-side composition, same
  * pattern as the Dashboard.
+ *
+ * Deadlines and Tasks are instants, so `timeZone` (the profile zone from
+ * Settings) decides which day and time they sit on and which day is "today";
+ * omitted, the device's zone is used. Recurring items and one-off
+ * Appointments are zone-less wall-clock values and are unaffected.
+ *
+ * Every event carries structured fields (kind, entityId, occurrenceDate,
+ * blockIndex, editable) so the calendar can edit it without parsing `id`.
  */
 export function buildWeekGridData(
   courses: CourseRow[],
@@ -106,9 +170,15 @@ export function buildWeekGridData(
   // their per-type status tones. Null/omitted = never chosen: Courses keep
   // their default "accent" tone.
   ownerColor: string | null = null,
+  timeZone?: string,
 ): WeekGridData {
   const weekStart = startOfWeek(referenceDate);
   const weekEnd = new Date(weekStart.getTime() + 7 * 24 * 60 * 60 * 1000);
+  const weekDateKeys = DAY_LABELS.map((_, offset) => {
+    const day = new Date(weekStart);
+    day.setDate(day.getDate() + offset);
+    return toDateKey(day);
+  });
 
   const personById = new Map(people.map((person) => [person.id, person]));
   function personInfo(personId: string | null): { personId: string | null; personLabel: string; color?: string } {
@@ -117,75 +187,48 @@ export function buildWeekGridData(
     return { personId, personLabel: person?.name ?? "Unknown", color: person?.color };
   }
 
-  // blockIndex disambiguates the id when two blocks on the same course land
-  // on the same weekday (e.g. a lecture block and a separately-configured
-  // lab block that both happen to include Monday).
+  // Each recurring course/appointment is expanded through the occurrence resolver, which applies its
+  // per-date exceptions (cancelled / moved / resized) on top of the weekly pattern — see
+  // src/lib/calendar/occurrence-overrides.ts. blockIndex (kept on every occurrence) disambiguates the id when two
+  // blocks on the same course land on the same weekday (e.g. a lecture block and a separately-configured lab
+  // block that both happen to include Monday).
   interface CourseOccurrence {
     course: CourseRow;
-    blockIndex: number;
-    dayOfWeek: number;
-    startMinutes: number;
-    endMinutes: number;
+    occurrence: ResolvedOccurrence;
   }
-  const courseOccurrences: CourseOccurrence[] = [];
-  for (const course of courses) {
-    course.meeting_blocks.forEach((block, blockIndex) => {
-      for (const occurrence of expandBlockInWeek(block, weekStart, weekEnd, course.recurrence_start_date, course.recurrence_end_date)) {
-        courseOccurrences.push({
-          course,
-          blockIndex,
-          dayOfWeek: occurrence.dayOfWeek,
-          startMinutes: occurrence.startMinutes,
-          endMinutes: occurrence.endMinutes,
-        });
-      }
-    });
-  }
+  const courseOccurrences: CourseOccurrence[] = courses.flatMap((course) =>
+    resolveOccurrencesInWeek(course, weekStart, weekEnd).map((occurrence) => ({ course, occurrence })),
+  );
 
-  const weekDeadlines = deadlines.filter((deadline) => {
-    if (!isOpenDeadline(deadline.status)) return false;
-    // A tracked person's Deadline never renders on the calendar (People
-    // feature) — matches Voice Assistant's get_person_schedule, which only
-    // ever returns a tracked person's Courses/Tasks. This holds regardless
-    // of PersonFilterToggle state, and also keeps a tracked person's
-    // deadline from silently stretching windowStart/windowEnd below.
-    if (deadline.person_id !== null) return false;
-    const dueAt = new Date(deadline.due_at);
-    return dueAt >= weekStart && dueAt < weekEnd;
+  // A tracked person's Deadline never renders on the calendar (People
+  // feature) — matches Voice Assistant's get_person_schedule, which only
+  // ever returns a tracked person's Courses/Tasks. This holds regardless
+  // of PersonFilterToggle state, and also keeps a tracked person's
+  // deadline from silently stretching windowStart/windowEnd below.
+  const weekDeadlines = deadlines.flatMap((deadline) => {
+    if (!isOpenDeadline(deadline.status) || deadline.person_id !== null) return [];
+    const parts = instantParts(deadline.due_at, timeZone);
+    return parts && weekDateKeys.includes(parts.dateKey) ? [{ deadline, parts }] : [];
   });
 
-  const weekTasks = tasks.filter((task) => {
-    if (!isOpenTask(task.status) || !task.due_at) return false;
-    const dueAt = new Date(task.due_at);
-    return dueAt >= weekStart && dueAt < weekEnd;
+  const weekTasks = tasks.flatMap((task) => {
+    if (!isOpenTask(task.status) || !task.due_at) return [];
+    const parts = instantParts(task.due_at, timeZone);
+    return parts && weekDateKeys.includes(parts.dateKey) ? [{ task, parts }] : [];
   });
 
   // Course-style recurrence (supabase/migrations/0035_appointment_recurrence.sql):
   // an appointment with meeting_blocks set recurs like a Course instead of
   // living on a single date — expanded the same way courseOccurrences is
-  // above, via the same expandBlockInWeek utility.
+  // above, through the same resolver (so it honours the same exceptions).
   interface AppointmentOccurrence {
     appointment: AppointmentRow;
-    blockIndex: number;
-    dayOfWeek: number;
-    startMinutes: number;
-    endMinutes: number;
+    occurrence: ResolvedOccurrence;
   }
   const recurringAppointments = appointments.filter((appointment) => appointment.category !== "Session" && appointment.meeting_blocks.length > 0);
-  const recurringAppointmentOccurrences: AppointmentOccurrence[] = [];
-  for (const appointment of recurringAppointments) {
-    appointment.meeting_blocks.forEach((block, blockIndex) => {
-      for (const occurrence of expandBlockInWeek(block, weekStart, weekEnd, appointment.recurrence_start_date, appointment.recurrence_end_date)) {
-        recurringAppointmentOccurrences.push({
-          appointment,
-          blockIndex,
-          dayOfWeek: occurrence.dayOfWeek,
-          startMinutes: occurrence.startMinutes,
-          endMinutes: occurrence.endMinutes,
-        });
-      }
-    });
-  }
+  const recurringAppointmentOccurrences: AppointmentOccurrence[] = recurringAppointments.flatMap((appointment) =>
+    resolveOccurrencesInWeek(appointment, weekStart, weekEnd).map((occurrence) => ({ appointment, occurrence })),
+  );
 
   const weekAppointments = appointments.filter((appointment) => {
     if (appointment.category === "Session" || appointment.meeting_blocks.length > 0) return false;
@@ -195,21 +238,17 @@ export function buildWeekGridData(
 
   let windowStart = DEFAULT_WINDOW_START;
   let windowEnd = DEFAULT_WINDOW_END;
-  for (const occurrence of courseOccurrences) {
+  for (const { occurrence } of courseOccurrences) {
     windowStart = Math.min(windowStart, occurrence.startMinutes);
     windowEnd = Math.max(windowEnd, occurrence.endMinutes);
   }
-  for (const deadline of weekDeadlines) {
-    const dueAt = new Date(deadline.due_at);
-    const minutesOfDay = dueAt.getHours() * 60 + dueAt.getMinutes();
-    windowStart = Math.min(windowStart, minutesOfDay);
-    windowEnd = Math.max(windowEnd, minutesOfDay + DEADLINE_MARKER_MINUTES);
+  for (const { parts } of weekDeadlines) {
+    windowStart = Math.min(windowStart, parts.minutes);
+    windowEnd = Math.max(windowEnd, parts.minutes + DEADLINE_MARKER_MINUTES);
   }
-  for (const task of weekTasks) {
-    const dueAt = new Date(task.due_at as string);
-    const minutesOfDay = dueAt.getHours() * 60 + dueAt.getMinutes();
-    windowStart = Math.min(windowStart, minutesOfDay);
-    windowEnd = Math.max(windowEnd, minutesOfDay + TASK_MARKER_MINUTES);
+  for (const { parts } of weekTasks) {
+    windowStart = Math.min(windowStart, parts.minutes);
+    windowEnd = Math.max(windowEnd, parts.minutes + TASK_MARKER_MINUTES);
   }
   for (const appointment of weekAppointments) {
     const minutesOfDay = parseTimeToMinutes(appointment.time);
@@ -218,7 +257,7 @@ export function buildWeekGridData(
     windowStart = Math.min(windowStart, minutesOfDay);
     windowEnd = Math.max(windowEnd, minutesOfDay + durationMinutes);
   }
-  for (const occurrence of recurringAppointmentOccurrences) {
+  for (const { occurrence } of recurringAppointmentOccurrences) {
     windowStart = Math.min(windowStart, occurrence.startMinutes);
     windowEnd = Math.max(windowEnd, occurrence.endMinutes);
   }
@@ -229,52 +268,68 @@ export function buildWeekGridData(
   const days: DayColumn[] = DAY_LABELS.map((label, dayOfWeek) => {
     const date = new Date(weekStart);
     date.setDate(date.getDate() + dayOfWeek);
+    const dateKey = toDateKey(date);
     const events: CalendarEvent[] = [];
 
-    for (const occurrence of courseOccurrences) {
-      if (occurrence.dayOfWeek !== dayOfWeek) continue;
+    for (const { course, occurrence } of courseOccurrences) {
+      if (occurrence.date !== dateKey) continue;
       events.push({
-        id: `course-${occurrence.course.id}-${occurrence.blockIndex}-${dayOfWeek}`,
-        title: occurrence.course.name,
+        id: occurrenceEventId("course", course.id, occurrence, dayOfWeek),
+        kind: "course",
+        entityId: course.id,
+        occurrenceDate: dateKey,
+        blockIndex: occurrence.blockIndex,
+        occurrence: occurrenceRef(occurrence),
+        editable: course.person_id === null,
+        title: course.name,
         timeLabel: `${formatMinutesOfDay(occurrence.startMinutes)}–${formatMinutesOfDay(occurrence.endMinutes)}`,
-        subtitle: occurrence.course.location ?? "—",
+        subtitle: course.location ?? "—",
         startMinutes: occurrence.startMinutes,
         endMinutes: occurrence.endMinutes,
         tone: "accent",
-        href: `/courses/${occurrence.course.id}`,
-        ...personInfo(occurrence.course.person_id),
-        ...(occurrence.course.person_id === null && ownerColor ? { color: ownerColor } : {}),
+        href: `/courses/${course.id}`,
+        ...personInfo(course.person_id),
+        ...(course.person_id === null && ownerColor ? { color: ownerColor } : {}),
       });
     }
 
-    for (const deadline of weekDeadlines) {
-      const dueAt = new Date(deadline.due_at);
-      if (!sameDay(dueAt, date)) continue;
-      const minutesOfDay = dueAt.getHours() * 60 + dueAt.getMinutes();
+    for (const { deadline, parts } of weekDeadlines) {
+      if (parts.dateKey !== dateKey) continue;
       events.push({
         id: `deadline-${deadline.id}`,
+        kind: "deadline",
+        occurrence: null,
+        entityId: deadline.id,
+        occurrenceDate: dateKey,
+        blockIndex: null,
+        editable: deadline.person_id === null,
+        recurringDeadline: deadline.recurrence_days.length > 0,
         title: deadline.title,
-        timeLabel: formatMinutesOfDay(minutesOfDay),
+        timeLabel: formatMinutesOfDay(parts.minutes),
         subtitle: "Deadline",
-        startMinutes: minutesOfDay,
-        endMinutes: minutesOfDay + DEADLINE_MARKER_MINUTES,
+        startMinutes: parts.minutes,
+        endMinutes: parts.minutes + DEADLINE_MARKER_MINUTES,
         tone: DEADLINE_STATUS_TONE[deadline.status],
         href: `/courses/deadlines/${deadline.id}`,
         ...personInfo(deadline.person_id),
       });
     }
 
-    for (const task of weekTasks) {
-      const dueAt = new Date(task.due_at as string);
-      if (!sameDay(dueAt, date)) continue;
-      const minutesOfDay = dueAt.getHours() * 60 + dueAt.getMinutes();
+    for (const { task, parts } of weekTasks) {
+      if (parts.dateKey !== dateKey) continue;
       events.push({
         id: `task-${task.id}`,
+        kind: "task",
+        occurrence: null,
+        entityId: task.id,
+        occurrenceDate: dateKey,
+        blockIndex: null,
+        editable: task.person_id === null,
         title: task.title,
-        timeLabel: formatMinutesOfDay(minutesOfDay),
+        timeLabel: formatMinutesOfDay(parts.minutes),
         subtitle: "Task",
-        startMinutes: minutesOfDay,
-        endMinutes: minutesOfDay + TASK_MARKER_MINUTES,
+        startMinutes: parts.minutes,
+        endMinutes: parts.minutes + TASK_MARKER_MINUTES,
         tone: TASK_STATUS_TONE[task.status],
         href: `/board/${task.id}`,
         ...personInfo(task.person_id),
@@ -289,6 +344,12 @@ export function buildWeekGridData(
       const durationMinutes = appointment.duration_minutes ?? APPOINTMENT_MARKER_MINUTES;
       events.push({
         id: `appointment-${appointment.id}`,
+        kind: "appointment",
+        occurrence: null,
+        entityId: appointment.id,
+        occurrenceDate: dateKey,
+        blockIndex: null,
+        editable: true,
         title: appointment.title,
         timeLabel: `${formatMinutesOfDay(minutesOfDay)}–${formatMinutesOfDay(minutesOfDay + durationMinutes)}`,
         subtitle: appointment.location ?? appointment.category,
@@ -303,13 +364,19 @@ export function buildWeekGridData(
       });
     }
 
-    for (const occurrence of recurringAppointmentOccurrences) {
-      if (occurrence.dayOfWeek !== dayOfWeek) continue;
+    for (const { appointment, occurrence } of recurringAppointmentOccurrences) {
+      if (occurrence.date !== dateKey) continue;
       events.push({
-        id: `appointment-${occurrence.appointment.id}-${occurrence.blockIndex}-${dayOfWeek}`,
-        title: occurrence.appointment.title,
+        id: occurrenceEventId("appointment", appointment.id, occurrence, dayOfWeek),
+        kind: "recurring-appointment",
+        entityId: appointment.id,
+        occurrenceDate: dateKey,
+        blockIndex: occurrence.blockIndex,
+        occurrence: occurrenceRef(occurrence),
+        editable: true,
+        title: appointment.title,
         timeLabel: `${formatMinutesOfDay(occurrence.startMinutes)}–${formatMinutesOfDay(occurrence.endMinutes)}`,
-        subtitle: occurrence.appointment.location ?? occurrence.appointment.category,
+        subtitle: appointment.location ?? appointment.category,
         startMinutes: occurrence.startMinutes,
         endMinutes: occurrence.endMinutes,
         tone: "warn",
@@ -321,9 +388,9 @@ export function buildWeekGridData(
     return {
       key: String(dayOfWeek),
       dayOfWeek,
-      date: toDateKey(date),
+      date: dateKey,
       label: `${label} ${date.getDate()}`,
-      isToday: sameDay(date, today),
+      isToday: timeZone ? dateKey === todayInZone(timeZone, today) : sameDay(date, today),
       events,
     };
   });

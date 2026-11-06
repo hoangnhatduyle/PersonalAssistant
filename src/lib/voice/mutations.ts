@@ -18,7 +18,10 @@ import { syncReminderForTarget } from "@/lib/api/reminders";
 import { cancelDeadlineSeries } from "@/lib/api/deadline-recurrence";
 import { cascadeDeleteCourse, cascadeDeleteTask, cascadeDeleteTodoList } from "@/lib/api/cascade";
 import { applyRecurringEventTransition } from "@/lib/api/appointment-occurrence-transition";
-import { getRelevantOccurrenceDateKey, type MeetingBlock } from "@/lib/calendar/recurrence";
+import type { MeetingBlock } from "@/lib/calendar/recurrence";
+import { getRelevantOccurrenceKey } from "@/lib/appointments/occurrence-status";
+import { OCCURRENCE_OVERRIDES_EMBED } from "@/lib/api/occurrence-overrides";
+import type { OccurrenceOverrideRow } from "@/lib/api/entity-types";
 import {
   resolveDeadlineTransition,
   resolveEventTransition,
@@ -88,6 +91,11 @@ export interface MutationExecutionResult {
 
 /** Thrown when a pending_mutation's target no longer exists/is owned by the caller at execution time. */
 export class MutationTargetNotFoundError extends Error {}
+
+/** "Session marked done." — but a transition back to planned is a reopen, which reads better as "Session reopened.". */
+function statusChangeSummary(label: "Session" | "Appointment", status: string): string {
+  return status === "planned" ? `${label} reopened.` : `${label} marked ${status}.`;
+}
 
 /**
  * soft_delete_course_cascade/soft_delete_task_cascade (supabase/migrations/
@@ -595,7 +603,7 @@ async function executeSessionMutation(
     .select("*")
     .single();
   if (error) throw error;
-  return { summary: `Session marked ${nextStatus}.`, data: updated };
+  return { summary: statusChangeSummary("Session", nextStatus), data: updated };
 }
 
 /** Mirrors POST /api/todo-lists' + PATCH /api/todo-lists/[id]'s course-ownership + no-assigned-Person check. */
@@ -667,7 +675,7 @@ async function executeEventMutation(
   // transition -- NC-API-002: mirrors POST /api/appointments/[id]/transition exactly.
   const { data: existing, error: fetchError } = await supabase
     .from("appointments")
-    .select("id, event_status, meeting_blocks, recurrence_start_date, recurrence_end_date")
+    .select(`id, event_status, meeting_blocks, recurrence_start_date, recurrence_end_date, ${OCCURRENCE_OVERRIDES_EMBED}`)
     .eq("id", mutation.targetId)
     .eq("user_id", userId)
     .is("deleted_at", null)
@@ -688,7 +696,18 @@ async function executeEventMutation(
     // on. Never touches this row's own event_status column (frozen at
     // 'planned' for a recurring row) -- appointment_occurrence_status is the
     // authoritative store instead (0049_appointment_occurrence_status.sql).
-    const occurrenceDate = getRelevantOccurrenceDateKey(meetingBlocks, new Date(), existing.recurrence_start_date, existing.recurrence_end_date);
+    // Honours per-date exceptions and answers with the SERIES date, the key the status is filed under.
+    const occurrenceDate = getRelevantOccurrenceKey(
+      {
+        id: mutation.targetId,
+        event_status: existing.event_status,
+        meeting_blocks: meetingBlocks,
+        recurrence_start_date: existing.recurrence_start_date,
+        recurrence_end_date: existing.recurrence_end_date,
+        occurrence_overrides: existing.occurrence_overrides as OccurrenceOverrideRow[] | undefined,
+      },
+      new Date(),
+    );
     if (!occurrenceDate) throw new Error("This recurring appointment has no more occurrences");
 
     const outcome = await applyRecurringEventTransition(supabase, mutation.targetId, occurrenceDate, mutation.event);
@@ -696,7 +715,7 @@ async function executeEventMutation(
 
     const { data: appointment, error } = await supabase.from("appointments").select("*").eq("id", mutation.targetId).single();
     if (error) throw error;
-    return { summary: `Appointment marked ${outcome.status}.`, data: appointment };
+    return { summary: statusChangeSummary("Appointment", outcome.status), data: appointment };
   }
 
   const nextStatus = resolveEventTransition(mutation.event, existing.event_status);
@@ -709,7 +728,7 @@ async function executeEventMutation(
     .select("*")
     .single();
   if (error) throw error;
-  return { summary: `Appointment marked ${nextStatus}.`, data: updated };
+  return { summary: statusChangeSummary("Appointment", nextStatus), data: updated };
 }
 
 async function executeTodoListMutation(

@@ -37,7 +37,8 @@ test.describe("recurring deadlines: UI", () => {
     await page.getByRole("button", { name: "New deadline" }).click();
     await page.locator("#course_id").selectOption({ label: "CS 101" });
     await page.locator("#title").fill("Weekly quiz");
-    await page.locator("#due_at").fill("2030-03-15T17:00"); // a Friday
+    await page.locator("#due_at").fill("2030-03-15"); // a Friday
+    await page.locator("#due_at-time").fill("17:00");
     await page.getByLabel("Repeat weekly").check();
     await page.getByRole("button", { name: "Monday", exact: true }).click();
     await page.locator("#recurrence_end_date").fill("2030-06-01");

@@ -426,4 +426,243 @@ describe("buildWeekGridData", () => {
       }
     });
   });
+
+  describe("structured fields for editing", () => {
+    it("tags a course occurrence with its kind, entity, block, date and editability", () => {
+      const data = buildWeekGridData(
+        [makeCourse({ id: "c-1", meeting_blocks: [makeMeetingBlock({ days: [1], startMinutes: 600, endMinutes: 650 })] })],
+        [],
+        [],
+        [],
+        REFERENCE,
+      );
+      const monday = data.days.find((day) => day.dayOfWeek === 1)!;
+      expect(monday.events[0]).toMatchObject({
+        kind: "course",
+        entityId: "c-1",
+        blockIndex: 0,
+        occurrenceDate: "2026-01-05",
+        editable: true,
+      });
+    });
+
+    it("tags a recurring appointment occurrence the same way", () => {
+      const data = buildWeekGridData(
+        [],
+        [],
+        [],
+        [],
+        REFERENCE,
+        [makeAppointment({ id: "a-r", meeting_blocks: [makeMeetingBlock({ days: [3], startMinutes: 540, endMinutes: 600 })], time: null, duration_minutes: null })],
+      );
+      const wednesday = data.days.find((day) => day.dayOfWeek === 3)!;
+      expect(wednesday.events[0]).toMatchObject({
+        kind: "recurring-appointment",
+        entityId: "a-r",
+        blockIndex: 0,
+        occurrenceDate: "2026-01-07",
+        editable: true,
+      });
+    });
+
+    it("flags a recurring deadline, and not a one-off", () => {
+      const week = (rows: ReturnType<typeof makeDeadline>[]) =>
+        buildWeekGridData([], rows, [], [], REFERENCE).days.flatMap((day) => day.events).filter((e) => e.kind === "deadline");
+      const [recurring] = week([makeDeadline({ id: "d-r", due_at: "2026-01-07T15:00:00Z", recurrence_days: [3] })]);
+      const [oneOff] = week([makeDeadline({ id: "d-o", due_at: "2026-01-07T15:00:00Z" })]);
+      expect(recurring.recurringDeadline).toBe(true);
+      expect(oneOff.recurringDeadline).toBe(false);
+    });
+
+    it("keeps a tracked person's course read-only", () => {
+      const data = buildWeekGridData(
+        [makeCourse({ id: "c-p", person_id: "p-chau", meeting_blocks: [makeMeetingBlock({ days: [1], startMinutes: 600, endMinutes: 650 })] })],
+        [],
+        [],
+        [],
+        REFERENCE,
+      );
+      expect(data.days.find((day) => day.dayOfWeek === 1)!.events[0]).toMatchObject({ kind: "course", editable: false });
+    });
+
+    it("marks a one-off appointment editable, with no block index", () => {
+      const data = buildWeekGridData([], [], [], [], REFERENCE, [makeAppointment({ id: "a-1", date: "2026-01-08", time: "14:00" })]);
+      const thursday = data.days.find((day) => day.dayOfWeek === 4)!;
+      expect(thursday.events[0]).toMatchObject({
+        kind: "appointment",
+        entityId: "a-1",
+        blockIndex: null,
+        occurrenceDate: "2026-01-08",
+        editable: true,
+      });
+    });
+
+    it("marks the owner's open deadline and task editable", () => {
+      const data = buildWeekGridData(
+        [],
+        [makeDeadline({ id: "d-1", due_at: "2026-01-08T15:00:00" })],
+        [makeTask({ id: "t-1", due_at: "2026-01-08T16:00:00" })],
+        [],
+        REFERENCE,
+      );
+      const thursday = data.days.find((day) => day.dayOfWeek === 4)!;
+      expect(thursday.events.find((event) => event.kind === "deadline")).toMatchObject({
+        entityId: "d-1",
+        occurrenceDate: "2026-01-08",
+        blockIndex: null,
+        editable: true,
+      });
+      expect(thursday.events.find((event) => event.kind === "task")).toMatchObject({
+        entityId: "t-1",
+        occurrenceDate: "2026-01-08",
+        editable: true,
+      });
+    });
+
+    it("keeps a tracked person's task read-only", () => {
+      const data = buildWeekGridData(
+        [],
+        [],
+        [makeTask({ id: "t-p", due_at: "2026-01-08T16:00:00", person_id: "p-chau" })],
+        [makePerson({ id: "p-chau", name: "Chau" })],
+        REFERENCE,
+      );
+      const thursday = data.days.find((day) => day.dayOfWeek === 4)!;
+      expect(thursday.events[0]).toMatchObject({ kind: "task", personId: "p-chau", editable: false });
+    });
+  });
+
+  describe("timeZone (profile zone) placement of deadlines and tasks", () => {
+    // 04:30Z on Fri Jan 9 is 23:30 on Thu Jan 8 in Detroit (EST, UTC-5), but 04:30 Friday in UTC.
+    const FRIDAY_0430_UTC = "2026-01-09T04:30:00Z";
+
+    it("places a deadline on the day and time it reads in the profile zone, not the device's", () => {
+      const inDetroit = buildWeekGridData([], [makeDeadline({ id: "d-1", due_at: FRIDAY_0430_UTC })], [], [], REFERENCE, [], new Date(), null, "America/Detroit");
+      const thursday = inDetroit.days.find((day) => day.dayOfWeek === 4)!;
+      expect(thursday.events).toHaveLength(1);
+      expect(thursday.events[0]).toMatchObject({ startMinutes: 23 * 60 + 30, timeLabel: "11:30 PM" });
+      expect(inDetroit.days.find((day) => day.dayOfWeek === 5)!.events).toHaveLength(0);
+
+      const inUtc = buildWeekGridData([], [makeDeadline({ id: "d-1", due_at: FRIDAY_0430_UTC })], [], [], REFERENCE, [], new Date(), null, "UTC");
+      const friday = inUtc.days.find((day) => day.dayOfWeek === 5)!;
+      expect(friday.events[0]).toMatchObject({ startMinutes: 4 * 60 + 30, timeLabel: "4:30 AM" });
+    });
+
+    it("decides week membership by the profile zone's calendar date", () => {
+      // 04:30Z on Sun Jan 11 is Sat Jan 10 23:30 in Detroit (inside the Jan 4-10 week) but Jan 11 in UTC (outside it).
+      const due = "2026-01-11T04:30:00Z";
+      const detroit = buildWeekGridData([], [makeDeadline({ id: "d-1", due_at: due })], [], [], REFERENCE, [], new Date(), null, "America/Detroit");
+      expect(detroit.days.find((day) => day.dayOfWeek === 6)!.events).toHaveLength(1);
+      const utc = buildWeekGridData([], [makeDeadline({ id: "d-1", due_at: due })], [], [], REFERENCE, [], new Date(), null, "UTC");
+      expect(utc.days.every((day) => day.events.length === 0)).toBe(true);
+    });
+
+    it("places a task by the profile zone too, and widens the window to fit a late evening marker", () => {
+      const data = buildWeekGridData([], [], [makeTask({ id: "t-1", due_at: FRIDAY_0430_UTC })], [], REFERENCE, [], new Date(), null, "America/Detroit");
+      const thursday = data.days.find((day) => day.dayOfWeek === 4)!;
+      expect(thursday.events[0]).toMatchObject({ kind: "task", startMinutes: 23 * 60 + 30 });
+      expect(data.windowEnd).toBe(24 * 60);
+    });
+
+    it("marks today by the profile zone's date", () => {
+      // 03:30Z on Wed Jan 7 is still Tue Jan 6 (22:30) in Detroit.
+      const now = new Date("2026-01-07T03:30:00Z");
+      const detroit = buildWeekGridData([], [], [], [], REFERENCE, [], now, null, "America/Detroit");
+      expect(detroit.days.find((day) => day.isToday)?.dayOfWeek).toBe(2);
+      const utc = buildWeekGridData([], [], [], [], REFERENCE, [], now, null, "UTC");
+      expect(utc.days.find((day) => day.isToday)?.dayOfWeek).toBe(3);
+    });
+  });
+
+  describe("occurrence overrides (a recurring course/appointment changed for one date only)", () => {
+    // REFERENCE week: Sun 2026-01-04 .. Sat 2026-01-10. The class meets Thursdays 8:30 AM - 4:30 PM.
+    const THURSDAY_CLASS = [makeMeetingBlock({ days: [4], startMinutes: 510, endMinutes: 990 })];
+    const override = (fields: Partial<import("@/lib/api/entity-types").OccurrenceOverrideRow>) => ({
+      original_date: "2026-01-08",
+      original_start_minutes: 510,
+      is_cancelled: false,
+      new_date: "2026-01-08",
+      new_start_minutes: 780,
+      new_end_minutes: 990,
+      ...fields,
+    });
+    const course = (overrides: Array<ReturnType<typeof override>>) =>
+      makeCourse({ id: "c-1", meeting_blocks: THURSDAY_CLASS, occurrence_overrides: overrides });
+    const dayOf = (data: ReturnType<typeof buildWeekGridData>, dayOfWeek: number) => data.days.find((d) => d.dayOfWeek === dayOfWeek)!;
+
+    it("tags an ordinary occurrence with where the series puts it", () => {
+      const data = buildWeekGridData([course([])], [], [], [], REFERENCE);
+      expect(dayOf(data, 4).events[0]).toMatchObject({
+        id: "course-c-1-0-4",
+        occurrenceDate: "2026-01-08",
+        occurrence: { originalDate: "2026-01-08", originalStartMinutes: 510, isOverridden: false },
+      });
+    });
+
+    it("leaves non-recurring items without an occurrence reference", () => {
+      const data = buildWeekGridData([], [makeDeadline({ due_at: "2026-01-08T15:00:00" })], [], [], REFERENCE, [makeAppointment({ date: "2026-01-07", time: "09:00" })]);
+      for (const event of data.days.flatMap((day) => day.events)) expect(event.occurrence).toBeNull();
+    });
+
+    it("drops a cancelled occurrence from its day", () => {
+      const data = buildWeekGridData([course([override({ is_cancelled: true, new_date: null, new_start_minutes: null, new_end_minutes: null })])], [], [], [], REFERENCE);
+      expect(data.days.every((day) => day.events.length === 0)).toBe(true);
+    });
+
+    it("shows a shortened occurrence at its new time, marked as adjusted, with the series identity kept", () => {
+      const data = buildWeekGridData([course([override({})])], [], [], [], REFERENCE);
+      const [event] = dayOf(data, 4).events;
+      expect(event).toMatchObject({
+        startMinutes: 780,
+        endMinutes: 990,
+        timeLabel: "1 PM–4:30 PM",
+        occurrence: { originalDate: "2026-01-08", originalStartMinutes: 510, isOverridden: true },
+        blockIndex: 0,
+      });
+    });
+
+    it("leaves the same class a week later untouched", () => {
+      const nextWeek = new Date("2026-01-14T12:00:00");
+      const data = buildWeekGridData([course([override({})])], [], [], [], nextWeek);
+      expect(dayOf(data, 4).events[0]).toMatchObject({ startMinutes: 510, endMinutes: 990, occurrence: { isOverridden: false } });
+    });
+
+    it("moves an occurrence to another day of the week, and off the day it left", () => {
+      const data = buildWeekGridData([course([override({ new_date: "2026-01-06", new_start_minutes: 600, new_end_minutes: 660 })])], [], [], [], REFERENCE);
+      expect(dayOf(data, 4).events).toEqual([]);
+      expect(dayOf(data, 2).events[0]).toMatchObject({ startMinutes: 600, endMinutes: 660, occurrenceDate: "2026-01-06", occurrence: { originalDate: "2026-01-08", isOverridden: true } });
+    });
+
+    it("shows an occurrence moved in from another week, with an id that can't clash with the day's own class", () => {
+      // The Jan 15 class moved back to Thursday Jan 8 at 10 AM, alongside Jan 8's own class.
+      const data = buildWeekGridData([course([override({ original_date: "2026-01-15", new_date: "2026-01-08", new_start_minutes: 600, new_end_minutes: 660 })])], [], [], [], REFERENCE);
+      const events = dayOf(data, 4).events;
+      expect(events).toHaveLength(2);
+      expect(new Set(events.map((event) => event.id)).size).toBe(2);
+    });
+
+    it("widens the display window for an occurrence moved earlier than any class", () => {
+      const early = buildWeekGridData([course([override({ new_start_minutes: 5 * 60, new_end_minutes: 6 * 60 })])], [], [], [], REFERENCE);
+      expect(early.windowStart).toBeLessThanOrEqual(4 * 60 + 30);
+      const plain = buildWeekGridData([course([])], [], [], [], REFERENCE);
+      expect(plain.windowStart).toBeGreaterThan(4 * 60 + 30);
+    });
+
+    it("applies the same to a recurring appointment", () => {
+      const appointment = makeAppointment({
+        id: "a-r",
+        time: null,
+        duration_minutes: null,
+        meeting_blocks: [makeMeetingBlock({ days: [3], startMinutes: 540, endMinutes: 600 })],
+        occurrence_overrides: [override({ original_date: "2026-01-07", original_start_minutes: 540, new_date: "2026-01-07", new_start_minutes: 660, new_end_minutes: 720 })],
+      });
+      const data = buildWeekGridData([], [], [], [], REFERENCE, [appointment]);
+      expect(dayOf(data, 3).events[0]).toMatchObject({
+        kind: "recurring-appointment",
+        startMinutes: 660,
+        endMinutes: 720,
+        occurrence: { originalDate: "2026-01-07", originalStartMinutes: 540, isOverridden: true },
+      });
+    });
+  });
 });

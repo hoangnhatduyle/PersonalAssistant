@@ -4,7 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { DayColumnEvents, type CreateRequest } from "@/components/calendar/DayColumnEvents";
 import { formatMinutesOfDay } from "@/lib/calendar/recurrence";
 import { layoutDayEvents, PIXELS_PER_MINUTE, weekGridHeightPx } from "@/lib/calendar/layout-day-events";
-import type { DayColumn } from "@/lib/calendar/build-week-events";
+import type { CalendarEvent, DayColumn } from "@/lib/calendar/build-week-events";
+import type { EventTimes } from "@/lib/calendar/drag-math";
 import { Button } from "@/components/ui/Button";
 
 type Props = {
@@ -15,12 +16,14 @@ type Props = {
   onPrevDay: () => void;
   onNextDay: () => void;
   onCreateRequest: (request: CreateRequest) => void;
+  onEditEvent?: (event: CalendarEvent, times: EventTimes) => void;
+  onAdjustTime?: (event: CalendarEvent) => void;
 };
 
 const TIME_AXIS_WIDTH_PX = 64;
 
 /** Single-day mobile view of the week grid — same event layout primitives as WeekGrid, one full-width column. */
-export function DayView({ day, hourMarks, windowStart, windowEnd, onPrevDay, onNextDay, onCreateRequest }: Props) {
+export function DayView({ day, hourMarks, windowStart, windowEnd, onPrevDay, onNextDay, onCreateRequest, onEditEvent, onAdjustTime }: Props) {
   const gridRef = useRef<HTMLDivElement>(null);
   const [columnWidthPx, setColumnWidthPx] = useState(0);
   const gridHeightPx = weekGridHeightPx(windowStart, windowEnd);
@@ -38,7 +41,7 @@ export function DayView({ day, hourMarks, windowStart, windowEnd, onPrevDay, onN
   }, []);
 
   return (
-    <div className="max-h-[75vh] overflow-auto">
+    <div data-calendar-scroll className="isolate max-h-[75vh] overflow-auto">
       <div className="sticky top-0 z-10 flex items-center justify-between gap-2 border-b border-panel-border bg-panel px-1 pb-2">
         <Button variant="secondary" size="icon" aria-label="Previous day" title="Previous day" onClick={onPrevDay}>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} className="h-4 w-4">
@@ -76,6 +79,8 @@ export function DayView({ day, hourMarks, windowStart, windowEnd, onPrevDay, onN
           windowStart={windowStart}
           gridHeightPx={gridHeightPx}
           onCreateRequest={onCreateRequest}
+          onEditEvent={onEditEvent}
+          onAdjustTime={onAdjustTime}
         />
       </div>
     </div>

@@ -206,23 +206,33 @@ describe("transition-guard trigger", () => {
       expect(error).not.toBeNull();
     });
 
-    it("[session_status] rejects done -> planned", async () => {
+    it("[session_status] accepts the reopen edge done -> planned", async () => {
       const deadlineId = await createDeadline(admin, userId, courseId);
       const id = await createSession(admin, userId, deadlineId);
       await walkTransitions(admin, "appointments", id, "session_status", ["done"]);
       const { error } = await admin.from("appointments").update({ session_status: "planned" }).eq("id", id);
-      expect(error).not.toBeNull();
+      expect(error).toBeNull();
+      const { data } = await admin.from("appointments").select("session_status").eq("id", id).single();
+      expect(data?.session_status).toBe("planned");
     });
 
-    it("[session_status] rejects skipped -> planned", async () => {
+    it("[session_status] accepts the reopen edge skipped -> planned", async () => {
       const deadlineId = await createDeadline(admin, userId, courseId);
       const id = await createSession(admin, userId, deadlineId);
       await walkTransitions(admin, "appointments", id, "session_status", ["skipped"]);
       const { error } = await admin.from("appointments").update({ session_status: "planned" }).eq("id", id);
+      expect(error).toBeNull();
+    });
+
+    it("[session_status] still rejects done -> skipped (reopen first, then mark again)", async () => {
+      const deadlineId = await createDeadline(admin, userId, courseId);
+      const id = await createSession(admin, userId, deadlineId);
+      await walkTransitions(admin, "appointments", id, "session_status", ["done"]);
+      const { error } = await admin.from("appointments").update({ session_status: "skipped" }).eq("id", id);
       expect(error).not.toBeNull();
     });
 
-    it("[session_status] accepts the three legal edges: planned->done, planned->skipped, skipped->done", async () => {
+    it("[session_status] accepts the forward edges: planned->done, planned->skipped, skipped->done", async () => {
       const deadlineId = await createDeadline(admin, userId, courseId);
 
       const doneId = await createSession(admin, userId, deadlineId);
@@ -242,17 +252,24 @@ describe("transition-guard trigger", () => {
       expect(makeUpSession?.session_status).toBe("done");
     });
 
-    it("[event_status] rejects done -> planned", async () => {
+    it("[event_status] accepts the reopen edge done -> planned", async () => {
       const id = await createAppointment(admin, userId);
       await walkTransitions(admin, "appointments", id, "event_status", ["done"]);
       const { error } = await admin.from("appointments").update({ event_status: "planned" }).eq("id", id);
-      expect(error).not.toBeNull();
+      expect(error).toBeNull();
     });
 
-    it("[event_status] rejects missed -> planned", async () => {
+    it("[event_status] accepts the reopen edge missed -> planned", async () => {
       const id = await createAppointment(admin, userId);
       await walkTransitions(admin, "appointments", id, "event_status", ["missed"]);
       const { error } = await admin.from("appointments").update({ event_status: "planned" }).eq("id", id);
+      expect(error).toBeNull();
+    });
+
+    it("[event_status] still rejects a direct done -> missed flip (reopen first)", async () => {
+      const id = await createAppointment(admin, userId);
+      await walkTransitions(admin, "appointments", id, "event_status", ["done"]);
+      const { error } = await admin.from("appointments").update({ event_status: "missed" }).eq("id", id);
       expect(error).not.toBeNull();
     });
 
@@ -270,7 +287,7 @@ describe("transition-guard trigger", () => {
     });
 
     // 0028_event_status_missed_terminal.sql removed the missed->done edge 0027 allowed.
-    it("[event_status] rejects missed -> done (missed is terminal)", async () => {
+    it("[event_status] rejects missed -> done (reopen first, then mark again)", async () => {
       const id = await createAppointment(admin, userId);
       await walkTransitions(admin, "appointments", id, "event_status", ["missed"]);
       const { error } = await admin.from("appointments").update({ event_status: "done" }).eq("id", id);

@@ -9,12 +9,20 @@ import type { EventStatus } from "@/lib/api/entity-types";
 const EVENT_LABELS: Record<EventTransitionEvent, string> = {
   user_marks_event_done: "Mark Done",
   user_marks_event_missed: "Mark Missed",
+  user_reopens_event: "Reopen",
 };
 
 const EVENT_ICONS: Record<EventTransitionEvent, string> = {
   user_marks_event_done: "✓",
   user_marks_event_missed: "✕",
+  user_reopens_event: "↺",
 };
+
+function eventButtonVariant(event: EventTransitionEvent, isSuggestedMissed: boolean): "primary" | "secondary" | "destructive" | "success" {
+  if (isSuggestedMissed) return "primary";
+  if (event === "user_reopens_event") return "secondary";
+  return event === "user_marks_event_missed" ? "destructive" : "success";
+}
 
 /**
  * Inline status-transition buttons for a general Event/Appointment —
@@ -79,7 +87,7 @@ export function EventTransitionButtons({
           <Button
             key={event}
             size={compact ? "icon" : size === "lg" ? "md" : "sm"}
-            variant={isSuggestedMissed ? "primary" : event === "user_marks_event_missed" ? "destructive" : "success"}
+            variant={eventButtonVariant(event, isSuggestedMissed)}
             isLoading={transition.isPending}
             onClick={() => handleTransition(event)}
             className={size === "lg" ? "px-6 py-3 text-base" : ""}

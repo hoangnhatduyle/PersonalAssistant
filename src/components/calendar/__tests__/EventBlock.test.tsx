@@ -36,6 +36,60 @@ function renderBlock(overrides: Partial<React.ComponentProps<typeof EventBlock>>
   );
 }
 
+describe("EventBlock test hooks", () => {
+  it("exposes the event id as a stable data attribute for tests and tooling", () => {
+    renderBlock({ eventId: "deadline-d-1" });
+    const block = screen.getByTestId("calendar-event");
+    expect(block).toHaveAttribute("data-event-id", "deadline-d-1");
+  });
+
+  it("omits the id attribute when none is given", () => {
+    renderBlock();
+    expect(screen.getByTestId("calendar-event")).not.toHaveAttribute("data-event-id");
+  });
+});
+
+describe("EventBlock drag support", () => {
+  it("is never natively draggable (a link would otherwise start the browser's own link drag)", () => {
+    renderBlock();
+    expect(screen.getByTestId("calendar-event")).toHaveAttribute("draggable", "false");
+  });
+
+  it("forwards pointer-down so a drag can start", () => {
+    const onPointerDown = vi.fn();
+    renderBlock({ onPointerDown });
+    fireEvent.pointerDown(screen.getByTestId("calendar-event"));
+    expect(onPointerDown).toHaveBeenCalledTimes(1);
+  });
+
+  it("dims while it is being dragged and shows a grab cursor when editable", () => {
+    const { rerender } = renderBlock({ isEditable: true });
+    expect(screen.getByTestId("calendar-event")).toHaveClass("cursor-grab");
+    expect(screen.getByTestId("calendar-event")).not.toHaveClass("opacity-40");
+    rerender(
+      <EventBlock
+        title="x"
+        timeLabel="t"
+        subtitle="s"
+        topPx={0}
+        heightPx={72}
+        visibleHeightPx={72}
+        leftPx={4}
+        widthPx={100}
+        stackIndex={0}
+        stackSize={1}
+        isElevated={false}
+        tone="accent"
+        href="/x"
+        isDragging
+        onElevate={() => {}}
+        onOpenPicker={() => {}}
+      />,
+    );
+    expect(screen.getByTestId("calendar-event")).toHaveClass("opacity-40");
+  });
+});
+
 describe("EventBlock detail level", () => {
   it("shows title, time, and location when there is room", () => {
     renderBlock();
@@ -94,3 +148,22 @@ describe("EventBlock hover card", () => {
     expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
   });
 });
+
+describe("EventBlock adjusted marker", () => {
+  it("marks an occurrence that differs from its series with a dashed border and an Adjusted tag", () => {
+    renderBlock({ isAdjusted: true });
+    const block = screen.getByTestId("calendar-event");
+    expect(block).toHaveAttribute("data-adjusted", "true");
+    expect(block.className).toContain("border-dashed");
+    expect(screen.getByText("Adjusted")).toBeInTheDocument();
+  });
+
+  it("leaves an ordinary block unmarked", () => {
+    renderBlock();
+    const block = screen.getByTestId("calendar-event");
+    expect(block).not.toHaveAttribute("data-adjusted");
+    expect(block.className).not.toContain("border-dashed");
+    expect(screen.queryByText("Adjusted")).not.toBeInTheDocument();
+  });
+});
+

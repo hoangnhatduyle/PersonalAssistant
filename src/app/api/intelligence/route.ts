@@ -1,5 +1,7 @@
 import OpenAI from "openai";
 import { requireAuthenticatedContext } from "@/lib/api/auth";
+import { OCCURRENCE_OVERRIDES_EMBED } from "@/lib/api/occurrence-overrides";
+import { buildTodaysClasses, type ClassSource } from "@/lib/intelligence/todays-classes";
 import { requireEnv } from "@/lib/env";
 import { successResponse, serverErrorResponse } from "@/lib/api/response";
 import { buildSuggestion, type Suggestion } from "@/lib/dashboard/suggestion";
@@ -42,7 +44,7 @@ export async function POST() {
     const [coursesRes, deadlinesRes, tasksRes, remindersRes, appointmentsRes] = await Promise.all([
       supabase
         .from("courses")
-        .select("name, code, meeting_blocks, location")
+        .select(`name, code, meeting_blocks, location, recurrence_start_date, recurrence_end_date, ${OCCURRENCE_OVERRIDES_EMBED}`)
         .eq("user_id", user.id)
         .is("person_id", null)
         .is("deleted_at", null),
@@ -87,22 +89,8 @@ export async function POST() {
     );
     const todayTasks = allTasks.filter((t) => t.due_at && new Date(t.due_at).getTime() <= new Date(todayEnd).getTime());
 
-    const dayOfWeek = now.getDay();
-    const todayMeetings = (coursesRes.data ?? []).flatMap((course) => {
-      const blocks = (course.meeting_blocks ?? []) as Array<{
-        days: number[];
-        startMinutes: number;
-        endMinutes: number;
-      }>;
-      return blocks
-        .filter((block) => block.days.includes(dayOfWeek))
-        .map((block) => ({
-          course: course.code ?? course.name,
-          location: course.location,
-          start: `${Math.floor(block.startMinutes / 60)}:${String(block.startMinutes % 60).padStart(2, "0")}`,
-          end: `${Math.floor(block.endMinutes / 60)}:${String(block.endMinutes % 60).padStart(2, "0")}`,
-        }));
-    });
+    // The day's classes with per-date exceptions applied (cancelled / shortened / moved), for the same UTC date the rest of this briefing uses.
+    const todayMeetings = buildTodaysClasses((coursesRes.data ?? []) as unknown as ClassSource[], todayStr);
 
     const deadlineTitleById = new Map(allDeadlines.map((d) => [d.id, d.title]));
     const deadlineSessions = buildSessionProgress(appointmentsRes.data ?? []).map((progress) => ({

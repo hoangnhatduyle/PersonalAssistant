@@ -13,8 +13,22 @@ import type { SalaryPeriod } from "@/lib/library/salary";
 // meeting_blocks is typed as generic Json by the Supabase generator (it
 // can't see the app-level shape stored in the jsonb column) — overridden
 // here with the precise MeetingBlock[] shape every consumer actually uses.
+// A per-occurrence exception to a recurring course/appointment
+// (supabase/migrations/0061_occurrence_overrides.sql). Only the columns a reader
+// needs are embedded — see OccurrenceOverride in src/lib/calendar/occurrence-overrides.ts
+// and OCCURRENCE_OVERRIDES_EMBED in src/lib/api/occurrence-overrides.ts.
+export type OccurrenceOverrideRow = Pick<
+  Database["public"]["Tables"]["occurrence_overrides"]["Row"],
+  "original_date" | "original_start_minutes" | "is_cancelled" | "new_date" | "new_start_minutes" | "new_end_minutes"
+>;
+
+// occurrence_overrides is the embedded relation GET /api/courses and
+// GET /api/appointments select alongside the row
+// (`*, occurrence_overrides(...)`). Optional: absent on any response that
+// doesn't select it (e.g. the POST/PATCH/DELETE routes' returned row).
 export type CourseRow = Omit<Database["public"]["Tables"]["courses"]["Row"], "meeting_blocks"> & {
   meeting_blocks: MeetingBlock[];
+  occurrence_overrides?: OccurrenceOverrideRow[];
 };
 export type DeadlineRow = Database["public"]["Tables"]["deadlines"]["Row"];
 export type TaskRow = Database["public"]["Tables"]["tasks"]["Row"];
@@ -65,6 +79,7 @@ export type TaskWithLabels = TaskRow & {
 export type AppointmentRow = Omit<Database["public"]["Tables"]["appointments"]["Row"], "meeting_blocks"> & {
   meeting_blocks: MeetingBlock[];
   appointment_occurrence_status?: Array<{ occurrence_date: string; status: Database["public"]["Enums"]["event_status"] }>;
+  occurrence_overrides?: OccurrenceOverrideRow[];
 };
 export type SessionStatus = Database["public"]["Enums"]["session_status"];
 export type EventStatus = Database["public"]["Enums"]["event_status"];

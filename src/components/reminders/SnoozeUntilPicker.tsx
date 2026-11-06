@@ -15,7 +15,7 @@ export function SnoozeUntilPicker({ onConfirm, onCancel, isSubmitting = false }:
 
   return (
     <div className="flex flex-wrap items-center gap-2 rounded-control border border-panel-border p-3">
-      <DateTimeField value={value} onChange={setValue} />
+      <DateTimeField value={value} onChange={setValue} ariaLabel="Snooze until" />
       <Button size="sm" disabled={!value} isLoading={isSubmitting} onClick={() => value && onConfirm(value)}>
         Confirm snooze
       </Button>

@@ -12,6 +12,9 @@ import { APPLICATION_STATUSES, APPLICATION_STATUS_LABEL } from "@/lib/library/ap
 import { SALARY_PERIODS, WORK_MODES } from "@/lib/library/constants";
 import { WORK_MODE_LABEL } from "@/lib/library/labels";
 import { Button } from "@/components/ui/Button";
+import { DatePicker } from "@/components/ui/DatePicker";
+import { useUserTimezone } from "@/hooks/useUserTimezone";
+import { todayInZone } from "@/lib/format/zoned-datetime";
 import { FormField } from "@/components/ui/FormField";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
@@ -20,13 +23,6 @@ import { Textarea } from "@/components/ui/Textarea";
 
 const PICKER_LIMIT = 100;
 const PERIOD_LABEL = { year: "per year", month: "per month", hour: "per hour" } as const;
-
-/** Local calendar date as YYYY-MM-DD (what an <input type="date"> holds). */
-function todayLocal(): string {
-  const now = new Date();
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
-}
 
 type Props = {
   /** Fixed employer (the dossier's "Add role"); omit to show an employer picker. */
@@ -43,6 +39,7 @@ export function ApplicationForm({ employerId, application, onSubmit, onCancel, s
   const [duplicateId, setDuplicateId] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const isEditing = Boolean(application);
+  const timeZone = useUserTimezone();
   const { data: employers, isLoading: employersLoading } = useLibraryEmployers({ limit: PICKER_LIMIT }, { enabled: !employerId && !isEditing });
 
   const {
@@ -63,7 +60,7 @@ export function ApplicationForm({ employerId, application, onSubmit, onCancel, s
       salary_currency: application?.salary_currency ?? "",
       salary_period: application?.salary_period ?? "",
       tech_stack: application?.tech_stack ?? [],
-      date_found: application?.date_found ?? todayLocal(),
+      date_found: application?.date_found ?? todayInZone(timeZone),
       ...(isEditing ? {} : { status: "interested" as const }),
       notes: application?.notes ?? "",
     },
@@ -163,7 +160,18 @@ export function ApplicationForm({ employerId, application, onSubmit, onCancel, s
 
       <div className="grid gap-4 sm:grid-cols-2">
         <FormField label="Date found" htmlFor="application-date-found" error={errors.date_found?.message}>
-          <Input id="application-date-found" type="date" invalid={Boolean(errors.date_found)} {...register("date_found")} />
+          <Controller
+            control={control}
+            name="date_found"
+            render={({ field }) => (
+              <DatePicker
+                id="application-date-found"
+                value={field.value ?? ""}
+                invalid={Boolean(errors.date_found)}
+                onChange={field.onChange}
+              />
+            )}
+          />
         </FormField>
         {!isEditing && (
           <FormField label="Status" htmlFor="application-status">

@@ -37,8 +37,8 @@ const deadlineTransitionEventSchema = z
   .nullable()
   .default(null);
 const taskTransitionEventSchema = z.enum(["user_marks_done", "user_cancels"]).nullable().default(null);
-const sessionTransitionEventSchema = z.enum(["user_marks_session_done", "user_marks_session_skipped"]).nullable().default(null);
-const eventTransitionEventSchema = z.enum(["user_marks_event_done", "user_marks_event_missed"]).nullable().default(null);
+const sessionTransitionEventSchema = z.enum(["user_marks_session_done", "user_marks_session_skipped", "user_reopens_session"]).nullable().default(null);
+const eventTransitionEventSchema = z.enum(["user_marks_event_done", "user_marks_event_missed", "user_reopens_event"]).nullable().default(null);
 
 // Email triage (src/lib/email-triage): the triage item a Deadline/Task/Event
 // create was proposed from. Create-only and optional; omission is tolerated

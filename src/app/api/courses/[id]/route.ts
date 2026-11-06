@@ -1,5 +1,7 @@
 import type { NextRequest } from "next/server";
 import { requireAuthenticatedContext } from "@/lib/api/auth";
+import { clearFutureOverridesIfPatternChanged, OCCURRENCE_OVERRIDES_EMBED } from "@/lib/api/occurrence-overrides";
+import type { MeetingBlock } from "@/lib/calendar/recurrence";
 import { wantsIncludeDeleted } from "@/lib/api/pagination";
 import { coursePatchSchema } from "@/lib/api/schemas";
 import { syncReminderForTarget } from "@/lib/api/reminders";
@@ -22,7 +24,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
   const { supabase, user } = ctx;
   const { id } = await params;
 
-  let query = supabase.from("courses").select("*").eq("id", id).eq("user_id", user.id);
+  let query = supabase.from("courses").select(`*, ${OCCURRENCE_OVERRIDES_EMBED}`).eq("id", id).eq("user_id", user.id);
   if (!wantsIncludeDeleted(request.nextUrl.searchParams)) query = query.is("deleted_at", null);
   const { data, error } = await query.maybeSingle();
   if (error) return serverErrorResponse("course get failed", error);
@@ -65,7 +67,7 @@ export async function PATCH(request: Request, { params }: RouteParams) {
 
   const { data: existing, error: fetchError } = await supabase
     .from("courses")
-    .select("id, reminders_enabled, reminder_lead_minutes, person_id")
+    .select("id, reminders_enabled, reminder_lead_minutes, person_id, meeting_blocks, recurrence_start_date, recurrence_end_date")
     .eq("id", id)
     .eq("user_id", user.id)
     .is("deleted_at", null)
@@ -80,6 +82,16 @@ export async function PATCH(request: Request, { params }: RouteParams) {
     .select("*")
     .single();
   if (updateError) return serverErrorResponse("course update failed", updateError);
+
+  // Changing the weekly pattern invalidates the series' per-occurrence exceptions (see clearFutureOverridesIfPatternChanged).
+  const overridesError = await clearFutureOverridesIfPatternChanged(
+    supabase,
+    "courses",
+    id,
+    { ...existing, meeting_blocks: existing.meeting_blocks as unknown as MeetingBlock[] },
+    parsed.data,
+  );
+  if (overridesError) return serverErrorResponse("course occurrence overrides cleanup failed", overridesError);
 
   const remindersEnabled = parsed.data.reminders_enabled ?? existing.reminders_enabled;
   const reminderLeadMinutes = parsed.data.reminder_lead_minutes ?? existing.reminder_lead_minutes;

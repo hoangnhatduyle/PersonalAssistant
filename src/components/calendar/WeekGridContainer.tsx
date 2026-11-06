@@ -7,13 +7,19 @@ import { useTasks } from "@/hooks/useTasks";
 import { usePeople } from "@/hooks/usePeople";
 import { useAppointments } from "@/hooks/useAppointments";
 import { useSettings } from "@/hooks/useSettings";
-import { buildWeekGridData } from "@/lib/calendar/build-week-events";
+import { useUserTimezone } from "@/hooks/useUserTimezone";
+import { buildWeekGridData, type CalendarEvent } from "@/lib/calendar/build-week-events";
+import { CALENDAR_APPOINTMENT_FILTERS, CALENDAR_LIST_FILTERS } from "@/lib/calendar/query-filters";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { WeekGrid } from "@/components/calendar/WeekGrid";
 import { DayView } from "@/components/calendar/DayView";
 import { CalendarLegend } from "@/components/calendar/CalendarLegend";
 import { AppointmentsTimeline } from "@/components/calendar/AppointmentsTimeline";
 import { CreateEventDialog } from "@/components/calendar/CreateEventDialog";
+import { EventTimeDialog } from "@/components/calendar/EventTimeDialog";
+import { RecurringScopeDialog } from "@/components/calendar/RecurringScopeDialog";
+import { useCalendarEventEdit } from "@/hooks/useCalendarEventEdit";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import type { CreateRequest } from "@/components/calendar/DayColumnEvents";
 import {
   PersonFilterToggle,
@@ -50,15 +56,23 @@ export function WeekGridContainer() {
   const isMobile = useMediaQuery("(max-width: 767px)");
   // Index into weekGrid.days (0 = Sunday .. 6 = Saturday) for the mobile day view.
   const [selectedDayIndex, setSelectedDayIndex] = useState(() => new Date().getDay());
-  const { data: courses, isLoading: coursesLoading } = useCourses();
-  const { data: deadlines, isLoading: deadlinesLoading } = useDeadlines();
-  const { data: tasks, isLoading: tasksLoading } = useTasks();
+  const { data: courses, isLoading: coursesLoading } = useCourses(CALENDAR_LIST_FILTERS);
+  const { data: deadlines, isLoading: deadlinesLoading } = useDeadlines(CALENDAR_LIST_FILTERS);
+  const { data: tasks, isLoading: tasksLoading } = useTasks(CALENDAR_LIST_FILTERS);
   const { data: people, isLoading: peopleLoading } = usePeople();
   // Not part of isLoading: owner_color just falls back to the default course tone until it arrives.
   const { data: settings } = useSettings();
+  // Deadlines and tasks are placed by the profile zone, the zone their due dates are shown in everywhere else.
+  const timeZone = useUserTimezone();
   // Same filters object as AppointmentsTimeline's own fetch below, so
   // TanStack Query dedupes this into the one request/cache entry.
-  const { data: appointments, isLoading: appointmentsLoading } = useAppointments({ limit: 100 });
+  const { data: appointments, isLoading: appointmentsLoading } = useAppointments(CALENDAR_APPOINTMENT_FILTERS);
+  // Drag/resize/dialog changes: written optimistically, with a confirmation first when a deadline/task would land in the past
+  // and a "This occurrence / All occurrences" question for a recurring course or appointment (which needs its weekly pattern).
+  const edit = useCalendarEventEdit(timeZone, (event) => {
+    const rows = event.kind === "course" ? courses?.rows : appointments?.rows;
+    return rows?.find((row) => row.id === event.entityId)?.meeting_blocks ?? null;
+  });
   // null = untouched, falls back to Mine only (tracked people are opt-in
   // via the toggle). Once the user interacts, personFilter holds their exact selection —
   // including an intentionally empty set — so each person can be toggled
@@ -66,6 +80,8 @@ export function WeekGridContainer() {
   const [personFilter, setPersonFilter] = useState<PersonFilterSelection | null>(null);
   // Set by an empty-slot click in WeekGrid/DayView; drives CreateEventDialog.
   const [createRequest, setCreateRequest] = useState<CreateRequest | null>(null);
+  // Set by an "Adjust time" button on a block; drives EventTimeDialog (the phone/keyboard way to edit).
+  const [adjustEvent, setAdjustEvent] = useState<CalendarEvent | null>(null);
 
   const isLoading = coursesLoading || deadlinesLoading || tasksLoading || peopleLoading || appointmentsLoading;
   const selection = personFilter ?? defaultPersonFilterSelection();
@@ -92,6 +108,7 @@ export function WeekGridContainer() {
         matchesFilter(null) ? (appointments?.rows ?? []) : [],
         today,
         settings?.owner_color,
+        timeZone,
       );
 
   // Day nav rolls into the adjacent week at the Sun/Sat edge so it reads as
@@ -184,6 +201,8 @@ export function WeekGridContainer() {
               onPrevDay={goToPrevDay}
               onNextDay={goToNextDay}
               onCreateRequest={setCreateRequest}
+              onEditEvent={edit.commit}
+              onAdjustTime={setAdjustEvent}
             />
           ) : (
             <WeekGrid
@@ -192,12 +211,40 @@ export function WeekGridContainer() {
               windowStart={weekGrid.windowStart}
               windowEnd={weekGrid.windowEnd}
               onCreateRequest={setCreateRequest}
+              onEditEvent={edit.commit}
+              onAdjustTime={setAdjustEvent}
             />
           )}
         </GlassPanel>
       )}
 
       <CreateEventDialog request={createRequest} onClose={() => setCreateRequest(null)} />
+      <EventTimeDialog
+        event={adjustEvent}
+        onClose={() => setAdjustEvent(null)}
+        onSkip={(event) => {
+          edit.skip(event);
+          setAdjustEvent(null);
+        }}
+        onRevert={(event) => {
+          edit.revert(event);
+          setAdjustEvent(null);
+        }}
+        onSave={(event, times) => {
+          edit.commit(event, times);
+          setAdjustEvent(null);
+        }}
+      />
+      <RecurringScopeDialog title={edit.scope?.event.title ?? null} onThis={edit.chooseThis} onAll={edit.chooseAll} onCancel={edit.cancelScope} />
+      <ConfirmDialog
+        open={edit.pending !== null}
+        onClose={edit.cancelPending}
+        onConfirm={edit.confirmPending}
+        title="Move into the past?"
+        confirmLabel="Move anyway"
+        destructive={false}
+        description={<>&ldquo;{edit.pending?.title}&rdquo; would be due before now, so it will show as overdue. Move it anyway?</>}
+      />
       <AppointmentsTimeline />
     </div>
   );

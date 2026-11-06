@@ -6,6 +6,12 @@ import type { CalendarEvent } from "@/lib/calendar/build-week-events";
 function makeCalendarEvent(overrides: Partial<CalendarEvent> = {}): CalendarEvent {
   return {
     id: "evt-1",
+    kind: "course",
+    entityId: "c-1",
+    occurrenceDate: "2026-01-05",
+    blockIndex: 0,
+    occurrence: null,
+    editable: false,
     title: "Lecture",
     timeLabel: "10:00–10:50 AM",
     subtitle: "Room 101",

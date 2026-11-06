@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildUpcomingItems, filterUpcomingItemsByTimeWindow, isOpenDeadline, isOpenTask } from "../upcoming-items";
 import type { UpcomingItem } from "../upcoming-items";
 import { makeAppointment, makeCourse, makeDeadline, makePerson, makeReminder, makeTask } from "./fixtures";
@@ -422,4 +422,54 @@ describe("filterUpcomingItemsByTimeWindow", () => {
     const items = [itemAt("today", "2026-09-01T08:00:00"), itemAt("day-6", "2026-09-07T08:00:00"), itemAt("day-7", "2026-09-08T08:00:00")];
     expect(filterUpcomingItemsByTimeWindow(items, "7days", now).map((item) => item.id)).toEqual(["today", "day-6"]);
   });
+
+describe("buildUpcomingItems: a recurring Event with per-date exceptions", () => {
+  // Mon 2 Nov 2026, 10:00. The series meets Thursdays 9:00-10:00, so the next occurrence is Thu 5 Nov.
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(2026, 10, 2, 10, 0));
+  });
+  afterEach(() => vi.useRealTimers());
+
+  const thursdayStandup = (overrides: NonNullable<ReturnType<typeof makeAppointment>["occurrence_overrides"]>) =>
+    makeAppointment({
+      id: "a-standup",
+      category: "Personal",
+      session_status: null,
+      event_status: "planned",
+      deadline_id: null,
+      time: null,
+      meeting_blocks: [{ days: [4], startMinutes: 9 * 60, endMinutes: 10 * 60 }],
+      occurrence_overrides: overrides,
+    });
+  const itemFor = (appointment: ReturnType<typeof makeAppointment>) =>
+    buildUpcomingItems({ deadlines: [], tasks: [], appointments: [appointment] }).find((i) => i.id === "a-standup");
+
+  it("carries the series date the occurrence is filed under", () => {
+    const item = itemFor(thursdayStandup([]));
+    expect(item?.at).toEqual(new Date(2026, 10, 5, 9, 0));
+    expect(item?.occurrenceKey).toBe("2026-11-05");
+  });
+
+  it("skips a cancelled occurrence and offers the next one", () => {
+    const item = itemFor(
+      thursdayStandup([{ original_date: "2026-11-05", original_start_minutes: 540, is_cancelled: true, new_date: null, new_start_minutes: null, new_end_minutes: null }]),
+    );
+    expect(item?.at).toEqual(new Date(2026, 10, 12, 9, 0));
+    expect(item?.occurrenceKey).toBe("2026-11-12");
+  });
+
+  it("shows a moved occurrence at its new date and time, still filed under its series date", () => {
+    const item = itemFor(
+      thursdayStandup([{ original_date: "2026-11-05", original_start_minutes: 540, is_cancelled: false, new_date: "2026-11-04", new_start_minutes: 13 * 60, new_end_minutes: 14 * 60 }]),
+    );
+    expect(item?.at).toEqual(new Date(2026, 10, 4, 13, 0));
+    expect(item?.occurrenceKey).toBe("2026-11-05");
+  });
+
+  it("leaves non-recurring appointments without an occurrence key", () => {
+    const item = buildUpcomingItems({ deadlines: [], tasks: [], appointments: [makeAppointment({ id: "one-off", date: "2026-11-06", time: "10:00" })] }).find((i) => i.id === "one-off");
+    expect(item?.occurrenceKey).toBeUndefined();
+  });
+});
 });
