@@ -10,6 +10,8 @@ import { useCreateAppointment } from "@/hooks/useAppointments";
 import { useCreateTask } from "@/hooks/useTasks";
 import { useCreateDeadline } from "@/hooks/useDeadlines";
 import { useCreateCourse } from "@/hooks/useCourses";
+import { useUserTimezone } from "@/hooks/useUserTimezone";
+import { zonedPartsToIso } from "@/lib/format/zoned-datetime";
 import type { CreateRequest } from "@/components/calendar/DayColumnEvents";
 
 type Props = {
@@ -26,11 +28,9 @@ function minutesToTimeInput(minutes: number): string {
   return `${String(hours).padStart(2, "0")}:${String(mins).padStart(2, "0")}`;
 }
 
-/** Builds a full ISO-with-offset datetime (what DateTimeField/the API schemas expect) from a YYYY-MM-DD date and a minutes-of-day value, using local wall-clock time. */
-function minutesToIso(dateKey: string, minutes: number): string {
-  const [year, month, day] = dateKey.split("-").map(Number);
-  const date = new Date(year, month - 1, day, Math.floor(minutes / 60), minutes % 60);
-  return date.toISOString();
+/** Builds the ISO instant (what DateTimeField/the API schemas expect) for a YYYY-MM-DD date and a minutes-of-day value read as wall-clock time in the profile time zone. */
+function minutesToIso(dateKey: string, minutes: number, timeZone: string): string {
+  return zonedPartsToIso(dateKey, minutesToTimeInput(minutes), timeZone) ?? new Date().toISOString();
 }
 
 function dayOfWeekFor(dateKey: string): number {
@@ -50,6 +50,7 @@ export function CreateEventDialog({ request, onClose }: Props) {
   const createTask = useCreateTask();
   const createDeadline = useCreateDeadline();
   const createCourse = useCreateCourse();
+  const timeZone = useUserTimezone();
 
   if (!request) return null;
 
@@ -72,7 +73,7 @@ export function CreateEventDialog({ request, onClose }: Props) {
     return (
       <Dialog open onClose={onClose} title="Add Task">
         <TaskForm
-          defaultDueAt={minutesToIso(date, minutes)}
+          defaultDueAt={minutesToIso(date, minutes, timeZone)}
           submitLabel="Create task"
           onSubmit={async (values) => {
             try {
@@ -93,7 +94,7 @@ export function CreateEventDialog({ request, onClose }: Props) {
     return (
       <Dialog open onClose={onClose} title="Add Deadline">
         <DeadlineForm
-          defaultDueAt={minutesToIso(date, minutes)}
+          defaultDueAt={minutesToIso(date, minutes, timeZone)}
           submitLabel="Create deadline"
           onSubmit={async (values) => {
             try {

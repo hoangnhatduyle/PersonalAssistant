@@ -32,6 +32,7 @@
     "next": "16.3.3",
     "openai": "^6.49.0",
     "react": "19.2.8",
+    "react-day-picker": "^10.0.2",
     "react-dom": "19.2.8",
     "react-force-graph-2d": "^1.29.1",
     "react-hook-form": "^7.87.0",

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { FormField } from "@/components/ui/FormField";
+import { DatePicker } from "@/components/ui/DatePicker";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import type { AppointmentRow } from "@/lib/api/entity-types";
@@ -51,7 +52,7 @@ export function SessionForm({ session, onSubmit, onCancel }: Props) {
 
       <div className="grid grid-cols-2 gap-4">
         <FormField label="Date" htmlFor="session-date" error={!date ? error ?? undefined : undefined}>
-          <Input id="session-date" type="date" value={date} onChange={(event) => setDate(event.target.value)} />
+          <DatePicker id="session-date" value={date} onChange={setDate} />
         </FormField>
         <FormField label="Duration (minutes)" htmlFor="session-duration">
           <Input
