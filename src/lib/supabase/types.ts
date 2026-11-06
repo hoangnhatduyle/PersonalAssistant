@@ -1477,6 +1477,80 @@ export type Database = {
           },
         ]
       }
+      occurrence_overrides: {
+        Row: {
+          appointment_id: string | null
+          course_id: string | null
+          created_at: string
+          id: string
+          is_cancelled: boolean
+          new_date: string | null
+          new_end_minutes: number | null
+          new_start_minutes: number | null
+          original_date: string
+          original_start_minutes: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          appointment_id?: string | null
+          course_id?: string | null
+          created_at?: string
+          id?: string
+          is_cancelled?: boolean
+          new_date?: string | null
+          new_end_minutes?: number | null
+          new_start_minutes?: number | null
+          original_date: string
+          original_start_minutes: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          appointment_id?: string | null
+          course_id?: string | null
+          created_at?: string
+          id?: string
+          is_cancelled?: boolean
+          new_date?: string | null
+          new_end_minutes?: number | null
+          new_start_minutes?: number | null
+          original_date?: string
+          original_start_minutes?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "occurrence_overrides_appointment_id_fkey"
+            columns: ["appointment_id"]
+            isOneToOne: false
+            referencedRelation: "appointments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "occurrence_overrides_course_id_fkey"
+            columns: ["course_id"]
+            isOneToOne: false
+            referencedRelation: "active_courses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "occurrence_overrides_course_id_fkey"
+            columns: ["course_id"]
+            isOneToOne: false
+            referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "occurrence_overrides_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       people: {
         Row: {
           color: string

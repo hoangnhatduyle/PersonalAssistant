@@ -179,6 +179,51 @@ export type AppointmentPatch = z.infer<typeof appointmentPatchSchema>;
 // change through the dedicated transition route (NC-API-002), like
 // deadlines.status and tasks.status.
 
+// Per-occurrence exception to a recurring course/appointment
+// (supabase/migrations/0061_occurrence_overrides.sql): the occurrence the
+// weekly series puts at (original_date, original_start_minutes) is either
+// cancelled or moved/resized to new_date + new_start/end. Mirrors the table's
+// CHECK constraints so a bad payload is a 400 here, not a database error.
+// A block never crosses midnight, so neither can an override.
+const occurrenceOverrideBaseSchema = z.object({
+  original_date: z.iso.date(),
+  original_start_minutes: z.number().int().min(0).max(1439),
+  is_cancelled: z.boolean().optional().default(false),
+  new_date: z.iso.date().nullable().optional(),
+  new_start_minutes: z.number().int().min(0).max(1438).nullable().optional(),
+  new_end_minutes: z.number().int().min(1).max(1439).nullable().optional(),
+});
+
+export const occurrenceOverridePayloadSchema = occurrenceOverrideBaseSchema
+  .superRefine((value, ctx) => {
+    const { new_date: newDate, new_start_minutes: start, new_end_minutes: end } = value;
+    if (value.is_cancelled) {
+      if (newDate != null || start != null || end != null) {
+        ctx.addIssue({ code: "custom", message: "A cancelled occurrence has no new date or time" });
+      }
+      return;
+    }
+    if (newDate == null) ctx.addIssue({ code: "custom", message: "new_date is required to move an occurrence", path: ["new_date"] });
+    if (start == null) ctx.addIssue({ code: "custom", message: "new_start_minutes is required to move an occurrence", path: ["new_start_minutes"] });
+    if (end == null) ctx.addIssue({ code: "custom", message: "new_end_minutes is required to move an occurrence", path: ["new_end_minutes"] });
+    if (start != null && end != null && end <= start) {
+      ctx.addIssue({ code: "custom", message: "End time must be after start time", path: ["new_end_minutes"] });
+    }
+  })
+  // Normalize so a cancelled occurrence always stores explicit nulls (an upsert would otherwise leave an older move's times behind).
+  .transform((value) =>
+    value.is_cancelled
+      ? { ...value, new_date: null, new_start_minutes: null, new_end_minutes: null }
+      : { ...value, new_date: value.new_date ?? null, new_start_minutes: value.new_start_minutes ?? null, new_end_minutes: value.new_end_minutes ?? null },
+  );
+export type OccurrenceOverridePayload = z.output<typeof occurrenceOverridePayloadSchema>;
+
+/** Identifies one occurrence — the query string of DELETE (revert to the series). */
+export const occurrenceOverrideKeySchema = z.object({
+  original_date: z.iso.date(),
+  original_start_minutes: z.coerce.number().int().min(0).max(1439),
+});
+
 const taskBaseSchema = z.object({
   title: z.string().trim().min(1),
   due_at: z.iso.datetime({ offset: true }).nullable().optional(),

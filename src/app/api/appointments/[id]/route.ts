@@ -1,5 +1,7 @@
 import type { NextRequest } from "next/server";
 import { requireAuthenticatedContext } from "@/lib/api/auth";
+import { clearFutureOverridesIfPatternChanged, OCCURRENCE_OVERRIDES_EMBED } from "@/lib/api/occurrence-overrides";
+import type { MeetingBlock } from "@/lib/calendar/recurrence";
 import { wantsIncludeDeleted } from "@/lib/api/pagination";
 import { appointmentPatchSchema } from "@/lib/api/schemas";
 import { syncReminderForTarget } from "@/lib/api/reminders";
@@ -20,7 +22,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
   const { supabase, user } = ctx;
   const { id } = await params;
 
-  let query = supabase.from("appointments").select("*").eq("id", id).eq("user_id", user.id);
+  let query = supabase.from("appointments").select(`*, ${OCCURRENCE_OVERRIDES_EMBED}`).eq("id", id).eq("user_id", user.id);
   if (!wantsIncludeDeleted(request.nextUrl.searchParams)) query = query.is("deleted_at", null);
   const { data, error } = await query.maybeSingle();
   if (error) return serverErrorResponse("appointment get failed", error);
@@ -42,7 +44,7 @@ export async function PATCH(request: Request, { params }: RouteParams) {
 
   const { data: existing, error: fetchError } = await supabase
     .from("appointments")
-    .select("id, deadline_id")
+    .select("id, deadline_id, meeting_blocks, recurrence_start_date, recurrence_end_date")
     .eq("id", id)
     .eq("user_id", user.id)
     .is("deleted_at", null)
@@ -61,6 +63,16 @@ export async function PATCH(request: Request, { params }: RouteParams) {
     .select("*")
     .single();
   if (updateError) return serverErrorResponse("appointment update failed", updateError);
+
+  // Changing the weekly pattern invalidates the series' per-occurrence exceptions (see clearFutureOverridesIfPatternChanged).
+  const overridesError = await clearFutureOverridesIfPatternChanged(
+    supabase,
+    "appointments",
+    id,
+    { ...existing, meeting_blocks: existing.meeting_blocks as unknown as MeetingBlock[] },
+    parsed.data,
+  );
+  if (overridesError) return serverErrorResponse("appointment occurrence overrides cleanup failed", overridesError);
 
   const dueAt = `${updated.date}T00:00:00.000Z`;
   await syncReminderForTarget(supabase, {

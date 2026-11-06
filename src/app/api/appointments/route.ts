@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 import { requireAuthenticatedContext } from "@/lib/api/auth";
+import { OCCURRENCE_OVERRIDES_EMBED } from "@/lib/api/occurrence-overrides";
 import { parsePagination, wantsIncludeDeleted } from "@/lib/api/pagination";
 import { appointmentPayloadSchema } from "@/lib/api/schemas";
 import { syncReminderForTarget } from "@/lib/api/reminders";
@@ -26,7 +27,7 @@ export async function GET(request: NextRequest) {
   // without an N+1 query per row.
   let query = supabase
     .from("appointments")
-    .select("*, appointment_occurrence_status(occurrence_date, status)", { count: "exact" })
+    .select(`*, appointment_occurrence_status(occurrence_date, status), ${OCCURRENCE_OVERRIDES_EMBED}`, { count: "exact" })
     .eq("user_id", user.id)
     .order("date", { ascending: true })
     .range(from, to);
