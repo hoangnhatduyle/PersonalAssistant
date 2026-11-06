@@ -49,6 +49,8 @@ export function DayColumnEvents({ isToday, date, events, hourMarks, windowStart,
 
   return (
     <div
+      data-testid="day-column"
+      data-date={date}
       className={`relative overflow-visible border-l ${isToday ? "bg-panel/40" : ""} border-panel-border cursor-pointer`}
       style={{ height: gridHeightPx }}
       onMouseLeave={() => {
@@ -110,6 +112,7 @@ export function DayColumnEvents({ isToday, date, events, hourMarks, windowStart,
       {events.map((event) => (
         <EventBlock
           key={event.id}
+          eventId={event.id}
           title={event.title}
           timeLabel={event.timeLabel}
           subtitle={event.subtitle}

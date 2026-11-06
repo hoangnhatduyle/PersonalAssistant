@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { admin, createUserAndSignIn, seedCourse } from "./fixtures";
+import { admin, createUserAndSignIn, seedCourse, setProfileTimezone } from "./fixtures";
 
 // Covers the universal DatePicker / DateTimeField (src/components/ui/DatePicker.tsx,
 // DateTimeField.tsx) through the real "New deadline" dialog: calendar popover,
@@ -10,12 +10,6 @@ async function openNewDeadline(page: Page): Promise<void> {
   await page.goto("/courses/deadlines");
   await page.getByRole("button", { name: "New deadline" }).click();
   await expect(page.getByRole("dialog", { name: "New deadline" })).toBeVisible();
-}
-
-/** Sets the profile time zone. The preferences row is created lazily on first read, so upsert rather than update. */
-async function setProfileTimezone(userId: string, timezone: string): Promise<void> {
-  const { error } = await admin.from("user_preferences").upsert({ user_id: userId, timezone }, { onConflict: "user_id" });
-  expect(error).toBeNull();
 }
 
 /** Today's calendar date in an IANA zone, as YYYY-MM-DD. */

@@ -7,6 +7,7 @@ import { useTasks } from "@/hooks/useTasks";
 import { usePeople } from "@/hooks/usePeople";
 import { useAppointments } from "@/hooks/useAppointments";
 import { useSettings } from "@/hooks/useSettings";
+import { useUserTimezone } from "@/hooks/useUserTimezone";
 import { buildWeekGridData } from "@/lib/calendar/build-week-events";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { WeekGrid } from "@/components/calendar/WeekGrid";
@@ -25,6 +26,14 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { Button } from "@/components/ui/Button";
 
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * The calendar reads the largest page the API serves (100) for courses,
+ * deadlines and tasks — the default of 20 silently dropped everything past the
+ * 20th row. A module-level constant so the query key is stable (calendar edits
+ * patch exactly this cache entry optimistically).
+ */
+export const CALENDAR_LIST_FILTERS = { limit: 100 } as const;
 
 /** Sunday-start week bounds for `referenceDate` — mirrors build-week-events.ts's own startOfWeek. */
 function weekRangeFor(referenceDate: Date): { start: Date; end: Date } {
@@ -50,12 +59,14 @@ export function WeekGridContainer() {
   const isMobile = useMediaQuery("(max-width: 767px)");
   // Index into weekGrid.days (0 = Sunday .. 6 = Saturday) for the mobile day view.
   const [selectedDayIndex, setSelectedDayIndex] = useState(() => new Date().getDay());
-  const { data: courses, isLoading: coursesLoading } = useCourses();
-  const { data: deadlines, isLoading: deadlinesLoading } = useDeadlines();
-  const { data: tasks, isLoading: tasksLoading } = useTasks();
+  const { data: courses, isLoading: coursesLoading } = useCourses(CALENDAR_LIST_FILTERS);
+  const { data: deadlines, isLoading: deadlinesLoading } = useDeadlines(CALENDAR_LIST_FILTERS);
+  const { data: tasks, isLoading: tasksLoading } = useTasks(CALENDAR_LIST_FILTERS);
   const { data: people, isLoading: peopleLoading } = usePeople();
   // Not part of isLoading: owner_color just falls back to the default course tone until it arrives.
   const { data: settings } = useSettings();
+  // Deadlines and tasks are placed by the profile zone, the zone their due dates are shown in everywhere else.
+  const timeZone = useUserTimezone();
   // Same filters object as AppointmentsTimeline's own fetch below, so
   // TanStack Query dedupes this into the one request/cache entry.
   const { data: appointments, isLoading: appointmentsLoading } = useAppointments({ limit: 100 });
@@ -92,6 +103,7 @@ export function WeekGridContainer() {
         matchesFilter(null) ? (appointments?.rows ?? []) : [],
         today,
         settings?.owner_color,
+        timeZone,
       );
 
   // Day nav rolls into the adjacent week at the Sun/Sat edge so it reads as

@@ -26,6 +26,12 @@ export async function createUserAndSignIn(page: Page): Promise<E2EUser> {
   return { userId: data.user.id, email, password };
 }
 
+/** Sets the profile time zone. The preferences row is created lazily on first read, so upsert rather than update. */
+export async function setProfileTimezone(userId: string, timezone: string): Promise<void> {
+  const { error } = await admin.from("user_preferences").upsert({ user_id: userId, timezone }, { onConflict: "user_id" });
+  if (error) throw new Error(`failed to set the profile time zone: ${error.message}`);
+}
+
 export async function seedCourse(userId: string, name = "CS 101"): Promise<string> {
   return createCourse(admin, userId, { name });
 }

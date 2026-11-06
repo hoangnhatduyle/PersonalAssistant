@@ -426,4 +426,131 @@ describe("buildWeekGridData", () => {
       }
     });
   });
+
+  describe("structured fields for editing", () => {
+    it("tags a course occurrence with its kind, entity, block, date and read-only status", () => {
+      const data = buildWeekGridData(
+        [makeCourse({ id: "c-1", meeting_blocks: [makeMeetingBlock({ days: [1], startMinutes: 600, endMinutes: 650 })] })],
+        [],
+        [],
+        [],
+        REFERENCE,
+      );
+      const monday = data.days.find((day) => day.dayOfWeek === 1)!;
+      expect(monday.events[0]).toMatchObject({
+        kind: "course",
+        entityId: "c-1",
+        blockIndex: 0,
+        occurrenceDate: "2026-01-05",
+        editable: false,
+      });
+    });
+
+    it("tags a recurring appointment occurrence the same way, and keeps it read-only", () => {
+      const data = buildWeekGridData(
+        [],
+        [],
+        [],
+        [],
+        REFERENCE,
+        [makeAppointment({ id: "a-r", meeting_blocks: [makeMeetingBlock({ days: [3], startMinutes: 540, endMinutes: 600 })], time: null, duration_minutes: null })],
+      );
+      const wednesday = data.days.find((day) => day.dayOfWeek === 3)!;
+      expect(wednesday.events[0]).toMatchObject({
+        kind: "recurring-appointment",
+        entityId: "a-r",
+        blockIndex: 0,
+        occurrenceDate: "2026-01-07",
+        editable: false,
+      });
+    });
+
+    it("marks a one-off appointment editable, with no block index", () => {
+      const data = buildWeekGridData([], [], [], [], REFERENCE, [makeAppointment({ id: "a-1", date: "2026-01-08", time: "14:00" })]);
+      const thursday = data.days.find((day) => day.dayOfWeek === 4)!;
+      expect(thursday.events[0]).toMatchObject({
+        kind: "appointment",
+        entityId: "a-1",
+        blockIndex: null,
+        occurrenceDate: "2026-01-08",
+        editable: true,
+      });
+    });
+
+    it("marks the owner's open deadline and task editable", () => {
+      const data = buildWeekGridData(
+        [],
+        [makeDeadline({ id: "d-1", due_at: "2026-01-08T15:00:00" })],
+        [makeTask({ id: "t-1", due_at: "2026-01-08T16:00:00" })],
+        [],
+        REFERENCE,
+      );
+      const thursday = data.days.find((day) => day.dayOfWeek === 4)!;
+      expect(thursday.events.find((event) => event.kind === "deadline")).toMatchObject({
+        entityId: "d-1",
+        occurrenceDate: "2026-01-08",
+        blockIndex: null,
+        editable: true,
+      });
+      expect(thursday.events.find((event) => event.kind === "task")).toMatchObject({
+        entityId: "t-1",
+        occurrenceDate: "2026-01-08",
+        editable: true,
+      });
+    });
+
+    it("keeps a tracked person's task read-only", () => {
+      const data = buildWeekGridData(
+        [],
+        [],
+        [makeTask({ id: "t-p", due_at: "2026-01-08T16:00:00", person_id: "p-chau" })],
+        [makePerson({ id: "p-chau", name: "Chau" })],
+        REFERENCE,
+      );
+      const thursday = data.days.find((day) => day.dayOfWeek === 4)!;
+      expect(thursday.events[0]).toMatchObject({ kind: "task", personId: "p-chau", editable: false });
+    });
+  });
+
+  describe("timeZone (profile zone) placement of deadlines and tasks", () => {
+    // 04:30Z on Fri Jan 9 is 23:30 on Thu Jan 8 in Detroit (EST, UTC-5), but 04:30 Friday in UTC.
+    const FRIDAY_0430_UTC = "2026-01-09T04:30:00Z";
+
+    it("places a deadline on the day and time it reads in the profile zone, not the device's", () => {
+      const inDetroit = buildWeekGridData([], [makeDeadline({ id: "d-1", due_at: FRIDAY_0430_UTC })], [], [], REFERENCE, [], new Date(), null, "America/Detroit");
+      const thursday = inDetroit.days.find((day) => day.dayOfWeek === 4)!;
+      expect(thursday.events).toHaveLength(1);
+      expect(thursday.events[0]).toMatchObject({ startMinutes: 23 * 60 + 30, timeLabel: "11:30 PM" });
+      expect(inDetroit.days.find((day) => day.dayOfWeek === 5)!.events).toHaveLength(0);
+
+      const inUtc = buildWeekGridData([], [makeDeadline({ id: "d-1", due_at: FRIDAY_0430_UTC })], [], [], REFERENCE, [], new Date(), null, "UTC");
+      const friday = inUtc.days.find((day) => day.dayOfWeek === 5)!;
+      expect(friday.events[0]).toMatchObject({ startMinutes: 4 * 60 + 30, timeLabel: "4:30 AM" });
+    });
+
+    it("decides week membership by the profile zone's calendar date", () => {
+      // 04:30Z on Sun Jan 11 is Sat Jan 10 23:30 in Detroit (inside the Jan 4-10 week) but Jan 11 in UTC (outside it).
+      const due = "2026-01-11T04:30:00Z";
+      const detroit = buildWeekGridData([], [makeDeadline({ id: "d-1", due_at: due })], [], [], REFERENCE, [], new Date(), null, "America/Detroit");
+      expect(detroit.days.find((day) => day.dayOfWeek === 6)!.events).toHaveLength(1);
+      const utc = buildWeekGridData([], [makeDeadline({ id: "d-1", due_at: due })], [], [], REFERENCE, [], new Date(), null, "UTC");
+      expect(utc.days.every((day) => day.events.length === 0)).toBe(true);
+    });
+
+    it("places a task by the profile zone too, and widens the window to fit a late evening marker", () => {
+      const data = buildWeekGridData([], [], [makeTask({ id: "t-1", due_at: FRIDAY_0430_UTC })], [], REFERENCE, [], new Date(), null, "America/Detroit");
+      const thursday = data.days.find((day) => day.dayOfWeek === 4)!;
+      expect(thursday.events[0]).toMatchObject({ kind: "task", startMinutes: 23 * 60 + 30 });
+      expect(data.windowEnd).toBe(24 * 60);
+    });
+
+    it("marks today by the profile zone's date", () => {
+      // 03:30Z on Wed Jan 7 is still Tue Jan 6 (22:30) in Detroit.
+      const now = new Date("2026-01-07T03:30:00Z");
+      const detroit = buildWeekGridData([], [], [], [], REFERENCE, [], now, null, "America/Detroit");
+      expect(detroit.days.find((day) => day.isToday)?.dayOfWeek).toBe(2);
+      const utc = buildWeekGridData([], [], [], [], REFERENCE, [], now, null, "UTC");
+      expect(utc.days.find((day) => day.isToday)?.dayOfWeek).toBe(3);
+    });
+  });
 });

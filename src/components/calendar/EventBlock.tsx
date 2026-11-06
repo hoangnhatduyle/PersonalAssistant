@@ -7,6 +7,8 @@ import { STACK_PEEK_PX } from "@/lib/calendar/layout-day-events";
 import { toneClasses, type StatusTone } from "@/lib/status-colors";
 
 type Props = {
+  /** CalendarEvent.id — rendered as data-event-id so tests and tooling can find a specific block. */
+  eventId?: string;
   title: string;
   timeLabel: string;
   subtitle: string;
@@ -43,6 +45,7 @@ function glowShadow(color?: string): string {
  * without needing a StatusTone entry per person.
  */
 export function EventBlock({
+  eventId,
   title,
   timeLabel,
   subtitle,
@@ -69,6 +72,8 @@ export function EventBlock({
   return (
     <Link
       href={href}
+      data-testid="calendar-event"
+      data-event-id={eventId}
       title={isTitleOnly ? undefined : `${title} · ${timeLabel}${subtitle ? ` · ${subtitle}` : ""}`}
       aria-describedby={isTitleOnly && hoverRect ? tooltipId : undefined}
       onMouseEnter={(event) => {

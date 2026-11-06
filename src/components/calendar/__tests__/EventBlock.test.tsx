@@ -36,6 +36,19 @@ function renderBlock(overrides: Partial<React.ComponentProps<typeof EventBlock>>
   );
 }
 
+describe("EventBlock test hooks", () => {
+  it("exposes the event id as a stable data attribute for tests and tooling", () => {
+    renderBlock({ eventId: "deadline-d-1" });
+    const block = screen.getByTestId("calendar-event");
+    expect(block).toHaveAttribute("data-event-id", "deadline-d-1");
+  });
+
+  it("omits the id attribute when none is given", () => {
+    renderBlock();
+    expect(screen.getByTestId("calendar-event")).not.toHaveAttribute("data-event-id");
+  });
+});
+
 describe("EventBlock detail level", () => {
   it("shows title, time, and location when there is room", () => {
     renderBlock();

@@ -8,8 +8,8 @@ import { PIXELS_PER_MINUTE, type LayoutedCalendarEvent } from "@/lib/calendar/la
 // test only exercises click routing (background vs. event card), not real
 // navigation, so a plain anchor stands in for it.
 vi.mock("next/link", () => ({
-  default: ({ children, href, onClick }: { children: React.ReactNode; href: string; onClick?: (event: React.MouseEvent) => void }) => (
-    <a href={href} onClick={onClick}>
+  default: ({ children, href, ...rest }: React.ComponentProps<"a"> & { href: string }) => (
+    <a href={href} {...rest}>
       {children}
     </a>
   ),
@@ -19,6 +19,11 @@ const WINDOW_START = 8 * 60;
 
 const layoutedEvent: LayoutedCalendarEvent = {
   id: "e-1",
+  kind: "course",
+  entityId: "c-1",
+  occurrenceDate: "2026-01-05",
+  blockIndex: 0,
+  editable: false,
   title: "Standup",
   timeLabel: "10 AM–11 AM",
   subtitle: "Room 1",
@@ -51,6 +56,18 @@ function renderColumn(onCreateRequest: (request: CreateRequest) => void, events:
     />,
   );
 }
+
+describe("DayColumnEvents test hooks", () => {
+  it("exposes its calendar date so drop targets and tests can identify the column", () => {
+    renderColumn(vi.fn());
+    expect(screen.getByTestId("day-column")).toHaveAttribute("data-date", "2026-01-06");
+  });
+
+  it("passes each event's id down to its block", () => {
+    renderColumn(vi.fn(), [layoutedEvent]);
+    expect(screen.getByTestId("calendar-event")).toHaveAttribute("data-event-id", "e-1");
+  });
+});
 
 describe("DayColumnEvents empty-slot click", () => {
   it("opens the create picker when the background is clicked, with the clicked time snapped", () => {
