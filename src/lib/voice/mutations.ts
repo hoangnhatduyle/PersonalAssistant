@@ -89,6 +89,11 @@ export interface MutationExecutionResult {
 /** Thrown when a pending_mutation's target no longer exists/is owned by the caller at execution time. */
 export class MutationTargetNotFoundError extends Error {}
 
+/** "Session marked done." — but a transition back to planned is a reopen, which reads better as "Session reopened.". */
+function statusChangeSummary(label: "Session" | "Appointment", status: string): string {
+  return status === "planned" ? `${label} reopened.` : `${label} marked ${status}.`;
+}
+
 /**
  * soft_delete_course_cascade/soft_delete_task_cascade (supabase/migrations/
  * 0002_delete_cascade.sql) silently return all-zero counts for a
@@ -595,7 +600,7 @@ async function executeSessionMutation(
     .select("*")
     .single();
   if (error) throw error;
-  return { summary: `Session marked ${nextStatus}.`, data: updated };
+  return { summary: statusChangeSummary("Session", nextStatus), data: updated };
 }
 
 /** Mirrors POST /api/todo-lists' + PATCH /api/todo-lists/[id]'s course-ownership + no-assigned-Person check. */
@@ -696,7 +701,7 @@ async function executeEventMutation(
 
     const { data: appointment, error } = await supabase.from("appointments").select("*").eq("id", mutation.targetId).single();
     if (error) throw error;
-    return { summary: `Appointment marked ${outcome.status}.`, data: appointment };
+    return { summary: statusChangeSummary("Appointment", outcome.status), data: appointment };
   }
 
   const nextStatus = resolveEventTransition(mutation.event, existing.event_status);
@@ -709,7 +714,7 @@ async function executeEventMutation(
     .select("*")
     .single();
   if (error) throw error;
-  return { summary: `Appointment marked ${nextStatus}.`, data: updated };
+  return { summary: statusChangeSummary("Appointment", nextStatus), data: updated };
 }
 
 async function executeTodoListMutation(

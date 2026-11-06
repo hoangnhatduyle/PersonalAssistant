@@ -40,8 +40,10 @@ const EVENT_PHRASES: Record<string, string> = {
   user_cancels: "cancel it",
   user_marks_session_done: "mark it done",
   user_marks_session_skipped: "mark it skipped",
+  user_reopens_session: "reopen it",
   user_marks_event_done: "mark it done",
   user_marks_event_missed: "mark it missed",
+  user_reopens_event: "reopen it",
 };
 
 /** "a, b, or c" -- an Oxford-free list, since this is spoken aloud. */

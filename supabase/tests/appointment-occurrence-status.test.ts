@@ -56,7 +56,7 @@ describe("guard_appointment_occurrence_status trigger", () => {
   });
 
   describe("UPDATE guard (forbidden-transition check)", () => {
-    it("rejects done -> planned", async () => {
+    it("accepts the reopen edge done -> planned", async () => {
       const appointmentId = await createAppointment(admin, userId);
       const { data } = await admin
         .from("appointment_occurrence_status")
@@ -68,10 +68,10 @@ describe("guard_appointment_occurrence_status trigger", () => {
         .from("appointment_occurrence_status")
         .update({ status: "planned" })
         .eq("id", data!.id as string);
-      expect(error).not.toBeNull();
+      expect(error).toBeNull();
     });
 
-    it("rejects missed -> planned", async () => {
+    it("accepts the reopen edge missed -> planned", async () => {
       const appointmentId = await createAppointment(admin, userId);
       const { data } = await admin
         .from("appointment_occurrence_status")
@@ -83,10 +83,10 @@ describe("guard_appointment_occurrence_status trigger", () => {
         .from("appointment_occurrence_status")
         .update({ status: "planned" })
         .eq("id", data!.id as string);
-      expect(error).not.toBeNull();
+      expect(error).toBeNull();
     });
 
-    it("rejects missed -> done (missed is terminal, same as event_status)", async () => {
+    it("rejects missed -> done (reopen first, then mark again — same as event_status)", async () => {
       const appointmentId = await createAppointment(admin, userId);
       const { data } = await admin
         .from("appointment_occurrence_status")

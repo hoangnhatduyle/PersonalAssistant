@@ -52,8 +52,9 @@ describe("resolveTaskTransition", () => {
 });
 
 // Traces: supabase/migrations/0025_deadline_sessions.sql's guard_session_status
-// — planned -> done/skipped, skipped -> done (a make-up session), and no
-// transition out of done.
+// (as widened by 0060_reopen_session_and_event_status.sql) — planned ->
+// done/skipped, skipped -> done (a make-up session), and done/skipped ->
+// planned (reopen).
 describe("resolveSessionTransition", () => {
   it("applies a legal transition", () => {
     expect(resolveSessionTransition("user_marks_session_done", "planned")).toBe("done");
@@ -66,15 +67,24 @@ describe("resolveSessionTransition", () => {
     expect(resolveSessionTransition("user_marks_session_skipped", "skipped")).toBeNull();
   });
 
-  it("never allows a transition out of done — the terminal state", () => {
+  it("never lets done be re-marked done or skipped directly", () => {
     expect(resolveSessionTransition("user_marks_session_done", "done")).toBeNull();
     expect(resolveSessionTransition("user_marks_session_skipped", "done")).toBeNull();
+  });
+
+  it("reopens a done or skipped session back to planned", () => {
+    expect(resolveSessionTransition("user_reopens_session", "done")).toBe("planned");
+    expect(resolveSessionTransition("user_reopens_session", "skipped")).toBe("planned");
+  });
+
+  it("does not reopen a session that is already planned", () => {
+    expect(resolveSessionTransition("user_reopens_session", "planned")).toBeNull();
   });
 });
 
 // Traces: supabase/migrations/0028_event_status_missed_terminal.sql's
-// guard_event_status — planned -> done/missed, and no transition out of
-// either terminal state.
+// guard_event_status (as widened by 0060_reopen_session_and_event_status.sql)
+// — planned -> done/missed, and done/missed -> planned (reopen).
 describe("resolveEventTransition", () => {
   it("applies a legal transition", () => {
     expect(resolveEventTransition("user_marks_event_done", "planned")).toBe("done");
@@ -86,10 +96,19 @@ describe("resolveEventTransition", () => {
     expect(resolveEventTransition("user_marks_event_missed", "missed")).toBeNull();
   });
 
-  it("never allows a transition out of done or missed — both are terminal", () => {
+  it("never lets a done or missed event be marked done/missed directly", () => {
     expect(resolveEventTransition("user_marks_event_done", "done")).toBeNull();
     expect(resolveEventTransition("user_marks_event_missed", "done")).toBeNull();
     expect(resolveEventTransition("user_marks_event_done", "missed")).toBeNull();
+  });
+
+  it("reopens a done or missed event back to planned", () => {
+    expect(resolveEventTransition("user_reopens_event", "done")).toBe("planned");
+    expect(resolveEventTransition("user_reopens_event", "missed")).toBe("planned");
+  });
+
+  it("does not reopen an event that is already planned", () => {
+    expect(resolveEventTransition("user_reopens_event", "planned")).toBeNull();
   });
 });
 
@@ -102,10 +121,13 @@ describe("event-name guards", () => {
     expect(isDeadlineTransitionEvent("not_a_real_event")).toBe(false);
     expect(isSessionTransitionEvent("user_marks_session_done")).toBe(true);
     expect(isSessionTransitionEvent("user_marks_session_skipped")).toBe(true);
+    expect(isSessionTransitionEvent("user_reopens_session")).toBe(true);
     expect(isSessionTransitionEvent("user_marks_in_progress")).toBe(false);
     expect(isSessionTransitionEvent("not_a_real_event")).toBe(false);
     expect(isEventTransitionEvent("user_marks_event_done")).toBe(true);
     expect(isEventTransitionEvent("user_marks_event_missed")).toBe(true);
+    expect(isEventTransitionEvent("user_reopens_event")).toBe(true);
+    expect(isEventTransitionEvent("user_reopens_session")).toBe(false);
     expect(isEventTransitionEvent("user_marks_session_done")).toBe(false);
     expect(isEventTransitionEvent("not_a_real_event")).toBe(false);
   });
@@ -175,18 +197,18 @@ describe("getValidTaskEvents", () => {
 });
 
 describe("getValidSessionEvents", () => {
-  it("returns exactly the legal events per status, with no transition out of done", () => {
+  it("returns exactly the legal events per status, with reopen the only way out of done", () => {
     expect(getValidSessionEvents("planned").sort()).toEqual(["user_marks_session_done", "user_marks_session_skipped"].sort());
-    expect(getValidSessionEvents("skipped")).toEqual(["user_marks_session_done"]);
-    expect(getValidSessionEvents("done")).toEqual([]);
+    expect(getValidSessionEvents("skipped").sort()).toEqual(["user_marks_session_done", "user_reopens_session"].sort());
+    expect(getValidSessionEvents("done")).toEqual(["user_reopens_session"]);
   });
 });
 
 describe("getValidEventEvents", () => {
-  it("returns exactly the legal events per status, with no transition out of done or missed", () => {
+  it("returns exactly the legal events per status, with reopen the only way out of done or missed", () => {
     expect(getValidEventEvents("planned").sort()).toEqual(["user_marks_event_done", "user_marks_event_missed"].sort());
-    expect(getValidEventEvents("missed")).toEqual([]);
-    expect(getValidEventEvents("done")).toEqual([]);
+    expect(getValidEventEvents("missed")).toEqual(["user_reopens_event"]);
+    expect(getValidEventEvents("done")).toEqual(["user_reopens_event"]);
   });
 });
 

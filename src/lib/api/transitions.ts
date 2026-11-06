@@ -10,8 +10,8 @@ type EventStatus = Database["public"]["Enums"]["event_status"];
 export type DeadlineTransitionEvent = "user_marks_in_progress" | "user_marks_submitted" | "user_confirms_done" | "user_cancels";
 export type TaskTransitionEvent = "user_marks_done" | "user_cancels";
 export type ReminderTransitionEvent = "user_acknowledges" | "user_dismisses" | "user_snoozes";
-export type SessionTransitionEvent = "user_marks_session_done" | "user_marks_session_skipped";
-export type EventTransitionEvent = "user_marks_event_done" | "user_marks_event_missed";
+export type SessionTransitionEvent = "user_marks_session_done" | "user_marks_session_skipped" | "user_reopens_session";
+export type EventTransitionEvent = "user_marks_event_done" | "user_marks_event_missed" | "user_reopens_event";
 
 /**
  * What cancelling a RECURRING deadline applies to: just this occurrence (the
@@ -52,22 +52,28 @@ const reminderTransitions: Record<ReminderTransitionEvent, Partial<Record<Remind
   user_snoozes: { Delivered: "Snoozed" },
 };
 
-// Mirrors guard_session_status() in supabase/migrations/0025_deadline_sessions.sql:
-// planned -> done/skipped, and skipped -> done (a make-up session). No
-// transition out of 'done'.
+// Mirrors guard_session_status() in supabase/migrations/0025_deadline_sessions.sql
+// as widened by 0060_reopen_session_and_event_status.sql: planned ->
+// done/skipped, skipped -> done (a make-up session), and done/skipped ->
+// planned (reopen, e.g. a misclicked "Mark Done"). Progress (done/total) is
+// derived from session_status, so a reopen lowers it automatically. The
+// parent deadline's Not Started -> In Progress advance is one-way and is
+// deliberately NOT reverted by a reopen.
 const sessionTransitions: Record<SessionTransitionEvent, Partial<Record<SessionStatus, SessionStatus>>> = {
   user_marks_session_done: { planned: "done", skipped: "done" },
   user_marks_session_skipped: { planned: "skipped" },
+  user_reopens_session: { done: "planned", skipped: "planned" },
 };
 
 // Mirrors guard_event_status() in
-// supabase/migrations/0028_event_status_missed_terminal.sql: planned ->
-// done/missed. No transition out of 'done' or 'missed' — once marked, an
-// Event's status is final (a user_marks_event_missed misclick isn't
-// recoverable via a same-row "Mark Done" undo).
+// supabase/migrations/0028_event_status_missed_terminal.sql as widened by
+// 0060_reopen_session_and_event_status.sql: planned -> done/missed, and
+// done/missed -> planned (reopen, so a misclick is recoverable). A direct
+// done <-> missed flip stays illegal: reopen first, then mark again.
 const eventTransitions: Record<EventTransitionEvent, Partial<Record<EventStatus, EventStatus>>> = {
   user_marks_event_done: { planned: "done" },
   user_marks_event_missed: { planned: "missed" },
+  user_reopens_event: { done: "planned", missed: "planned" },
 };
 
 /**

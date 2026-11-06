@@ -30,6 +30,7 @@ type Props = {
 const EVENT_LABELS: Record<SessionTransitionEvent, string> = {
   user_marks_session_done: "Mark Done",
   user_marks_session_skipped: "Mark Skipped",
+  user_reopens_session: "Reopen",
 };
 
 function formatSessionDate(date: string): string {
@@ -66,7 +67,7 @@ export function SessionTransitionButtons({
         <Button
           key={event}
           size={size === "lg" ? "md" : "sm"}
-          variant={event === "user_marks_session_skipped" ? "secondary" : "primary"}
+          variant={event === "user_marks_session_skipped" || event === "user_reopens_session" ? "secondary" : "primary"}
           isLoading={transition.isPending}
           onClick={() => handleTransition(event)}
           className={size === "lg" ? "px-6 py-3 text-base" : ""}
