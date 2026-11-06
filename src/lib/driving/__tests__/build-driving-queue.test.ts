@@ -10,6 +10,7 @@ function makeCalendarEvent(overrides: Partial<CalendarEvent> = {}): CalendarEven
     entityId: "c-1",
     occurrenceDate: "2026-01-05",
     blockIndex: 0,
+    occurrence: null,
     editable: false,
     title: "Lecture",
     timeLabel: "10:00–10:50 AM",

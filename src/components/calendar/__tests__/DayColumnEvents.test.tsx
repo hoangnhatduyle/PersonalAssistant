@@ -23,6 +23,7 @@ const layoutedEvent: LayoutedCalendarEvent = {
   entityId: "c-1",
   occurrenceDate: "2026-01-05",
   blockIndex: 0,
+  occurrence: null,
   editable: false,
   title: "Standup",
   timeLabel: "10 AM–11 AM",

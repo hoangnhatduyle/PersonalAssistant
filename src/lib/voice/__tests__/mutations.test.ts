@@ -13,6 +13,7 @@ import {
   type TestUser,
 } from "../../../../supabase/tests/helpers";
 import { executePendingMutation, MutationTargetNotFoundError, type PendingMutation } from "../mutations";
+import { addDaysToDateKey } from "@/lib/format/date-key";
 import { getRelevantOccurrenceDateKey, type MeetingBlock } from "@/lib/calendar/recurrence";
 
 describe("executePendingMutation", () => {
@@ -665,6 +666,34 @@ describe("executePendingMutation", () => {
           .eq("occurrence_date", occurrenceDate as string)
           .single();
         expect(occurrenceRow?.status).toBe("done");
+      });
+
+      it("skips a cancelled occurrence: marking done applies to the next one that actually happens", async () => {
+        const eventId = await createAppointment(admin, userId, {
+          time: null,
+          duration_minutes: null,
+          meeting_blocks: ALL_DAY_EVERY_DAY,
+        });
+        const cancelledDate = getRelevantOccurrenceDateKey(ALL_DAY_EVERY_DAY, new Date(), null, null) as string;
+        const { error: overrideError } = await admin.from("occurrence_overrides").insert({
+          user_id: userId,
+          appointment_id: eventId,
+          original_date: cancelledDate,
+          original_start_minutes: 0,
+          is_cancelled: true,
+        });
+        expect(overrideError).toBeNull();
+
+        await executePendingMutation(user.client, userId, {
+          targetType: "event",
+          operation: "transition",
+          targetId: eventId,
+          event: "user_marks_event_done",
+        });
+
+        const { data: rows } = await admin.from("appointment_occurrence_status").select("occurrence_date, status").eq("appointment_id", eventId);
+        // The cancelled date gets no status; the day after it does.
+        expect(rows).toEqual([{ occurrence_date: addDaysToDateKey(cancelledDate, 1), status: "done" }]);
       });
 
       it("leaves a different occurrence's pre-existing status untouched by marking today's occurrence done", async () => {

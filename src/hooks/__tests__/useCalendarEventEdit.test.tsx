@@ -17,6 +17,7 @@ function event(overrides: Partial<CalendarEvent> = {}): CalendarEvent {
     entityId: "a-1",
     occurrenceDate: "2026-11-09",
     blockIndex: null,
+    occurrence: null,
     editable: true,
     title: "Dentist",
     timeLabel: "10 AM–11 AM",

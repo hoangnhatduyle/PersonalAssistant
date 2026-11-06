@@ -553,4 +553,96 @@ describe("buildWeekGridData", () => {
       expect(utc.days.find((day) => day.isToday)?.dayOfWeek).toBe(3);
     });
   });
+
+  describe("occurrence overrides (a recurring course/appointment changed for one date only)", () => {
+    // REFERENCE week: Sun 2026-01-04 .. Sat 2026-01-10. The class meets Thursdays 8:30 AM - 4:30 PM.
+    const THURSDAY_CLASS = [makeMeetingBlock({ days: [4], startMinutes: 510, endMinutes: 990 })];
+    const override = (fields: Partial<import("@/lib/api/entity-types").OccurrenceOverrideRow>) => ({
+      original_date: "2026-01-08",
+      original_start_minutes: 510,
+      is_cancelled: false,
+      new_date: "2026-01-08",
+      new_start_minutes: 780,
+      new_end_minutes: 990,
+      ...fields,
+    });
+    const course = (overrides: Array<ReturnType<typeof override>>) =>
+      makeCourse({ id: "c-1", meeting_blocks: THURSDAY_CLASS, occurrence_overrides: overrides });
+    const dayOf = (data: ReturnType<typeof buildWeekGridData>, dayOfWeek: number) => data.days.find((d) => d.dayOfWeek === dayOfWeek)!;
+
+    it("tags an ordinary occurrence with where the series puts it", () => {
+      const data = buildWeekGridData([course([])], [], [], [], REFERENCE);
+      expect(dayOf(data, 4).events[0]).toMatchObject({
+        id: "course-c-1-0-4",
+        occurrenceDate: "2026-01-08",
+        occurrence: { originalDate: "2026-01-08", originalStartMinutes: 510, isOverridden: false },
+      });
+    });
+
+    it("leaves non-recurring items without an occurrence reference", () => {
+      const data = buildWeekGridData([], [makeDeadline({ due_at: "2026-01-08T15:00:00" })], [], [], REFERENCE, [makeAppointment({ date: "2026-01-07", time: "09:00" })]);
+      for (const event of data.days.flatMap((day) => day.events)) expect(event.occurrence).toBeNull();
+    });
+
+    it("drops a cancelled occurrence from its day", () => {
+      const data = buildWeekGridData([course([override({ is_cancelled: true, new_date: null, new_start_minutes: null, new_end_minutes: null })])], [], [], [], REFERENCE);
+      expect(data.days.every((day) => day.events.length === 0)).toBe(true);
+    });
+
+    it("shows a shortened occurrence at its new time, marked as adjusted, with the series identity kept", () => {
+      const data = buildWeekGridData([course([override({})])], [], [], [], REFERENCE);
+      const [event] = dayOf(data, 4).events;
+      expect(event).toMatchObject({
+        startMinutes: 780,
+        endMinutes: 990,
+        timeLabel: "1 PM–4:30 PM",
+        occurrence: { originalDate: "2026-01-08", originalStartMinutes: 510, isOverridden: true },
+        blockIndex: 0,
+      });
+    });
+
+    it("leaves the same class a week later untouched", () => {
+      const nextWeek = new Date("2026-01-14T12:00:00");
+      const data = buildWeekGridData([course([override({})])], [], [], [], nextWeek);
+      expect(dayOf(data, 4).events[0]).toMatchObject({ startMinutes: 510, endMinutes: 990, occurrence: { isOverridden: false } });
+    });
+
+    it("moves an occurrence to another day of the week, and off the day it left", () => {
+      const data = buildWeekGridData([course([override({ new_date: "2026-01-06", new_start_minutes: 600, new_end_minutes: 660 })])], [], [], [], REFERENCE);
+      expect(dayOf(data, 4).events).toEqual([]);
+      expect(dayOf(data, 2).events[0]).toMatchObject({ startMinutes: 600, endMinutes: 660, occurrenceDate: "2026-01-06", occurrence: { originalDate: "2026-01-08", isOverridden: true } });
+    });
+
+    it("shows an occurrence moved in from another week, with an id that can't clash with the day's own class", () => {
+      // The Jan 15 class moved back to Thursday Jan 8 at 10 AM, alongside Jan 8's own class.
+      const data = buildWeekGridData([course([override({ original_date: "2026-01-15", new_date: "2026-01-08", new_start_minutes: 600, new_end_minutes: 660 })])], [], [], [], REFERENCE);
+      const events = dayOf(data, 4).events;
+      expect(events).toHaveLength(2);
+      expect(new Set(events.map((event) => event.id)).size).toBe(2);
+    });
+
+    it("widens the display window for an occurrence moved earlier than any class", () => {
+      const early = buildWeekGridData([course([override({ new_start_minutes: 5 * 60, new_end_minutes: 6 * 60 })])], [], [], [], REFERENCE);
+      expect(early.windowStart).toBeLessThanOrEqual(4 * 60 + 30);
+      const plain = buildWeekGridData([course([])], [], [], [], REFERENCE);
+      expect(plain.windowStart).toBeGreaterThan(4 * 60 + 30);
+    });
+
+    it("applies the same to a recurring appointment", () => {
+      const appointment = makeAppointment({
+        id: "a-r",
+        time: null,
+        duration_minutes: null,
+        meeting_blocks: [makeMeetingBlock({ days: [3], startMinutes: 540, endMinutes: 600 })],
+        occurrence_overrides: [override({ original_date: "2026-01-07", original_start_minutes: 540, new_date: "2026-01-07", new_start_minutes: 660, new_end_minutes: 720 })],
+      });
+      const data = buildWeekGridData([], [], [], [], REFERENCE, [appointment]);
+      expect(dayOf(data, 3).events[0]).toMatchObject({
+        kind: "recurring-appointment",
+        startMinutes: 660,
+        endMinutes: 720,
+        occurrence: { originalDate: "2026-01-07", originalStartMinutes: 540, isOverridden: true },
+      });
+    });
+  });
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildOccurrenceStatusMap, occurrenceStatusMapKey, resolveDisplayedEventStatus } from "../occurrence-status";
+import { buildOccurrenceStatusMap, getRelevantOccurrenceKey, occurrenceStatusMapKey, resolveDisplayedEventStatus } from "../occurrence-status";
 import type { AppointmentRow } from "@/lib/api/entity-types";
 import type { MeetingBlock } from "@/lib/calendar/recurrence";
 
@@ -81,6 +81,46 @@ describe("resolveDisplayedEventStatus", () => {
     const appointment = makeAppointment({ id: "appt-1", meeting_blocks: ALL_DAY_EVERY_DAY });
     const occurrenceStatusByKey = new Map([[occurrenceStatusMapKey("appt-2", "2026-09-26"), "done" as const]]);
     expect(resolveDisplayedEventStatus(appointment, occurrenceStatusByKey, NOW)).toBe("planned");
+  });
+});
+
+describe("with per-date exceptions to the series", () => {
+  // 1:00 AM: today's midnight occurrence has already started, so the next real one is tomorrow's — unless an exception says otherwise.
+  const ONE_AM = new Date(2026, 8, 26, 1, 0);
+  const override = (fields: Partial<NonNullable<AppointmentRow["occurrence_overrides"]>[number]>) => ({
+    original_date: "2026-09-27",
+    original_start_minutes: 0,
+    is_cancelled: false,
+    new_date: "2026-09-26",
+    new_start_minutes: 10 * 60,
+    new_end_minutes: 11 * 60,
+    ...fields,
+  });
+
+  it("files a moved occurrence's status under the date the SERIES puts it, not where it was moved to", () => {
+    // Tomorrow's occurrence was moved to today at 10 AM, so that is the next one — and its status key is still 2026-09-27.
+    const appointment = makeAppointment({ meeting_blocks: ALL_DAY_EVERY_DAY, occurrence_overrides: [override({})] });
+    expect(getRelevantOccurrenceKey(appointment, ONE_AM)).toBe("2026-09-27");
+
+    const filedUnderSeriesDate = new Map([[occurrenceStatusMapKey(appointment.id, "2026-09-27"), "done" as const]]);
+    expect(resolveDisplayedEventStatus(appointment, filedUnderSeriesDate, ONE_AM)).toBe("done");
+    const filedUnderMovedDate = new Map([[occurrenceStatusMapKey(appointment.id, "2026-09-26"), "done" as const]]);
+    expect(resolveDisplayedEventStatus(appointment, filedUnderMovedDate, ONE_AM)).toBe("planned");
+  });
+
+  it("skips a cancelled occurrence: the relevant one is the next that really happens", () => {
+    const appointment = makeAppointment({
+      meeting_blocks: ALL_DAY_EVERY_DAY,
+      occurrence_overrides: [override({ original_date: "2026-09-27", is_cancelled: true, new_date: null, new_start_minutes: null, new_end_minutes: null })],
+    });
+    expect(getRelevantOccurrenceKey(appointment, ONE_AM)).toBe("2026-09-28");
+    const map = new Map([[occurrenceStatusMapKey(appointment.id, "2026-09-28"), "missed" as const]]);
+    expect(resolveDisplayedEventStatus(appointment, map, ONE_AM)).toBe("missed");
+  });
+
+  it("is unchanged for a series with no exceptions", () => {
+    expect(getRelevantOccurrenceKey(makeAppointment({ meeting_blocks: ALL_DAY_EVERY_DAY }), NOW)).toBe("2026-09-26");
+    expect(getRelevantOccurrenceKey(makeAppointment({ meeting_blocks: [] }), NOW)).toBeNull();
   });
 });
 

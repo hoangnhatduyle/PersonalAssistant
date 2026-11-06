@@ -1,11 +1,24 @@
 import type { AppointmentRow, EventStatus } from "@/lib/api/entity-types";
-import { getRelevantOccurrenceDateKey } from "@/lib/calendar/recurrence";
+import { getNextResolvedOccurrence } from "@/lib/calendar/occurrence-overrides";
 
 /** Narrower than a full AppointmentRow — the fields resolveDisplayedEventStatus actually needs, same convention as conflicts.ts's ConflictCheckableAppointment. */
 type StatusResolvableAppointment = Pick<
   AppointmentRow,
-  "id" | "event_status" | "meeting_blocks" | "recurrence_start_date" | "recurrence_end_date"
+  "id" | "event_status" | "meeting_blocks" | "recurrence_start_date" | "recurrence_end_date" | "occurrence_overrides"
 >;
+
+/**
+ * The series date ("YYYY-MM-DD") of the occurrence a recurring appointment
+ * currently shows — the key its done/missed status is filed under. It honours
+ * per-date exceptions (a cancelled occurrence is skipped; a moved one is the
+ * next one when its NEW time is) but always answers with the date the SERIES
+ * puts the occurrence on, never where it was moved, so the status survives a
+ * move. Null for a non-recurring appointment or a series with nothing left.
+ * Every read and write of an occurrence's status must resolve it this way.
+ */
+export function getRelevantOccurrenceKey(appointment: StatusResolvableAppointment, now: Date): string | null {
+  return getNextResolvedOccurrence(appointment, now)?.originalDate ?? null;
+}
 
 /**
  * Builds the composite key used to look up/store one appointment
@@ -65,12 +78,7 @@ export function resolveDisplayedEventStatus(
     return appointment.event_status;
   }
 
-  const occurrenceDateKey = getRelevantOccurrenceDateKey(
-    appointment.meeting_blocks,
-    now,
-    appointment.recurrence_start_date,
-    appointment.recurrence_end_date,
-  );
+  const occurrenceDateKey = getRelevantOccurrenceKey(appointment, now);
   if (!occurrenceDateKey) return null;
 
   return occurrenceStatusByKey.get(occurrenceStatusMapKey(appointment.id, occurrenceDateKey)) ?? "planned";

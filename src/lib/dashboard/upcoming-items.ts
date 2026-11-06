@@ -2,7 +2,8 @@ import type { AppointmentRow, CourseRow, DeadlineRow, DeadlineStatus, TaskRow, T
 import { findConflictingAppointmentIds } from "@/lib/appointments/conflicts";
 import { findCourseConflictingAppointmentIds } from "@/lib/appointments/course-conflicts";
 import { buildOccurrenceStatusMap, resolveDisplayedEventStatus } from "@/lib/appointments/occurrence-status";
-import { getNextOccurrence, parseTimeToMinutes } from "@/lib/calendar/recurrence";
+import { getNextResolvedOccurrence } from "@/lib/calendar/occurrence-overrides";
+import { parseTimeToMinutes } from "@/lib/calendar/recurrence";
 
 export type UpcomingItemKind = "deadline" | "task" | "reminder" | "session" | "appointment";
 
@@ -39,6 +40,12 @@ export interface UpcomingItem {
   conflict?: boolean;
   /** Appointment-kind only: this appointment's time range overlaps a Course's recurring meeting block (see src/lib/appointments/course-conflicts.ts). */
   courseConflict?: boolean;
+  /**
+   * Recurring-appointment items only: the SERIES date of the occurrence this item is — the key its done/missed
+   * status is filed under (appointment_occurrence_status). Differs from `at`'s date when a per-date exception moved
+   * the occurrence, so a transition must use this, never the date of `at`.
+   */
+  occurrenceKey?: string;
   /** Task-kind only: set when this Task belongs to a tracked Person (People feature) rather than the account owner. null/undefined = the owner's own item. */
   personId?: string | null;
   /** Task-kind only: "Me" when personId is null/undefined, else that Person's name. */
@@ -178,19 +185,14 @@ export function buildUpcomingItems({
     // this table existed, marking one occurrence "Done" wrote event_status
     // directly and permanently dropped the entire series out of Up Next.
     if (appointment.meeting_blocks.length > 0) {
-      const occurrence = getNextOccurrence(
-        appointment.meeting_blocks,
-        new Date(now),
-        appointment.recurrence_start_date,
-        appointment.recurrence_end_date,
-      );
+      const occurrence = getNextResolvedOccurrence(appointment, new Date(now));
       if (!occurrence) continue;
       const resolvedStatus = resolveDisplayedEventStatus(appointment, occurrenceStatusByKey, new Date(now));
       if (resolvedStatus !== "planned") continue;
       const at = new Date(
-        occurrence.date.getFullYear(),
-        occurrence.date.getMonth(),
-        occurrence.date.getDate(),
+        occurrence.dateObj.getFullYear(),
+        occurrence.dateObj.getMonth(),
+        occurrence.dateObj.getDate(),
         0,
         occurrence.startMinutes,
       );
@@ -201,6 +203,7 @@ export function buildUpcomingItems({
         at,
         href: "/calendar",
         urgent: false,
+        occurrenceKey: occurrence.originalDate,
         conflict: conflictingAppointmentIds.has(appointment.id),
         courseConflict: courseConflictingAppointmentIds.has(appointment.id),
       });

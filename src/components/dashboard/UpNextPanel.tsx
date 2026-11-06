@@ -119,17 +119,18 @@ export function UpNextPanel({ deadlines, tasks, people, todoLists, courses, appo
   /**
    * Resolves an "appointment" item's displayed status + (for a recurring
    * appointment) the occurrence date the transition buttons need — reusing
-   * `at`, the exact occurrence date buildUpcomingItems already resolved,
-   * rather than re-deriving "the current occurrence" a second time via
-   * getNextOccurrence, which (called at a different instant, however close)
-   * could in principle disagree at a day boundary. Shared by resolveItemStatus
-   * below and the EventTransitionButtons render call site.
+   * `occurrenceKey`, the series date buildUpcomingItems already resolved,
+   * rather than re-deriving "the current occurrence" a second time, which
+   * (called at a different instant, however close) could in principle
+   * disagree at a day boundary. That is the SERIES date, which differs from
+   * `item.at`'s date when a per-date exception moved the occurrence. Shared by
+   * resolveItemStatus below and the EventTransitionButtons render call site.
    */
-  function resolveAppointmentOccurrence(appointment: AppointmentRow, at: Date): { status: EventStatus | null; occurrenceDate: string | null } {
+  function resolveAppointmentOccurrence(appointment: AppointmentRow, item: UpcomingItem): { status: EventStatus | null; occurrenceDate: string | null } {
     if (appointment.meeting_blocks.length === 0) {
       return { status: appointment.event_status, occurrenceDate: null };
     }
-    const occurrenceDate = toDateOnly(at);
+    const occurrenceDate = item.occurrenceKey ?? toDateOnly(item.at);
     const status = occurrenceStatusByKey.get(occurrenceStatusMapKey(appointment.id, occurrenceDate)) ?? "planned";
     return { status, occurrenceDate };
   }
@@ -145,7 +146,7 @@ export function UpNextPanel({ deadlines, tasks, people, todoLists, courses, appo
           : item.kind === "session"
             ? appointment?.session_status
             : item.kind === "appointment" && appointment
-              ? resolveAppointmentOccurrence(appointment, item.at).status
+              ? resolveAppointmentOccurrence(appointment, item).status
               : undefined;
     const tone =
       item.kind === "deadline"
@@ -388,7 +389,7 @@ export function UpNextPanel({ deadlines, tasks, people, todoLists, courses, appo
                       {item.kind === "appointment" &&
                         (() => {
                           const appointment = appointmentById.get(item.id)!;
-                          const resolved = resolveAppointmentOccurrence(appointment, item.at);
+                          const resolved = resolveAppointmentOccurrence(appointment, item);
                           return (
                             <EventTransitionButtons
                               appointmentId={appointment.id}

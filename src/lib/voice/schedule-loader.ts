@@ -11,7 +11,9 @@ import {
   type ScheduleTimeWindow,
 } from "@/lib/voice/schedule-time-window";
 import { rankScheduleItems, zonedDateKey, type Priority, type ScheduleItem } from "@/lib/voice/schedule-formatting";
-import { expandBlockForDateKeys, formatMinutesOfDay, parseTimeToMinutes, type MeetingBlock } from "@/lib/calendar/recurrence";
+import { formatMinutesOfDay, parseTimeToMinutes, type MeetingBlock } from "@/lib/calendar/recurrence";
+import { resolveOccurrencesOnDates, type OccurrenceOverride } from "@/lib/calendar/occurrence-overrides";
+import { OCCURRENCE_OVERRIDES_EMBED } from "@/lib/api/occurrence-overrides";
 import { findConflictingAppointmentIds } from "@/lib/appointments/conflicts";
 
 const OPEN_DEADLINE_STATUSES = ["Not Started", "In Progress", "Submitted", "Overdue"] as const;
@@ -25,6 +27,8 @@ export interface ScheduleLoadCourse {
   term: string | null;
   recurrence_start_date: string | null;
   recurrence_end_date: string | null;
+  /** Per-date exceptions to the weekly pattern (a class cancelled, shortened or moved for one day). */
+  occurrence_overrides?: OccurrenceOverride[];
 }
 
 export interface ScheduleLoadRankedItem {
@@ -215,7 +219,7 @@ export async function loadSchedule(
   // run alongside the item queries rather than sequentially.
   let coursesQuery = supabase
     .from("courses")
-    .select("id, name, code, location, meeting_blocks, term, recurrence_start_date, recurrence_end_date")
+    .select(`id, name, code, location, meeting_blocks, term, recurrence_start_date, recurrence_end_date, ${OCCURRENCE_OVERRIDES_EMBED}`)
     .eq("user_id", userId)
     .is("deleted_at", null)
     .order("name", { ascending: true });
@@ -429,21 +433,20 @@ function buildCourseScheduleItems(
 
   const items: ScheduleItem[] = [];
   for (const course of courses) {
-    for (const block of course.meeting_blocks) {
-      const occurrences = expandBlockForDateKeys(block, dateKeysToExpand, course.recurrence_start_date, course.recurrence_end_date);
-      for (const occurrence of occurrences) {
-        const [year, month, day] = occurrence.dateKey.split("-").map(Number);
-        const dueAt = new Date(localMidnightUtc(year, month, day, timezone).getTime() + occurrence.startMinutes * 60_000);
-        const timeRange = `${formatMinutesOfDay(occurrence.startMinutes)}–${formatMinutesOfDay(occurrence.endMinutes)}`;
-        items.push({
-          id: `course:${course.id}:${occurrence.dateKey}:${block.startMinutes}`,
-          title: course.code ? `${course.code} ${course.name}` : course.name,
-          dueAt,
-          kind: "course",
-          priority: null,
-          context: course.location ? `${timeRange} in ${course.location}` : timeRange,
-        });
-      }
+    // Through the occurrence resolver, so a class cancelled, shortened or moved for one date is reported as it really is.
+    for (const occurrence of resolveOccurrencesOnDates(course, dateKeysToExpand)) {
+      const [year, month, day] = occurrence.date.split("-").map(Number);
+      const dueAt = new Date(localMidnightUtc(year, month, day, timezone).getTime() + occurrence.startMinutes * 60_000);
+      const timeRange = `${formatMinutesOfDay(occurrence.startMinutes)}–${formatMinutesOfDay(occurrence.endMinutes)}`;
+      items.push({
+        // A moved-in occurrence can share a date and start with that day's own one; the series date keeps ids unique.
+        id: `course:${course.id}:${occurrence.date}:${occurrence.originalStartMinutes}${occurrence.isOverridden ? `:from-${occurrence.originalDate}` : ""}`,
+        title: course.code ? `${course.code} ${course.name}` : course.name,
+        dueAt,
+        kind: "course",
+        priority: null,
+        context: course.location ? `${timeRange} in ${course.location}` : timeRange,
+      });
     }
   }
 

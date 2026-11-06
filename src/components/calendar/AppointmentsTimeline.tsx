@@ -18,8 +18,8 @@ import { Switch } from "@/components/ui/Switch";
 import { findConflictingAppointmentIds } from "@/lib/appointments/conflicts";
 import { findCourseConflictingAppointmentIds } from "@/lib/appointments/course-conflicts";
 import { formatAppointmentDate, isPastAppointment, matchesSearch, paginate } from "@/lib/appointments/list-view";
-import { buildOccurrenceStatusMap, resolveDisplayedEventStatus } from "@/lib/appointments/occurrence-status";
-import { formatBlocksSummary, getRelevantOccurrenceDateKey } from "@/lib/calendar/recurrence";
+import { buildOccurrenceStatusMap, getRelevantOccurrenceKey, resolveDisplayedEventStatus } from "@/lib/appointments/occurrence-status";
+import { formatBlocksSummary } from "@/lib/calendar/recurrence";
 import { EVENT_STATUS_TONE } from "@/lib/status-colors";
 import type { AppointmentRow } from "@/lib/api/entity-types";
 import type { AppointmentPayload } from "@/lib/api/schemas";
@@ -145,9 +145,7 @@ export function AppointmentsTimeline() {
         <ul className="flex flex-col divide-y divide-panel-border">
           {currentPage.items.map((appointment) => {
             const isRecurring = appointment.meeting_blocks.length > 0;
-            const occurrenceDate = isRecurring
-              ? getRelevantOccurrenceDateKey(appointment.meeting_blocks, now, appointment.recurrence_start_date, appointment.recurrence_end_date)
-              : null;
+            const occurrenceDate = isRecurring ? getRelevantOccurrenceKey(appointment, now) : null;
             const resolvedStatus = resolveDisplayedEventStatus(appointment, occurrenceStatusByKey, now);
             return (
             <li

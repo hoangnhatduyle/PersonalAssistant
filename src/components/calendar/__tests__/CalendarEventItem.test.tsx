@@ -22,6 +22,7 @@ function layouted(overrides: Partial<LayoutedCalendarEvent> = {}): LayoutedCalen
     entityId: "a-1",
     occurrenceDate: "2026-11-05",
     blockIndex: null,
+    occurrence: null,
     editable: true,
     title: "Dentist",
     timeLabel: "10 AM–11 AM",

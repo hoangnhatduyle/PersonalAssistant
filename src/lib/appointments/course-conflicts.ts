@@ -1,8 +1,9 @@
 import type { AppointmentRow, CourseRow } from "@/lib/api/entity-types";
-import { expandBlockForDateKeys, parseTimeToMinutes } from "@/lib/calendar/recurrence";
+import { resolveOccurrencesOnDates } from "@/lib/calendar/occurrence-overrides";
+import { parseTimeToMinutes } from "@/lib/calendar/recurrence";
 
 type ConflictCheckableAppointment = Pick<AppointmentRow, "id" | "date" | "time" | "duration_minutes">;
-type ConflictCheckableCourse = Pick<CourseRow, "meeting_blocks" | "recurrence_start_date" | "recurrence_end_date" | "person_id">;
+type ConflictCheckableCourse = Pick<CourseRow, "meeting_blocks" | "recurrence_start_date" | "recurrence_end_date" | "person_id" | "occurrence_overrides">;
 
 /**
  * Flags appointment ids whose [start, start+duration) time range overlaps a
@@ -31,17 +32,10 @@ export function findCourseConflictingAppointmentIds(
     const end = start + appointment.duration_minutes;
 
     for (const course of myCourses) {
-      for (const block of course.meeting_blocks) {
-        const occurrences = expandBlockForDateKeys(
-          block,
-          [appointment.date],
-          course.recurrence_start_date,
-          course.recurrence_end_date,
-        );
-        for (const occurrence of occurrences) {
-          if (start < occurrence.endMinutes && occurrence.startMinutes < end) {
-            conflictIds.add(appointment.id);
-          }
+      // Through the occurrence resolver, so a class cancelled, shortened or moved for that one date is judged as it really is.
+      for (const occurrence of resolveOccurrencesOnDates(course, [appointment.date])) {
+        if (start < occurrence.endMinutes && occurrence.startMinutes < end) {
+          conflictIds.add(appointment.id);
         }
       }
     }
