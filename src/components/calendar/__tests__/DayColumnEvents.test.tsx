@@ -118,6 +118,15 @@ describe("DayColumnEvents hover preview", () => {
     expect(screen.queryByText("9:30 AM")).not.toBeInTheDocument();
   });
 
+  it("shows no start-time preview while a mouse button is held — that is a drag passing over, not hovering to create", () => {
+    const { container } = renderColumn(vi.fn());
+    const column = container.firstElementChild as HTMLElement;
+
+    fireEvent.mouseMove(column, { clientY: 90 * PIXELS_PER_MINUTE, buttons: 1 });
+
+    expect(screen.queryByText("9:30 AM")).not.toBeInTheDocument();
+  });
+
   it("does not show a start-time preview while hovering an event card", () => {
     renderColumn(vi.fn(), [layoutedEvent]);
 

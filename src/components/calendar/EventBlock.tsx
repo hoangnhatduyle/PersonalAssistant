@@ -24,6 +24,12 @@ type Props = {
   tone: StatusTone;
   href: string;
   color?: string;
+  /** Show a grab cursor: the block can be dragged to a new time. */
+  isEditable?: boolean;
+  /** This block is mid-drag; it dims in place while a preview shows where it will land. */
+  isDragging?: boolean;
+  /** Starts a drag (see useEventDrag). */
+  onPointerDown?: (event: React.PointerEvent<HTMLAnchorElement>) => void;
   onElevate: () => void;
   onOpenPicker: (anchorRect: DOMRect) => void;
 };
@@ -60,6 +66,9 @@ export function EventBlock({
   tone,
   href,
   color,
+  isEditable = false,
+  isDragging = false,
+  onPointerDown,
   onElevate,
   onOpenPicker,
 }: Props) {
@@ -74,6 +83,10 @@ export function EventBlock({
       href={href}
       data-testid="calendar-event"
       data-event-id={eventId}
+      // A link is natively draggable; the browser's link drag would fight ours.
+      draggable={false}
+      onDragStart={(event) => event.preventDefault()}
+      onPointerDown={onPointerDown}
       title={isTitleOnly ? undefined : `${title} · ${timeLabel}${subtitle ? ` · ${subtitle}` : ""}`}
       aria-describedby={isTitleOnly && hoverRect ? tooltipId : undefined}
       onMouseEnter={(event) => {
@@ -97,9 +110,9 @@ export function EventBlock({
           onElevate();
         }
       }}
-      className={`absolute overflow-hidden rounded-control border px-2 ${isTitleOnly ? "py-0.5" : "py-1.5"} text-xs transition-[box-shadow,transform,filter,left,width] duration-150 ${
-        color ? "" : toneClasses(tone)
-      } ${isElevated ? "z-50 scale-[1.02] brightness-125" : ""}`}
+      className={`absolute overflow-hidden rounded-control border px-2 ${isTitleOnly ? "py-0.5" : "py-1.5"} text-xs ${
+        isDragging ? "opacity-40" : "transition-[box-shadow,transform,filter,left,width] duration-150"
+      } ${isEditable ? "cursor-grab" : ""} ${color ? "" : toneClasses(tone)} ${isElevated ? "z-50 scale-[1.02] brightness-125" : ""}`}
       style={{
         top: topPx,
         left: isElevated ? 4 : leftPx,

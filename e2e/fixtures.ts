@@ -32,6 +32,19 @@ export async function setProfileTimezone(userId: string, timezone: string): Prom
   if (error) throw new Error(`failed to set the profile time zone: ${error.message}`);
 }
 
+/**
+ * The seven YYYY-MM-DD dates of a week the calendar can show (Sunday-start, browser-local), indexed by day of
+ * week. `weekOffset` 0 is the current week, 1 the next — use 1 when a test must land every slot in the future.
+ */
+export function currentWeekDateKeys(weekOffset = 0): string[] {
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return Array.from({ length: 7 }, (_, dayOfWeek) => {
+    const day = new Date(now.getFullYear(), now.getMonth(), now.getDate() - now.getDay() + dayOfWeek + weekOffset * 7);
+    return `${day.getFullYear()}-${pad(day.getMonth() + 1)}-${pad(day.getDate())}`;
+  });
+}
+
 export async function seedCourse(userId: string, name = "CS 101"): Promise<string> {
   return createCourse(admin, userId, { name });
 }

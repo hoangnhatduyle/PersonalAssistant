@@ -8,13 +8,17 @@ import { usePeople } from "@/hooks/usePeople";
 import { useAppointments } from "@/hooks/useAppointments";
 import { useSettings } from "@/hooks/useSettings";
 import { useUserTimezone } from "@/hooks/useUserTimezone";
-import { buildWeekGridData } from "@/lib/calendar/build-week-events";
+import { buildWeekGridData, type CalendarEvent } from "@/lib/calendar/build-week-events";
+import { CALENDAR_APPOINTMENT_FILTERS, CALENDAR_LIST_FILTERS } from "@/lib/calendar/query-filters";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { WeekGrid } from "@/components/calendar/WeekGrid";
 import { DayView } from "@/components/calendar/DayView";
 import { CalendarLegend } from "@/components/calendar/CalendarLegend";
 import { AppointmentsTimeline } from "@/components/calendar/AppointmentsTimeline";
 import { CreateEventDialog } from "@/components/calendar/CreateEventDialog";
+import { EventTimeDialog } from "@/components/calendar/EventTimeDialog";
+import { useCalendarEventEdit } from "@/hooks/useCalendarEventEdit";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import type { CreateRequest } from "@/components/calendar/DayColumnEvents";
 import {
   PersonFilterToggle,
@@ -26,14 +30,6 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { Button } from "@/components/ui/Button";
 
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
-
-/**
- * The calendar reads the largest page the API serves (100) for courses,
- * deadlines and tasks — the default of 20 silently dropped everything past the
- * 20th row. A module-level constant so the query key is stable (calendar edits
- * patch exactly this cache entry optimistically).
- */
-export const CALENDAR_LIST_FILTERS = { limit: 100 } as const;
 
 /** Sunday-start week bounds for `referenceDate` — mirrors build-week-events.ts's own startOfWeek. */
 function weekRangeFor(referenceDate: Date): { start: Date; end: Date } {
@@ -67,9 +63,11 @@ export function WeekGridContainer() {
   const { data: settings } = useSettings();
   // Deadlines and tasks are placed by the profile zone, the zone their due dates are shown in everywhere else.
   const timeZone = useUserTimezone();
+  // Drag/resize/dialog changes: written optimistically, with a confirmation first when a deadline/task would land in the past.
+  const edit = useCalendarEventEdit(timeZone);
   // Same filters object as AppointmentsTimeline's own fetch below, so
   // TanStack Query dedupes this into the one request/cache entry.
-  const { data: appointments, isLoading: appointmentsLoading } = useAppointments({ limit: 100 });
+  const { data: appointments, isLoading: appointmentsLoading } = useAppointments(CALENDAR_APPOINTMENT_FILTERS);
   // null = untouched, falls back to Mine only (tracked people are opt-in
   // via the toggle). Once the user interacts, personFilter holds their exact selection —
   // including an intentionally empty set — so each person can be toggled
@@ -77,6 +75,8 @@ export function WeekGridContainer() {
   const [personFilter, setPersonFilter] = useState<PersonFilterSelection | null>(null);
   // Set by an empty-slot click in WeekGrid/DayView; drives CreateEventDialog.
   const [createRequest, setCreateRequest] = useState<CreateRequest | null>(null);
+  // Set by an "Adjust time" button on a block; drives EventTimeDialog (the phone/keyboard way to edit).
+  const [adjustEvent, setAdjustEvent] = useState<CalendarEvent | null>(null);
 
   const isLoading = coursesLoading || deadlinesLoading || tasksLoading || peopleLoading || appointmentsLoading;
   const selection = personFilter ?? defaultPersonFilterSelection();
@@ -196,6 +196,8 @@ export function WeekGridContainer() {
               onPrevDay={goToPrevDay}
               onNextDay={goToNextDay}
               onCreateRequest={setCreateRequest}
+              onEditEvent={edit.commit}
+              onAdjustTime={setAdjustEvent}
             />
           ) : (
             <WeekGrid
@@ -204,12 +206,31 @@ export function WeekGridContainer() {
               windowStart={weekGrid.windowStart}
               windowEnd={weekGrid.windowEnd}
               onCreateRequest={setCreateRequest}
+              onEditEvent={edit.commit}
+              onAdjustTime={setAdjustEvent}
             />
           )}
         </GlassPanel>
       )}
 
       <CreateEventDialog request={createRequest} onClose={() => setCreateRequest(null)} />
+      <EventTimeDialog
+        event={adjustEvent}
+        onClose={() => setAdjustEvent(null)}
+        onSave={(event, times) => {
+          edit.commit(event, times);
+          setAdjustEvent(null);
+        }}
+      />
+      <ConfirmDialog
+        open={edit.pending !== null}
+        onClose={edit.cancelPending}
+        onConfirm={edit.confirmPending}
+        title="Move into the past?"
+        confirmLabel="Move anyway"
+        destructive={false}
+        description={<>&ldquo;{edit.pending?.title}&rdquo; would be due before now, so it will show as overdue. Move it anyway?</>}
+      />
       <AppointmentsTimeline />
     </div>
   );
