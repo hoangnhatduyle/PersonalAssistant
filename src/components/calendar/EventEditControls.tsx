@@ -1,6 +1,7 @@
 "use client";
 
 import type { PointerEvent as ReactPointerEvent } from "react";
+import { useMediaQuery } from "@/hooks/useMediaQuery";
 import type { LayoutedCalendarEvent } from "@/lib/calendar/layout-day-events";
 import { STACK_PEEK_PX } from "@/lib/calendar/layout-day-events";
 
@@ -35,6 +36,10 @@ export function EventEditControls({ event, isElevated, canResize, onResizeStart,
 
   // A card buried in an overlap stack gets no handle until it is elevated: its bottom edge usually lies under
   // the card stacked on top, and a handle there would resize the wrong event and swallow the top card's clicks.
+  // Touch and phone-width screens can't hover to elevate a block, so its Adjust time button must already be there
+  // (a block buried in an overlap stack still waits to be elevated, so its button doesn't sit on top of its neighbours').
+  const isTouchLayout = useMediaQuery("(hover: none), (max-width: 767px)");
+  const showAdjustButton = isElevated || (isTouchLayout && event.stackSize === 1);
   const showHandle = canResize && (isElevated || event.stackSize === 1);
   // At the block's own stacking level (sibling order then keeps later cards above it), or the control layer once elevated.
   const handleZIndex = isElevated ? CONTROLS_Z_INDEX : 10 + event.stackIndex;
@@ -52,7 +57,7 @@ export function EventEditControls({ event, isElevated, canResize, onResizeStart,
           <span className="pointer-events-none mx-auto mt-1 block h-1 w-8 rounded-full bg-text-secondary opacity-0 transition-opacity group-hover:opacity-80" />
         </div>
       )}
-      {isElevated && (
+      {showAdjustButton && (
         <button
           type="button"
           aria-label={`Adjust time for ${event.title}`}

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, screen } from "@testing-library/react";
 import { renderWithProviders } from "@/test/render";
 import { CalendarEventItem } from "@/components/calendar/CalendarEventItem";
@@ -180,3 +180,28 @@ describe("CalendarEventItem Adjust time button", () => {
     expect(screen.queryByRole("button", { name: /Adjust time/ })).not.toBeInTheDocument();
   });
 });
+
+describe("CalendarEventItem: Adjust time button on touch layouts", () => {
+  const stubMatchMedia = (matches: boolean) =>
+    vi.stubGlobal("matchMedia", (query: string) => ({ matches, media: query, addEventListener: () => {}, removeEventListener: () => {} }));
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("is always there on a touch/phone layout, with no hover needed", () => {
+    stubMatchMedia(true);
+    renderItem({ isElevated: false });
+    expect(screen.getByRole("button", { name: "Adjust time for Dentist" })).toBeInTheDocument();
+  });
+
+  it("waits for hover/elevation on a pointer layout", () => {
+    stubMatchMedia(false);
+    renderItem({ isElevated: false });
+    expect(screen.queryByRole("button", { name: "Adjust time for Dentist" })).not.toBeInTheDocument();
+  });
+
+  it("stays hidden for a block buried in an overlap stack until it is elevated, even on touch", () => {
+    stubMatchMedia(true);
+    renderItem({ isElevated: false, event: layouted({ stackSize: 2, stackIndex: 0 }) });
+    expect(screen.queryByRole("button", { name: "Adjust time for Dentist" })).not.toBeInTheDocument();
+  });
+});
+
