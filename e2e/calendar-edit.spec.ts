@@ -437,7 +437,8 @@ test.describe("calendar edit: phone width", () => {
     await page.goto("/calendar");
     const target = block(page, "appointment", id);
     await target.scrollIntoViewIfNeeded();
-    await target.hover();
+    // No hover on a phone: the button is simply there.
+    await expect(page.getByRole("button", { name: "Adjust time for Dentist" })).toBeVisible();
     await page.getByRole("button", { name: "Adjust time for Dentist" }).click();
 
     const dialog = page.getByRole("dialog", { name: "Adjust time" });
