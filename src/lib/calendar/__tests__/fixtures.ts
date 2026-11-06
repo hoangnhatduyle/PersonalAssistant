@@ -43,6 +43,7 @@ export function makeDeadline(overrides: Partial<DeadlineRow> = {}): DeadlineRow 
     recurrence_end_date: null,
     recurrence_series_id: null,
     recurrence_spawned_at: null,
+    recurrence_anchor_due_at: null,
     status: "Not Started",
     person_id: null,
     created_at: "2026-01-01T00:00:00Z",

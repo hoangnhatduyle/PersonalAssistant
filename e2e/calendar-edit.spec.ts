@@ -1,5 +1,5 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
-import { createAppointment, createCourse, createDeadline, createTask } from "../supabase/tests/helpers";
+import { createAppointment, createCourse, createDeadline, createTask, walkTransitions } from "../supabase/tests/helpers";
 import { admin, createUserAndSignIn, currentWeekDateKeys, seedCourse } from "./fixtures";
 
 // Editing the calendar directly (C1): drag a block to move it, drag its bottom
@@ -354,6 +354,75 @@ test.describe("calendar edit: a recurring course (First Solar)", () => {
     await expect.poll(() => overrides(courseId)).toEqual([]);
     await expect(courseBlock(page, courseId, THURSDAY_ROW)).not.toHaveAttribute("data-adjusted", "true");
     await expect(courseBlock(page, courseId, THURSDAY_ROW)).toContainText("8:30 AM");
+  });
+});
+
+test.describe("calendar edit: a recurring deadline", () => {
+  // Weekly on Wednesday 10:00 UTC (next week, so every slot is in the future whatever day the suite runs).
+  const WEDNESDAY_DUE = `${NEXT_WEDNESDAY}T10:00:00.000Z`;
+  const WEEK_MS = 7 * 86_400_000;
+  const scopeDialog = (page: Page) => page.getByRole("dialog", { name: "Change recurring event" });
+
+  async function seed(page: Page) {
+    const user = await createUserAndSignIn(page);
+    const courseId = await seedCourse(user.userId, "CS 101");
+    const id = await createDeadline(admin, user.userId, courseId, { title: "Weekly quiz", due_at: WEDNESDAY_DUE, recurrence_days: [3] });
+    const row = async () => {
+      const { data } = await admin.from("deadlines").select("due_at, recurrence_days, recurrence_series_id, recurrence_anchor_due_at").eq("id", id).single();
+      return data!;
+    };
+    const series = async () => {
+      const { data: first } = await admin.from("deadlines").select("recurrence_series_id").eq("id", id).single();
+      const { data } = await admin.from("deadlines").select("due_at").eq("recurrence_series_id", first!.recurrence_series_id).order("due_at");
+      return (data ?? []).map((r) => new Date(r.due_at as string).toISOString());
+    };
+    return { id, row, series };
+  }
+
+  /** Drags the deadline one day column to the right (Wednesday -> Thursday), same time. */
+  async function dragToThursday(page: Page, id: string) {
+    await page.goto("/calendar");
+    await page.getByRole("button", { name: "Next week" }).click();
+    await dragBlockBy(page, block(page, "deadline", id), await columnWidth(page, NEXT_WEDNESDAY), 0);
+    await expect(scopeDialog(page)).toBeVisible();
+  }
+
+  test("This occurrence: it moves, the schedule does not — the next one is still on Wednesday", async ({ page }) => {
+    const { id, row, series } = await seed(page);
+    await dragToThursday(page, id);
+    await scopeDialog(page).getByRole("button", { name: "This occurrence" }).click();
+
+    await expect.poll(async () => new Date((await row()).due_at as string).toISOString()).toBe(`${NEXT_WEEK[4]}T10:00:00.000Z`);
+    expect((await row()).recurrence_days).toEqual([3]);
+
+    // Finishing it creates the next occurrence from the SCHEDULE (a week after Wednesday), not from Thursday.
+    await walkTransitions(admin, "deadlines", id, "status", ["In Progress", "Submitted", "Completed"]);
+    const dues = await series();
+    expect(dues).toHaveLength(2);
+    expect(dues[1]).toBe(new Date(new Date(WEDNESDAY_DUE).getTime() + WEEK_MS).toISOString());
+  });
+
+  test("All occurrences: the series moves to Thursday, so the next one is on Thursday too", async ({ page }) => {
+    const { id, row, series } = await seed(page);
+    await dragToThursday(page, id);
+    await scopeDialog(page).getByRole("button", { name: "All occurrences" }).click();
+
+    await expect.poll(async () => (await row()).recurrence_days).toEqual([4]);
+    expect(new Date((await row()).due_at as string).toISOString()).toBe(`${NEXT_WEEK[4]}T10:00:00.000Z`);
+
+    await walkTransitions(admin, "deadlines", id, "status", ["In Progress", "Submitted", "Completed"]);
+    const dues = await series();
+    expect(dues[1]).toBe(new Date(new Date(`${NEXT_WEEK[4]}T10:00:00.000Z`).getTime() + WEEK_MS).toISOString());
+  });
+
+  test("Cancel in the question leaves the deadline and its schedule alone", async ({ page }) => {
+    const { id, row } = await seed(page);
+    await dragToThursday(page, id);
+    await scopeDialog(page).getByRole("button", { name: "Cancel" }).click();
+
+    await expect(scopeDialog(page)).toBeHidden();
+    expect(new Date((await row()).due_at as string).toISOString()).toBe(WEDNESDAY_DUE);
+    expect((await row()).recurrence_anchor_due_at).toBeNull();
   });
 });
 

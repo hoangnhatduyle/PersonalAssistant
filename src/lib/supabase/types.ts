@@ -308,6 +308,7 @@ export type Database = {
           id: string
           person_id: string | null
           priority: Database["public"]["Enums"]["item_priority"] | null
+          recurrence_anchor_due_at: string | null
           recurrence_days: number[]
           recurrence_end_date: string | null
           recurrence_series_id: string | null
@@ -327,6 +328,7 @@ export type Database = {
           id?: string
           person_id?: string | null
           priority?: Database["public"]["Enums"]["item_priority"] | null
+          recurrence_anchor_due_at?: string | null
           recurrence_days?: number[]
           recurrence_end_date?: string | null
           recurrence_series_id?: string | null
@@ -346,6 +348,7 @@ export type Database = {
           id?: string
           person_id?: string | null
           priority?: Database["public"]["Enums"]["item_priority"] | null
+          recurrence_anchor_due_at?: string | null
           recurrence_days?: number[]
           recurrence_end_date?: string | null
           recurrence_series_id?: string | null
@@ -2421,6 +2424,7 @@ export type Database = {
           id: string | null
           person_id: string | null
           priority: Database["public"]["Enums"]["item_priority"] | null
+          recurrence_anchor_due_at: string | null
           recurrence_days: number[] | null
           recurrence_end_date: string | null
           recurrence_series_id: string | null
@@ -2440,6 +2444,7 @@ export type Database = {
           id?: string | null
           person_id?: string | null
           priority?: Database["public"]["Enums"]["item_priority"] | null
+          recurrence_anchor_due_at?: string | null
           recurrence_days?: number[] | null
           recurrence_end_date?: string | null
           recurrence_series_id?: string | null
@@ -2459,6 +2464,7 @@ export type Database = {
           id?: string | null
           person_id?: string | null
           priority?: Database["public"]["Enums"]["item_priority"] | null
+          recurrence_anchor_due_at?: string | null
           recurrence_days?: number[] | null
           recurrence_end_date?: string | null
           recurrence_series_id?: string | null
@@ -3462,6 +3468,14 @@ export type Database = {
       retry_knowledge_import: {
         Args: { p_source_id: string }
         Returns: boolean
+      }
+      shift_deadline_series: {
+        Args: { p_deadline_id: string; p_new_due_at: string }
+        Returns: {
+          shifted_course_id: string
+          shifted_due_at: string
+          shifted_id: string
+        }[]
       }
       soft_delete_course_cascade: {
         Args: { p_course_id: string }

@@ -28,6 +28,8 @@ export interface CalendarEvent {
   blockIndex: number | null;
   /** For a recurring course/appointment occurrence, which one of the series it is; null for everything else. */
   occurrence: RecurringOccurrenceRef | null;
+  /** A deadline that repeats weekly (each occurrence is its own row): moving it asks "This occurrence / All occurrences". */
+  recurringDeadline?: boolean;
   /** Whether the calendar may change it directly. False for a tracked person's events. */
   editable: boolean;
   title: string;
@@ -301,6 +303,7 @@ export function buildWeekGridData(
         occurrenceDate: dateKey,
         blockIndex: null,
         editable: deadline.person_id === null,
+        recurringDeadline: deadline.recurrence_days.length > 0,
         title: deadline.title,
         timeLabel: formatMinutesOfDay(parts.minutes),
         subtitle: "Deadline",

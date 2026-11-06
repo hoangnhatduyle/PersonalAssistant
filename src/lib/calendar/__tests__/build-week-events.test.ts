@@ -465,6 +465,15 @@ describe("buildWeekGridData", () => {
       });
     });
 
+    it("flags a recurring deadline, and not a one-off", () => {
+      const week = (rows: ReturnType<typeof makeDeadline>[]) =>
+        buildWeekGridData([], rows, [], [], REFERENCE).days.flatMap((day) => day.events).filter((e) => e.kind === "deadline");
+      const [recurring] = week([makeDeadline({ id: "d-r", due_at: "2026-01-07T15:00:00Z", recurrence_days: [3] })]);
+      const [oneOff] = week([makeDeadline({ id: "d-o", due_at: "2026-01-07T15:00:00Z" })]);
+      expect(recurring.recurringDeadline).toBe(true);
+      expect(oneOff.recurringDeadline).toBe(false);
+    });
+
     it("keeps a tracked person's course read-only", () => {
       const data = buildWeekGridData(
         [makeCourse({ id: "c-p", person_id: "p-chau", meeting_blocks: [makeMeetingBlock({ days: [1], startMinutes: 600, endMinutes: 650 })] })],

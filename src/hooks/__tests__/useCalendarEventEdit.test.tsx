@@ -222,3 +222,59 @@ describe("useCalendarEventEdit: recurring occurrences", () => {
     expect(mutateOccurrence).toHaveBeenCalledWith(expect.objectContaining({ scope: "this", change: { type: "revert" } }));
   });
 });
+
+describe("useCalendarEventEdit: recurring deadlines", () => {
+  const deadline = event({ kind: "deadline", id: "deadline-d-1", entityId: "d-1", recurringDeadline: true, startMinutes: 1020, endMinutes: 1065, occurrenceDate: "2026-11-12" });
+  const moved = { date: "2026-11-13", startMinutes: 1200, endMinutes: 1245 };
+
+  it("asks which occurrences before writing anything", () => {
+    const { result } = renderHook(() => useCalendarEventEdit("America/Detroit"));
+    act(() => result.current.commit(deadline, moved));
+    expect(result.current.scope?.event).toBe(deadline);
+    expect(mutate).not.toHaveBeenCalled();
+  });
+
+  it("'This occurrence' is the plain due_at edit — no series flag", () => {
+    const { result } = renderHook(() => useCalendarEventEdit("America/Detroit"));
+    act(() => result.current.commit(deadline, moved));
+    act(() => result.current.chooseThis());
+    expect(mutate).toHaveBeenCalledTimes(1);
+    const edit = mutate.mock.calls[0][0];
+    expect(edit).toMatchObject({ kind: "deadline", id: "d-1" });
+    expect(edit.series).toBeUndefined();
+    expect(mutateOccurrence).not.toHaveBeenCalled();
+  });
+
+  it("'All occurrences' writes the same instant but as a series shift", () => {
+    const { result } = renderHook(() => useCalendarEventEdit("America/Detroit"));
+    act(() => result.current.commit(deadline, moved));
+    act(() => result.current.chooseAll());
+    expect(mutate).toHaveBeenCalledTimes(1);
+    expect(mutate.mock.calls[0][0]).toMatchObject({ kind: "deadline", id: "d-1", series: true });
+  });
+
+  it("a series shift into the past still asks first, and keeps the series flag when confirmed", () => {
+    const { result } = renderHook(() => useCalendarEventEdit("America/Detroit"));
+    act(() => result.current.commit(deadline, { date: "2026-11-02", startMinutes: 600, endMinutes: 645 }));
+    act(() => result.current.chooseAll());
+    expect(mutate).not.toHaveBeenCalled();
+    expect(result.current.pending).not.toBeNull();
+    act(() => result.current.confirmPending());
+    expect(mutate.mock.calls[0][0]).toMatchObject({ series: true });
+  });
+
+  it("Cancel writes nothing", () => {
+    const { result } = renderHook(() => useCalendarEventEdit("America/Detroit"));
+    act(() => result.current.commit(deadline, moved));
+    act(() => result.current.cancelScope());
+    expect(mutate).not.toHaveBeenCalled();
+  });
+
+  it("a one-off deadline is written straight away, with no question", () => {
+    const { result } = renderHook(() => useCalendarEventEdit("America/Detroit"));
+    act(() => result.current.commit({ ...deadline, recurringDeadline: false }, moved));
+    expect(result.current.scope).toBeNull();
+    expect(mutate).toHaveBeenCalledTimes(1);
+  });
+});
+

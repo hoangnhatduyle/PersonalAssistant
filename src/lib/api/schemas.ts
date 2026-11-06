@@ -119,6 +119,9 @@ export type DeadlinePayload = z.infer<typeof deadlinePayloadSchema>;
 export const deadlinePatchSchema = deadlineBaseSchema.omit({ course_id: true }).partial();
 export type DeadlinePatch = z.infer<typeof deadlinePatchSchema>;
 
+/** "All occurrences" on a recurring deadline: where the dragged occurrence now sits; the series follows (shift_deadline_series, 0062). */
+export const deadlineSeriesShiftSchema = z.object({ due_at: z.iso.datetime({ offset: true }) });
+
 // Board List: a per-course or freestanding grouping of Task rows ("Board
 // Cards" — board merge, supabase/migrations/0029_board_merge.sql, building
 // on the original todo_lists table from 0015_course_todos.sql). course_id

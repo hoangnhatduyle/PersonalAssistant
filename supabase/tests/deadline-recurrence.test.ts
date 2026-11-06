@@ -267,4 +267,139 @@ describe("recurring deadlines", () => {
     const rows = await series(seriesId);
     expect(rows.every((row) => row.status === "Cancelled" && row.recurrence_spawned_at !== null)).toBe(true);
   });
+
+  // --- 0062: moving ONE occurrence must not move the ones after it -----------------------------------------------
+
+  describe("moving an occurrence (recurrence_anchor_due_at)", () => {
+    const at = (daysAhead: number, hour: number) => {
+      const date = new Date(Date.now() + daysAhead * DAY_MS);
+      date.setUTCHours(hour, 0, 0, 0);
+      return date;
+    };
+
+    it("remembers the scheduled slot the first time due_at is edited, and not again", async () => {
+      const slot = at(5, 17);
+      const { id } = await createRecurring(slot);
+      const { data: fresh } = await admin.from("deadlines").select("recurrence_anchor_due_at").eq("id", id).single();
+      expect(fresh?.recurrence_anchor_due_at).toBeNull();
+
+      await admin.from("deadlines").update({ due_at: at(5, 20).toISOString() }).eq("id", id);
+      await admin.from("deadlines").update({ due_at: at(6, 9).toISOString() }).eq("id", id);
+      const { data: moved } = await admin.from("deadlines").select("recurrence_anchor_due_at").eq("id", id).single();
+      expect(new Date(moved?.recurrence_anchor_due_at as string).getTime()).toBe(slot.getTime());
+    });
+
+    it("does not set an anchor on a one-off deadline", async () => {
+      const id = await createDeadline(admin, user.userId, courseId, { due_at: at(5, 17).toISOString() });
+      await admin.from("deadlines").update({ due_at: at(6, 17).toISOString() }).eq("id", id);
+      const { data } = await admin.from("deadlines").select("recurrence_anchor_due_at").eq("id", id).single();
+      expect(data?.recurrence_anchor_due_at).toBeNull();
+    });
+
+    it("the next occurrence follows the SCHEDULE, not where this one was moved to", async () => {
+      const slot = at(5, 17); // weekly, this weekday
+      const { id, seriesId } = await createRecurring(slot);
+      // "This occurrence only": moved a day later and three hours later.
+      await admin.from("deadlines").update({ due_at: new Date(slot.getTime() + DAY_MS + 3 * 3_600_000).toISOString() }).eq("id", id);
+
+      await finish(id);
+
+      const rows = await series(seriesId);
+      expect(rows).toHaveLength(2);
+      expect(new Date(rows[1].due_at).getTime()).toBe(slot.getTime() + 7 * DAY_MS);
+      // The successor starts its own life on its slot.
+      expect(new Date(rows[1].recurrence_anchor_due_at ?? rows[1].due_at).getTime()).toBe(slot.getTime() + 7 * DAY_MS);
+    });
+  });
+
+  describe("shift_deadline_series (All occurrences)", () => {
+    const at = (daysAhead: number, hour: number) => {
+      const date = new Date(Date.now() + daysAhead * DAY_MS);
+      date.setUTCHours(hour, 0, 0, 0);
+      return date;
+    };
+
+    it("moves the time of day for the series and rotates the weekday, so later occurrences follow", async () => {
+      const slot = at(5, 17);
+      const { id, seriesId } = await createRecurring(slot);
+      const target = new Date(slot.getTime() + DAY_MS + 3 * 3_600_000); // a day later, 20:00
+
+      const { data, error } = await user.client.rpc("shift_deadline_series", { p_deadline_id: id, p_new_due_at: target.toISOString() });
+      expect(error).toBeNull();
+      expect(data).toHaveLength(1);
+
+      const [row] = await series(seriesId);
+      expect(new Date(row.due_at).getTime()).toBe(target.getTime());
+      expect(new Date(row.recurrence_anchor_due_at).getTime()).toBe(target.getTime());
+      expect(row.recurrence_days).toEqual([dow(target)]);
+
+      await finish(id);
+      const rows = await series(seriesId);
+      expect(new Date(rows[1].due_at).getTime()).toBe(target.getTime() + 7 * DAY_MS);
+      expect(rows[1].recurrence_days).toEqual([dow(target)]);
+    });
+
+    it("only the shifted weekday changes day; every weekday takes the new time of day", async () => {
+      const slot = at(5, 17);
+      const other = new Date(slot.getTime() + 3 * DAY_MS);
+      const { id, seriesId } = await createRecurring(slot, { recurrence_days: [dow(slot), dow(other)] });
+      const target = new Date(slot.getTime() + 2 * DAY_MS - 5 * 3_600_000); // two days later, 12:00
+
+      await user.client.rpc("shift_deadline_series", { p_deadline_id: id, p_new_due_at: target.toISOString() });
+
+      const [row] = await series(seriesId);
+      expect([...row.recurrence_days].sort()).toEqual([dow(target), dow(other)].sort());
+      await finish(id);
+      const rows = await series(seriesId);
+      // The other weekday survives and is the very next slot (one day after the new one), at the new 12:00 time of day.
+      expect(new Date(rows[1].due_at).getTime()).toBe(target.getTime() + DAY_MS);
+    });
+
+    it("only touches the caller's own series", async () => {
+      const first = await createRecurring(at(5, 17));
+      const stranger = await createAuthenticatedUser();
+      const { data, error } = await stranger.client.rpc("shift_deadline_series", { p_deadline_id: first.id, p_new_due_at: at(6, 9).toISOString() });
+      expect(error).toBeNull();
+      expect(data).toEqual([]);
+      const [row] = await series(first.seriesId);
+      expect(new Date(row.due_at).getTime()).toBe(at(5, 17).getTime());
+    });
+
+    it("refuses to drop onto a weekday the series already uses, instead of silently losing a slot", async () => {
+      const slot = at(5, 17);
+      const other = new Date(slot.getTime() + 2 * DAY_MS);
+      const { id, seriesId } = await createRecurring(slot, { recurrence_days: [dow(slot), dow(other)] });
+      const { error } = await user.client.rpc("shift_deadline_series", { p_deadline_id: id, p_new_due_at: other.toISOString() });
+      expect(error?.code).toBe("23514");
+      const [row] = await series(seriesId);
+      expect(new Date(row.due_at).getTime()).toBe(slot.getTime());
+      expect([...row.recurrence_days].sort()).toEqual([dow(slot), dow(other)].sort());
+    });
+
+    it("a time-only change on the same weekday is allowed even though that weekday is in the series", async () => {
+      const slot = at(5, 17);
+      const { id } = await createRecurring(slot);
+      const { data, error } = await user.client.rpc("shift_deadline_series", { p_deadline_id: id, p_new_due_at: at(5, 9).toISOString() });
+      expect(error).toBeNull();
+      expect(data).toHaveLength(1);
+    });
+
+    it("never pushes an upcoming occurrence past the end date, and returns nothing for a closed deadline", async () => {
+      const slot = at(5, 17);
+      const end = new Date(slot.getTime()).toISOString().slice(0, 10);
+      const { id } = await createRecurring(slot, { recurrence_end_date: end });
+      const { data } = await user.client.rpc("shift_deadline_series", { p_deadline_id: id, p_new_due_at: new Date(slot.getTime() + DAY_MS).toISOString() });
+      expect(data).toHaveLength(1); // the dragged row itself lands where the user put it
+      await walkTransitions(admin, "deadlines", id, "status", ["Cancelled"]);
+      const { data: closed } = await user.client.rpc("shift_deadline_series", { p_deadline_id: id, p_new_due_at: slot.toISOString() });
+      expect(closed).toEqual([]);
+    });
+
+    it("does nothing for a deadline that is not recurring", async () => {
+      const id = await createDeadline(admin, user.userId, courseId, { due_at: at(5, 17).toISOString() });
+      const { data, error } = await user.client.rpc("shift_deadline_series", { p_deadline_id: id, p_new_due_at: at(6, 9).toISOString() });
+      expect(error).toBeNull();
+      expect(data).toEqual([]);
+    });
+  });
 });

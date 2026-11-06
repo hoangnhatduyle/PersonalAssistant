@@ -15,6 +15,8 @@ export interface PendingPastMove {
   title: string;
 }
 
+const isRecurringDeadline = (event: CalendarEvent) => event.kind === "deadline" && event.recurringDeadline === true;
+
 /** A recurring course/appointment occurrence dropped somewhere new, waiting for "This occurrence / All occurrences". */
 export interface PendingScope {
   event: CalendarEvent;
@@ -65,13 +67,18 @@ export function useCalendarEventEdit(timeZone: string, getSeriesBlocks: SeriesBl
     const original: EventTimes = { date: event.occurrenceDate, startMinutes: event.startMinutes, endMinutes: event.endMinutes };
     if (isSameTimes(original, times)) return;
 
-    if (event.occurrence && parentOf(event)) {
+    if ((event.occurrence && parentOf(event)) || isRecurringDeadline(event)) {
       setScope({ event, times });
       return;
     }
+    writeOneOff(event, times, false);
+  };
 
-    const edit = buildCalendarEdit(event, times, timeZone);
-    if (!edit) return;
+  /** A deadline/task/appointment edit: written at once, or after a confirmation when it would land in the past. `series` is a recurring deadline's All occurrences. */
+  const writeOneOff = (event: CalendarEvent, times: EventTimes, series: boolean) => {
+    const built = buildCalendarEdit(event, times, timeZone);
+    if (!built) return;
+    const edit = series ? { ...built, series: true } : built;
     if (isMoveIntoPast(edit, new Date())) {
       setPending({ edit, title: event.title });
       return;
@@ -93,6 +100,11 @@ export function useCalendarEventEdit(timeZone: string, getSeriesBlocks: SeriesBl
     const parent = parentOf(event);
     const occurrence = event.occurrence;
     setScope(null);
+    if (isRecurringDeadline(event)) {
+      // This occurrence only: the plain due_at edit — the database remembers the schedule's slot, so later ones don't move.
+      writeOneOff(event, times, false);
+      return;
+    }
     if (!parent || !occurrence) return;
     const key = { scope: "this" as const, parent, id: event.entityId, originalDate: occurrence.originalDate, originalStartMinutes: occurrence.originalStartMinutes };
     const seriesBlock = event.blockIndex === null ? null : (getSeriesBlocks(event)?.[event.blockIndex] ?? null);
@@ -116,6 +128,10 @@ export function useCalendarEventEdit(timeZone: string, getSeriesBlocks: SeriesBl
     const occurrence = event.occurrence;
     const blocks = getSeriesBlocks(event);
     setScope(null);
+    if (isRecurringDeadline(event)) {
+      writeOneOff(event, times, true);
+      return;
+    }
     if (!parent || !occurrence || event.blockIndex === null || !blocks) return;
     const next = applySeriesEdit(blocks, {
       blockIndex: event.blockIndex,

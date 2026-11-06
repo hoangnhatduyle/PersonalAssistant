@@ -58,7 +58,10 @@ export function useApplyCalendarEdit() {
 
   return useMutation<unknown, Error, CalendarEdit, { undo: Undo[] }>({
     mutationKey: MUTATION_KEY,
-    mutationFn: async (edit) => (await apiFetch(`/api/${ROUTE[edit.kind]}/${edit.id}`, { method: "PATCH", body: edit.body })).data,
+    mutationFn: async (edit) => {
+      if (edit.series) return (await apiFetch(`/api/deadlines/${edit.id}/series-shift`, { method: "POST", body: { due_at: edit.body.due_at } })).data;
+      return (await apiFetch(`/api/${ROUTE[edit.kind]}/${edit.id}`, { method: "PATCH", body: edit.body })).data;
+    },
     onMutate: async (edit) => {
       const queryKey = listQueryKey(edit.kind);
       await queryClient.cancelQueries({ queryKey });

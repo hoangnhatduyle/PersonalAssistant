@@ -14,6 +14,8 @@ export interface CalendarEdit {
   body: Record<string, string | number>;
   /** The new due instant for a deadline/task; null for an appointment. */
   dueAt: string | null;
+  /** A recurring deadline's "All occurrences": POST /api/deadlines/{id}/series-shift instead of the plain PATCH, so the schedule follows. */
+  series?: boolean;
 }
 
 /** Minutes-of-day as the zero-padded 24-hour "HH:MM" appointments store (what <input type="time"> writes and parseTimeToMinutes reads). */

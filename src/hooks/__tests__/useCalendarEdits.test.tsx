@@ -66,6 +66,15 @@ describe("useApplyCalendarEdit", () => {
     expect(apiFetch).toHaveBeenLastCalledWith("/api/tasks/t-1", { method: "PATCH", body: { due_at: "2026-11-07T01:00:00.000Z" } });
   });
 
+  it("POSTs a recurring deadline's All occurrences to the series-shift endpoint", async () => {
+    apiFetch.mockResolvedValue({ data: {} });
+    const { result } = setup();
+    await act(async () => {
+      await result.current.mutateAsync({ kind: "deadline", id: "d-1", body: { due_at: "2026-11-07T00:00:00.000Z" }, dueAt: "2026-11-07T00:00:00.000Z", series: true });
+    });
+    expect(apiFetch).toHaveBeenCalledWith("/api/deadlines/d-1/series-shift", { method: "POST", body: { due_at: "2026-11-07T00:00:00.000Z" } });
+  });
+
   it("moves the block in the cache immediately, before the server answers, and only that row", async () => {
     let resolve!: (value: unknown) => void;
     apiFetch.mockReturnValue(new Promise((r) => (resolve = r)));
