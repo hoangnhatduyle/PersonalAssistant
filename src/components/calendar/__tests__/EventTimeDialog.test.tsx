@@ -102,4 +102,33 @@ describe("EventTimeDialog", () => {
     expect(onClose).toHaveBeenCalled();
     expect(onSave).not.toHaveBeenCalled();
   });
+
+  describe("recurring occurrences", () => {
+    const occurrence = (isOverridden: boolean) => ({ originalDate: "2026-11-05", originalStartMinutes: 600, isOverridden });
+    const openRecurring = (isOverridden: boolean) => {
+      const onSkip = vi.fn();
+      const onRevert = vi.fn();
+      const target = event({ kind: "course", occurrence: occurrence(isOverridden), blockIndex: 0 });
+      render(<EventTimeDialog event={target} onSave={() => {}} onSkip={onSkip} onRevert={onRevert} onClose={() => {}} />);
+      return { onSkip, onRevert, target };
+    };
+
+    it("offers Skip this day, and Revert to series only when the day has been adjusted", () => {
+      const { onSkip, target } = openRecurring(false);
+      expect(screen.queryByRole("button", { name: "Revert to series" })).not.toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: "Skip this day" }));
+      expect(onSkip).toHaveBeenCalledWith(target);
+    });
+
+    it("Revert to series appears for an adjusted day", () => {
+      const { onRevert, target } = openRecurring(true);
+      fireEvent.click(screen.getByRole("button", { name: "Revert to series" }));
+      expect(onRevert).toHaveBeenCalledWith(target);
+    });
+
+    it("a one-off event has neither", () => {
+      open();
+      expect(screen.queryByRole("button", { name: "Skip this day" })).not.toBeInTheDocument();
+    });
+  });
 });

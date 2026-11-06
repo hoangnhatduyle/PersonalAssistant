@@ -26,6 +26,8 @@ type Props = {
   color?: string;
   /** Show a grab cursor: the block can be dragged to a new time. */
   isEditable?: boolean;
+  /** This occurrence of a recurring event differs from its weekly pattern (moved or resized for this date only). */
+  isAdjusted?: boolean;
   /** This block is mid-drag; it dims in place while a preview shows where it will land. */
   isDragging?: boolean;
   /** Starts a drag (see useEventDrag). */
@@ -67,6 +69,7 @@ export function EventBlock({
   href,
   color,
   isEditable = false,
+  isAdjusted = false,
   isDragging = false,
   onPointerDown,
   onElevate,
@@ -83,6 +86,7 @@ export function EventBlock({
       href={href}
       data-testid="calendar-event"
       data-event-id={eventId}
+      data-adjusted={isAdjusted ? "true" : undefined}
       // A link is natively draggable; the browser's link drag would fight ours.
       draggable={false}
       onDragStart={(event) => event.preventDefault()}
@@ -110,7 +114,7 @@ export function EventBlock({
           onElevate();
         }
       }}
-      className={`absolute overflow-hidden rounded-control border px-2 ${isTitleOnly ? "py-0.5" : "py-1.5"} text-xs ${
+      className={`absolute overflow-hidden rounded-control border ${isAdjusted ? "border-dashed" : ""} px-2 ${isTitleOnly ? "py-0.5" : "py-1.5"} text-xs ${
         isDragging ? "opacity-40" : "transition-[box-shadow,transform,filter,left,width] duration-150"
       } ${isEditable ? "cursor-grab" : ""} ${color ? "" : toneClasses(tone)} ${isElevated ? "z-50 scale-[1.02] brightness-125" : ""}`}
       style={{
@@ -148,7 +152,10 @@ export function EventBlock({
         {!isTitleOnly && (
           <>
             <p className="line-clamp-1 text-[10px] leading-tight opacity-80">{timeLabel}</p>
-            <p className="line-clamp-1 text-[10px] leading-tight opacity-80">{subtitle}</p>
+            <p className="line-clamp-1 text-[10px] leading-tight opacity-80">
+              {isAdjusted && <span className="mr-1 rounded-full bg-bg-void/70 px-1.5 font-mono text-[9px] uppercase tracking-wide">Adjusted</span>}
+              {subtitle}
+            </p>
           </>
         )}
       </div>

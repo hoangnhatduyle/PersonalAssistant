@@ -17,6 +17,7 @@ import { CalendarLegend } from "@/components/calendar/CalendarLegend";
 import { AppointmentsTimeline } from "@/components/calendar/AppointmentsTimeline";
 import { CreateEventDialog } from "@/components/calendar/CreateEventDialog";
 import { EventTimeDialog } from "@/components/calendar/EventTimeDialog";
+import { RecurringScopeDialog } from "@/components/calendar/RecurringScopeDialog";
 import { useCalendarEventEdit } from "@/hooks/useCalendarEventEdit";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import type { CreateRequest } from "@/components/calendar/DayColumnEvents";
@@ -63,11 +64,15 @@ export function WeekGridContainer() {
   const { data: settings } = useSettings();
   // Deadlines and tasks are placed by the profile zone, the zone their due dates are shown in everywhere else.
   const timeZone = useUserTimezone();
-  // Drag/resize/dialog changes: written optimistically, with a confirmation first when a deadline/task would land in the past.
-  const edit = useCalendarEventEdit(timeZone);
   // Same filters object as AppointmentsTimeline's own fetch below, so
   // TanStack Query dedupes this into the one request/cache entry.
   const { data: appointments, isLoading: appointmentsLoading } = useAppointments(CALENDAR_APPOINTMENT_FILTERS);
+  // Drag/resize/dialog changes: written optimistically, with a confirmation first when a deadline/task would land in the past
+  // and a "This occurrence / All occurrences" question for a recurring course or appointment (which needs its weekly pattern).
+  const edit = useCalendarEventEdit(timeZone, (event) => {
+    const rows = event.kind === "course" ? courses?.rows : appointments?.rows;
+    return rows?.find((row) => row.id === event.entityId)?.meeting_blocks ?? null;
+  });
   // null = untouched, falls back to Mine only (tracked people are opt-in
   // via the toggle). Once the user interacts, personFilter holds their exact selection —
   // including an intentionally empty set — so each person can be toggled
@@ -217,11 +222,20 @@ export function WeekGridContainer() {
       <EventTimeDialog
         event={adjustEvent}
         onClose={() => setAdjustEvent(null)}
+        onSkip={(event) => {
+          edit.skip(event);
+          setAdjustEvent(null);
+        }}
+        onRevert={(event) => {
+          edit.revert(event);
+          setAdjustEvent(null);
+        }}
         onSave={(event, times) => {
           edit.commit(event, times);
           setAdjustEvent(null);
         }}
       />
+      <RecurringScopeDialog title={edit.scope?.event.title ?? null} onThis={edit.chooseThis} onAll={edit.chooseAll} onCancel={edit.cancelScope} />
       <ConfirmDialog
         open={edit.pending !== null}
         onClose={edit.cancelPending}

@@ -15,6 +15,10 @@ type Props = {
   /** The block to adjust; null keeps the dialog closed. */
   event: CalendarEvent | null;
   onSave: (event: CalendarEvent, times: EventTimes) => void;
+  /** Recurring occurrences only: cancel just this day. */
+  onSkip?: (event: CalendarEvent) => void;
+  /** Recurring occurrences only: drop this day's exception so it follows the weekly pattern again. */
+  onRevert?: (event: CalendarEvent) => void;
   onClose: () => void;
 };
 
@@ -26,16 +30,16 @@ const DAY_MINUTES = 24 * 60;
  * makes. An appointment gets Start and End; a deadline or task is a point in
  * time, so it gets a single Time.
  */
-export function EventTimeDialog({ event, onSave, onClose }: Props) {
+export function EventTimeDialog({ event, onSave, onSkip, onRevert, onClose }: Props) {
   if (!event) return null;
   return (
     <Dialog open onClose={onClose} title="Adjust time">
-      <TimeForm key={event.id} event={event} onSave={onSave} onClose={onClose} />
+      <TimeForm key={event.id} event={event} onSave={onSave} onSkip={onSkip} onRevert={onRevert} onClose={onClose} />
     </Dialog>
   );
 }
 
-function TimeForm({ event, onSave, onClose }: { event: CalendarEvent; onSave: Props["onSave"]; onClose: () => void }) {
+function TimeForm({ event, onSave, onSkip, onRevert, onClose }: { event: CalendarEvent; onSave: Props["onSave"]; onSkip: Props["onSkip"]; onRevert: Props["onRevert"]; onClose: () => void }) {
   const isPoint = event.kind === "deadline" || event.kind === "task";
   const [date, setDate] = useState(event.occurrenceDate);
   const [startMinutes, setStartMinutes] = useState(event.startMinutes);
@@ -89,6 +93,21 @@ function TimeForm({ event, onSave, onClose }: { event: CalendarEvent; onSave: Pr
           </FormField>
         )}
       </div>
+
+      {event.occurrence && (onSkip || onRevert) && (
+        <div className="flex flex-wrap gap-2">
+          {onSkip && (
+            <Button type="button" variant="ghost" onClick={() => onSkip(event)}>
+              Skip this day
+            </Button>
+          )}
+          {onRevert && event.occurrence.isOverridden && (
+            <Button type="button" variant="ghost" onClick={() => onRevert(event)}>
+              Revert to series
+            </Button>
+          )}
+        </div>
+      )}
 
       <div className="flex justify-end gap-2">
         <Button type="button" variant="secondary" onClick={onClose}>

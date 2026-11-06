@@ -428,7 +428,7 @@ describe("buildWeekGridData", () => {
   });
 
   describe("structured fields for editing", () => {
-    it("tags a course occurrence with its kind, entity, block, date and read-only status", () => {
+    it("tags a course occurrence with its kind, entity, block, date and editability", () => {
       const data = buildWeekGridData(
         [makeCourse({ id: "c-1", meeting_blocks: [makeMeetingBlock({ days: [1], startMinutes: 600, endMinutes: 650 })] })],
         [],
@@ -442,11 +442,11 @@ describe("buildWeekGridData", () => {
         entityId: "c-1",
         blockIndex: 0,
         occurrenceDate: "2026-01-05",
-        editable: false,
+        editable: true,
       });
     });
 
-    it("tags a recurring appointment occurrence the same way, and keeps it read-only", () => {
+    it("tags a recurring appointment occurrence the same way", () => {
       const data = buildWeekGridData(
         [],
         [],
@@ -461,8 +461,19 @@ describe("buildWeekGridData", () => {
         entityId: "a-r",
         blockIndex: 0,
         occurrenceDate: "2026-01-07",
-        editable: false,
+        editable: true,
       });
+    });
+
+    it("keeps a tracked person's course read-only", () => {
+      const data = buildWeekGridData(
+        [makeCourse({ id: "c-p", person_id: "p-chau", meeting_blocks: [makeMeetingBlock({ days: [1], startMinutes: 600, endMinutes: 650 })] })],
+        [],
+        [],
+        [],
+        REFERENCE,
+      );
+      expect(data.days.find((day) => day.dayOfWeek === 1)!.events[0]).toMatchObject({ kind: "course", editable: false });
     });
 
     it("marks a one-off appointment editable, with no block index", () => {

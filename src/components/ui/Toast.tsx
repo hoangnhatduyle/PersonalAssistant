@@ -10,10 +10,14 @@ type Toast = {
   id: string;
   tone: ToastTone;
   message: string;
+  action?: ToastAction;
 };
 
+/** A button on a toast ("Undo"); pressing it runs `onClick` and dismisses the toast. */
+export type ToastAction = { label: string; onClick: () => void };
+
 type ToastContextValue = {
-  showToast: (message: string, tone?: ToastTone) => void;
+  showToast: (message: string, tone?: ToastTone, action?: ToastAction) => void;
 };
 
 const ToastContext = createContext<ToastContextValue | null>(null);
@@ -49,9 +53,11 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const isMounted = useIsMounted();
 
-  const showToast = useCallback((message: string, tone: ToastTone = "info") => {
+  const dismiss = useCallback((id: string) => setToasts((current) => current.filter((toast) => toast.id !== id)), []);
+
+  const showToast = useCallback((message: string, tone: ToastTone = "info", action?: ToastAction) => {
     const id = crypto.randomUUID();
-    setToasts((current) => [...current, { id, tone, message }]);
+    setToasts((current) => [...current, { id, tone, message, action }]);
     setTimeout(() => {
       setToasts((current) => current.filter((toast) => toast.id !== id));
     }, AUTO_DISMISS_MS);
@@ -70,6 +76,18 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                 className={`rounded-control border bg-bg-void-elevated px-4 py-3 text-sm shadow-panel ${TONE_CLASSES[toast.tone]}`}
               >
                 {toast.message}
+                {toast.action && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      toast.action?.onClick();
+                      dismiss(toast.id);
+                    }}
+                    className="ml-3 font-medium underline underline-offset-2 hover:no-underline"
+                  >
+                    {toast.action.label}
+                  </button>
+                )}
               </div>
             ))}
           </div>,

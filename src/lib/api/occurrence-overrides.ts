@@ -5,7 +5,7 @@ import { occurrenceOverrideKeySchema, occurrenceOverridePayloadSchema } from "@/
 import { notFoundResponse, serverErrorResponse, successResponse, validationErrorResponse } from "@/lib/api/response";
 import { findSeriesOccurrence } from "@/lib/calendar/occurrence-overrides";
 import type { MeetingBlock } from "@/lib/calendar/recurrence";
-import { hasPatternChanged } from "@/lib/api/series-pattern";
+import { futureOverrideCutoff, hasPatternChanged } from "@/lib/api/series-pattern";
 
 /** The PostgREST embed GET /api/courses and /api/appointments add to their selects so a client gets each series' exceptions in the same round trip. */
 export const OCCURRENCE_OVERRIDES_EMBED =
@@ -121,8 +121,7 @@ export async function clearFutureOverridesIfPatternChanged(
 ) {
   if (!hasPatternChanged(before, patch)) return null;
 
-  // A day of slack so an exception on "today" in a zone ahead of UTC is still treated as future.
-  const cutoff = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const cutoff = futureOverrideCutoff(now);
   const { error } = await supabase.from("occurrence_overrides").delete().eq(PARENT_COLUMN[table], id).gte("original_date", cutoff);
   return error;
 }

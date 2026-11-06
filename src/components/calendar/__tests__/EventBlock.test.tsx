@@ -148,3 +148,22 @@ describe("EventBlock hover card", () => {
     expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
   });
 });
+
+describe("EventBlock adjusted marker", () => {
+  it("marks an occurrence that differs from its series with a dashed border and an Adjusted tag", () => {
+    renderBlock({ isAdjusted: true });
+    const block = screen.getByTestId("calendar-event");
+    expect(block).toHaveAttribute("data-adjusted", "true");
+    expect(block.className).toContain("border-dashed");
+    expect(screen.getByText("Adjusted")).toBeInTheDocument();
+  });
+
+  it("leaves an ordinary block unmarked", () => {
+    renderBlock();
+    const block = screen.getByTestId("calendar-event");
+    expect(block).not.toHaveAttribute("data-adjusted");
+    expect(block.className).not.toContain("border-dashed");
+    expect(screen.queryByText("Adjusted")).not.toBeInTheDocument();
+  });
+});
+

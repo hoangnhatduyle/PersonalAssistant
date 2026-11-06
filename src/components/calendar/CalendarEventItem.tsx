@@ -55,6 +55,7 @@ export function CalendarEventItem({ event, windowStart, isElevated, onElevate, o
         href={event.href}
         color={event.color}
         isEditable={isEditable}
+        isAdjusted={event.occurrence?.isOverridden ?? false}
         isDragging={drag?.mode === "move"}
         onPointerDown={startMove}
         onElevate={onElevate}

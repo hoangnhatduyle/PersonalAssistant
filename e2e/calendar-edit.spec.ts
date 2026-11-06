@@ -5,7 +5,7 @@ import { admin, createUserAndSignIn, currentWeekDateKeys, seedCourse } from "./f
 // Editing the calendar directly (C1): drag a block to move it, drag its bottom
 // edge to resize it, or use the Adjust time dialog (the phone/keyboard route).
 // One-off appointments move and resize; deadlines and tasks move. A move into
-// the past asks first. Recurring items are read-only until occurrence overrides.
+// the past asks first. A recurring course asks "This occurrence / All occurrences" (C2.5).
 
 const PIXELS_PER_MINUTE = 1.2;
 const WEEK = currentWeekDateKeys();
@@ -19,11 +19,11 @@ const block = (page: Page, prefix: string, id: string) => page.locator(`[data-ev
 const column = (page: Page, date: string) => page.locator(`[data-testid="day-column"][data-date="${date}"]`);
 
 /** Drags a block with the real mouse: from inside it to `dx` pixels right and `dy` down. */
-async function dragBlockBy(page: Page, target: Locator, dx: number, dy: number): Promise<void> {
+async function dragBlockBy(page: Page, target: Locator, dx: number, dy: number, grabOffsetY = 20): Promise<void> {
   await target.scrollIntoViewIfNeeded();
   const box = (await target.boundingBox())!;
   const startX = box.x + box.width / 2;
-  const startY = box.y + 20;
+  const startY = box.y + grabOffsetY;
   await page.mouse.move(startX, startY);
   await page.mouse.down();
   await page.mouse.move(startX + dx, startY + dy, { steps: 12 });
@@ -212,20 +212,148 @@ test.describe("calendar edit: deadlines and tasks", () => {
   });
 });
 
-test.describe("calendar edit: read-only blocks", () => {
-  test("a course block has no resize handle and no Adjust time button", async ({ page }) => {
-    const user = await createUserAndSignIn(page);
-    await createCourse(admin, user.userId, {
-      name: "Algorithms",
-      meeting_blocks: [{ days: [3], startMinutes: 600, endMinutes: 660 }],
-    });
+test.describe("calendar edit: a recurring course (First Solar)", () => {
+  const SERIES = [{ days: [1, 2, 4, 5], startMinutes: 510, endMinutes: 990 }]; // Mon/Tue/Thu/Fri 8:30–4:30
+  const THURSDAY_ROW = WEEK[4];
+  const FRIDAY_ROW = WEEK[5];
 
-    await page.goto("/calendar");
-    const target = page.locator('[data-testid="calendar-event"]').first();
+  const seed = async (page: Page) => {
+    const user = await createUserAndSignIn(page);
+    const courseId = await createCourse(admin, user.userId, { name: "First Solar", meeting_blocks: SERIES });
+    return { user, courseId };
+  };
+  const courseBlock = (page: Page, courseId: string, date: string) =>
+    column(page, date).locator(`[data-event-id^="course-${courseId}-0-"]`);
+  const overrides = async (courseId: string) => {
+    const { data } = await admin
+      .from("occurrence_overrides")
+      .select("original_date, original_start_minutes, is_cancelled, new_date, new_start_minutes, new_end_minutes")
+      .eq("course_id", courseId);
+    return data ?? [];
+  };
+  const seriesBlocks = async (courseId: string) => {
+    const { data } = await admin.from("courses").select("meeting_blocks").eq("id", courseId).single();
+    return data?.meeting_blocks;
+  };
+  const scopeDialog = (page: Page) => page.getByRole("dialog", { name: "Change recurring event" });
+
+  /** Opens Adjust time on that day's block and moves its start to 13:00 (the half day), keeping the end. */
+  async function startHalfDay(page: Page, courseId: string) {
+    const target = courseBlock(page, courseId, THURSDAY_ROW);
     await target.scrollIntoViewIfNeeded();
     await target.hover();
-    await expect(page.getByTestId("resize-handle")).toHaveCount(0);
-    await expect(page.getByRole("button", { name: /Adjust time/ })).toHaveCount(0);
+    await page.getByRole("button", { name: "Adjust time for First Solar" }).click();
+    const dialog = page.getByRole("dialog", { name: "Adjust time" });
+    await dialog.getByLabel("Start", { exact: true }).fill("13:00");
+    // Moving the start carries the end; put the end back to 4:30 PM.
+    await dialog.getByLabel("End", { exact: true }).fill("16:30");
+    await dialog.getByRole("button", { name: "Save" }).click();
+    await expect(scopeDialog(page)).toBeVisible();
+  }
+
+  test("This occurrence: only that Thursday is shortened, the series and every other day are untouched", async ({ page }) => {
+    const { courseId } = await seed(page);
+    await page.goto("/calendar");
+    await startHalfDay(page, courseId);
+    await scopeDialog(page).getByRole("button", { name: "This occurrence" }).click();
+
+    await expect.poll(() => overrides(courseId)).toEqual([
+      { original_date: THURSDAY_ROW, original_start_minutes: 510, is_cancelled: false, new_date: THURSDAY_ROW, new_start_minutes: 780, new_end_minutes: 990 },
+    ]);
+    expect(await seriesBlocks(courseId)).toEqual(SERIES);
+    await expect(courseBlock(page, courseId, THURSDAY_ROW)).toHaveAttribute("data-adjusted", "true");
+    await expect(courseBlock(page, courseId, THURSDAY_ROW)).toContainText("1 PM");
+    await expect(courseBlock(page, courseId, FRIDAY_ROW)).not.toHaveAttribute("data-adjusted", "true");
+    await expect(courseBlock(page, courseId, FRIDAY_ROW)).toContainText("8:30 AM");
+    // And it survives a reload (it is stored, not just drawn).
+    await page.reload();
+    await expect(courseBlock(page, courseId, THURSDAY_ROW)).toHaveAttribute("data-adjusted", "true");
+  });
+
+  test("All occurrences: every Thursday changes, Monday, Tuesday and Friday do not", async ({ page }) => {
+    const { courseId } = await seed(page);
+    await page.goto("/calendar");
+    await startHalfDay(page, courseId);
+    await scopeDialog(page).getByRole("button", { name: "All occurrences" }).click();
+
+    await expect
+      .poll(() => seriesBlocks(courseId))
+      .toEqual([
+        { days: [1, 2, 5], startMinutes: 510, endMinutes: 990 },
+        { days: [4], startMinutes: 780, endMinutes: 990 },
+      ]);
+    expect(await overrides(courseId)).toEqual([]);
+    await expect(courseBlock(page, courseId, FRIDAY_ROW)).toContainText("8:30 AM");
+  });
+
+  test("Cancel in the question changes nothing", async ({ page }) => {
+    const { courseId } = await seed(page);
+    await page.goto("/calendar");
+    await startHalfDay(page, courseId);
+    await scopeDialog(page).getByRole("button", { name: "Cancel" }).click();
+
+    await expect(scopeDialog(page)).toBeHidden();
+    expect(await overrides(courseId)).toEqual([]);
+    expect(await seriesBlocks(courseId)).toEqual(SERIES);
+    await expect(courseBlock(page, courseId, THURSDAY_ROW)).toContainText("8:30 AM");
+  });
+
+  test("dragging a recurring block asks the same question", async ({ page }) => {
+    const { courseId } = await seed(page);
+    await page.goto("/calendar");
+    // One hour down: 8:30 -> 9:30.
+    // Grabbed mid-block: a tall course block's top can sit at the scroll edge, where holding the mouse auto-scrolls.
+    await dragBlockBy(page, courseBlock(page, courseId, THURSDAY_ROW), 0, 60 * PIXELS_PER_MINUTE, 200);
+    await expect(scopeDialog(page)).toBeVisible();
+    await scopeDialog(page).getByRole("button", { name: "This occurrence" }).click();
+
+    await expect
+      .poll(async () => (await overrides(courseId))[0]?.new_start_minutes)
+      .toBe(570);
+    expect(await seriesBlocks(courseId)).toEqual(SERIES);
+  });
+
+  test("Skip this day removes just that day, and only that day", async ({ page }) => {
+    const { courseId } = await seed(page);
+    await page.goto("/calendar");
+    const target = courseBlock(page, courseId, THURSDAY_ROW);
+    await target.scrollIntoViewIfNeeded();
+    await target.hover();
+    await page.getByRole("button", { name: "Adjust time for First Solar" }).click();
+    await page.getByRole("dialog", { name: "Adjust time" }).getByRole("button", { name: "Skip this day" }).click();
+
+    await expect(courseBlock(page, courseId, THURSDAY_ROW)).toHaveCount(0);
+    await expect(courseBlock(page, courseId, FRIDAY_ROW)).toHaveCount(1);
+    await expect.poll(async () => (await overrides(courseId))[0]?.is_cancelled).toBe(true);
+
+    // The block is gone from the grid, so the toast is the way back.
+    await page.getByRole("status").getByRole("button", { name: "Undo" }).click();
+    await expect.poll(() => overrides(courseId)).toEqual([]);
+    await expect(courseBlock(page, courseId, THURSDAY_ROW)).toHaveCount(1);
+  });
+
+  test("Revert to series drops an adjusted day's exception", async ({ page }) => {
+    const { user, courseId } = await seed(page);
+    await admin.from("occurrence_overrides").insert({
+      user_id: user.userId,
+      course_id: courseId,
+      original_date: THURSDAY_ROW,
+      original_start_minutes: 510,
+      new_date: THURSDAY_ROW,
+      new_start_minutes: 780,
+      new_end_minutes: 990,
+    });
+    await page.goto("/calendar");
+    const target = courseBlock(page, courseId, THURSDAY_ROW);
+    await expect(target).toHaveAttribute("data-adjusted", "true");
+    await target.scrollIntoViewIfNeeded();
+    await target.hover();
+    await page.getByRole("button", { name: "Adjust time for First Solar" }).click();
+    await page.getByRole("dialog", { name: "Adjust time" }).getByRole("button", { name: "Revert to series" }).click();
+
+    await expect.poll(() => overrides(courseId)).toEqual([]);
+    await expect(courseBlock(page, courseId, THURSDAY_ROW)).not.toHaveAttribute("data-adjusted", "true");
+    await expect(courseBlock(page, courseId, THURSDAY_ROW)).toContainText("8:30 AM");
   });
 });
 

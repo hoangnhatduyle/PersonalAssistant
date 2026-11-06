@@ -30,3 +30,13 @@ export function hasPatternChanged(
   if (patch.recurrence_end_date !== undefined && patch.recurrence_end_date !== before.recurrence_end_date) return true;
   return false;
 }
+
+/**
+ * Exceptions on or after this date ("YYYY-MM-DD") are "future" for the purposes of dropping a series' stale
+ * exceptions when its pattern changes; earlier ones stay as history. A day of slack behind UTC-now so an exception
+ * on "today" in a time zone ahead of UTC is still treated as future. The server applies it (see
+ * clearFutureOverridesIfPatternChanged) and the client mirrors it in its optimistic update.
+ */
+export function futureOverrideCutoff(now: Date): string {
+  return new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}

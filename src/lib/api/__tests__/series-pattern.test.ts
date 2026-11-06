@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hasPatternChanged } from "@/lib/api/series-pattern";
+import { futureOverrideCutoff, hasPatternChanged } from "@/lib/api/series-pattern";
 import type { MeetingBlock } from "@/lib/calendar/recurrence";
 
 const THURSDAY: MeetingBlock = { days: [4], startMinutes: 510, endMinutes: 990 };
@@ -29,5 +29,13 @@ describe("hasPatternChanged", () => {
     expect(hasPatternChanged(before, { recurrence_end_date: "2026-12-11" })).toBe(true);
     expect(hasPatternChanged(before, { recurrence_start_date: null, recurrence_end_date: null })).toBe(false);
     expect(hasPatternChanged({ ...before, recurrence_end_date: "2026-12-11" }, { recurrence_end_date: "2026-12-11" })).toBe(false);
+  });
+});
+
+describe("futureOverrideCutoff", () => {
+  it("is the UTC date a day before now, so an exception on 'today' in a zone ahead of UTC still counts as future", () => {
+    expect(futureOverrideCutoff(new Date("2026-11-06T12:00:00Z"))).toBe("2026-11-05");
+    expect(futureOverrideCutoff(new Date("2026-11-01T00:30:00Z"))).toBe("2026-10-31");
+    expect(futureOverrideCutoff(new Date("2027-01-01T08:00:00Z"))).toBe("2026-12-31");
   });
 });

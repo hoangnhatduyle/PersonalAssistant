@@ -28,7 +28,7 @@ export interface CalendarEvent {
   blockIndex: number | null;
   /** For a recurring course/appointment occurrence, which one of the series it is; null for everything else. */
   occurrence: RecurringOccurrenceRef | null;
-  /** Whether the calendar may change it directly. False for a tracked person's events and (until occurrence overrides exist) recurring ones. */
+  /** Whether the calendar may change it directly. False for a tracked person's events. */
   editable: boolean;
   title: string;
   /** The meeting's start–end time range (e.g. "12:30–1:50 PM") or a due-time marker. */
@@ -278,7 +278,7 @@ export function buildWeekGridData(
         occurrenceDate: dateKey,
         blockIndex: occurrence.blockIndex,
         occurrence: occurrenceRef(occurrence),
-        editable: false,
+        editable: course.person_id === null,
         title: course.name,
         timeLabel: `${formatMinutesOfDay(occurrence.startMinutes)}–${formatMinutesOfDay(occurrence.endMinutes)}`,
         subtitle: course.location ?? "—",
@@ -370,7 +370,7 @@ export function buildWeekGridData(
         occurrenceDate: dateKey,
         blockIndex: occurrence.blockIndex,
         occurrence: occurrenceRef(occurrence),
-        editable: false,
+        editable: true,
         title: appointment.title,
         timeLabel: `${formatMinutesOfDay(occurrence.startMinutes)}–${formatMinutesOfDay(occurrence.endMinutes)}`,
         subtitle: appointment.location ?? appointment.category,
