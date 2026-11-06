@@ -77,7 +77,7 @@ function TimeForm({ event, onSave, onSkip, onRevert, onClose }: { event: Calenda
         <DatePicker id="event-time-date" value={date} onChange={setDate} invalid={Boolean(errors.date)} />
       </FormField>
 
-      <div className={isPoint ? "" : "grid grid-cols-2 gap-4"}>
+      <div className={isPoint ? "" : "grid grid-cols-1 gap-4 min-[380px]:grid-cols-2"}>
         <FormField label={isPoint ? "Time" : "Start"} htmlFor="event-time-start">
           <Input id="event-time-start" type="time" value={minutesToTimeKey(startMinutes)} onChange={(changeEvent) => handleStartChange(changeEvent.target.value)} />
         </FormField>

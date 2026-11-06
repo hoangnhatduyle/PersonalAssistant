@@ -41,7 +41,7 @@ export function WeekGrid({ days, hourMarks, windowStart, windowEnd, onCreateRequ
   }, []);
 
   return (
-    <div data-calendar-scroll className="max-h-[75vh] overflow-auto">
+    <div data-calendar-scroll className="isolate max-h-[75vh] overflow-auto">
       <div ref={gridRef} className="grid min-w-[860px] grid-cols-[64px_repeat(7,1fr)]">
         <div />
         {days.map((day) => (
