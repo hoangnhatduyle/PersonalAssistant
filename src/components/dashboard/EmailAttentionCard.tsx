@@ -8,6 +8,8 @@ import { Input } from "@/components/ui/Input";
 import { MailProviderIcon } from "@/components/dashboard/MailProviderIcon";
 import { TriageBucketBadge } from "@/components/dashboard/TriageBucketBadge";
 import { EmailActionDialog, actionLabel } from "@/components/dashboard/EmailActionDialog";
+import { CollapseToggle } from "@/components/dashboard/CollapseToggle";
+import { usePersistedCollapse } from "@/hooks/usePersistedCollapse";
 import { useMailAccounts } from "@/hooks/useMailAccounts";
 import { useEmailTriage, useRunEmailTriage, useUpdateTriageItem } from "@/hooks/useEmailTriage";
 import { ApiError } from "@/lib/http/client";
@@ -19,6 +21,7 @@ import type { TriageItem, TriageRunResponse } from "@/lib/email-triage/types";
 import type { MailProvider } from "@/lib/mail/types";
 
 const PROVIDER_LABEL: Record<MailProvider, string> = { google: "Gmail", microsoft: "Outlook" };
+const COLLAPSE_KEY = "cadence.emailAttention.collapsed";
 const PRESET_DAYS = [1, 3, 7, 14] as const;
 
 function isMailProvider(value: string): value is MailProvider {
@@ -38,6 +41,7 @@ export function EmailAttentionCard() {
   const updateItem = useUpdateTriageItem();
 
   const [panelOpen, setPanelOpen] = useState(false);
+  const [collapsed, toggleCollapsed] = usePersistedCollapse(COLLAPSE_KEY);
   const [chosenProvider, setChosenProvider] = useState<MailProvider | null>(null);
   const [days, setDays] = useState<number>(TRIAGE_DEFAULT_DAYS);
   const [customDays, setCustomDays] = useState("");
@@ -97,12 +101,29 @@ export function EmailAttentionCard() {
   return (
     <GlassPanel className="flex flex-col gap-3 p-5" data-testid="email-attention-card">
       <div className="flex items-center justify-between gap-3">
-        <p className="font-mono text-xs uppercase tracking-wide text-accent-teal">Needs your attention</p>
-        <Button size="sm" variant="secondary" onClick={() => setPanelOpen((open) => !open)} aria-expanded={panelOpen}>
+        <div className="flex items-center gap-2">
+          <CollapseToggle collapsed={collapsed} onToggle={toggleCollapsed} label="needs your attention" />
+          <p className="font-mono text-xs uppercase tracking-wide text-accent-teal">Needs your attention</p>
+        </div>
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={() => {
+            if (collapsed) toggleCollapsed();
+            setPanelOpen((open) => !open);
+          }}
+          aria-expanded={panelOpen}
+        >
           Check email
         </Button>
       </div>
 
+      {collapsed ? (
+        <p className="text-sm text-text-secondary" data-testid="email-collapsed-summary">
+          {isLoading ? "Loading…" : items.length === 0 ? "No flagged emails" : `${items.length} flagged ${items.length === 1 ? "email" : "emails"}`}
+        </p>
+      ) : (
+        <>
       {panelOpen && (
         <div className="flex flex-col gap-3 rounded-control border border-panel-border p-3" data-testid="email-triage-panel">
           {connected.length === 0 ? (
@@ -261,6 +282,8 @@ export function EmailAttentionCard() {
             </li>
           ))}
         </ul>
+      )}
+        </>
       )}
 
       <EmailActionDialog item={actionItem} onClose={() => setActionItem(null)} />

@@ -15,6 +15,7 @@ const speak = vi.hoisted(() => vi.fn());
 vi.mock("@/hooks/useSpeakVoiceResponse", () => ({ useSpeakVoiceResponse: () => ({ speak, isPending: false }) }));
 
 import { WeeklyReviewCard } from "@/components/dashboard/WeeklyReviewCard";
+import { resetPersistedCollapseMemory } from "@/hooks/usePersistedCollapse";
 
 function day(weekday: string, total: number, index: number) {
   return { dateKey: `2026-10-${12 + index}`, weekday, deadlineCount: total, taskCount: 0, sessionCount: 0, total, titles: total ? ["Thing"] : [] };
@@ -42,6 +43,7 @@ beforeEach(() => {
   apiFetch.mockReset();
   speak.mockReset();
   localStorage.clear();
+  resetPersistedCollapseMemory();
   settings.value = { timezone: "UTC" };
   vi.useRealTimers();
 });
@@ -152,5 +154,30 @@ describe("WeeklyReviewCard", () => {
     fireEvent.click(screen.getByRole("button", { name: "Dismiss weekly review" }));
     expect(onDismiss).toHaveBeenCalledTimes(1);
     expect(screen.queryByText("Weekly Review")).not.toBeInTheDocument();
+  });
+});
+
+describe("WeeklyReviewCard collapse", () => {
+  it("hides the result body when collapsed, keeps the header, and restores it on expand", async () => {
+    apiFetch.mockResolvedValueOnce({ data: makeReview() });
+    renderWithProviders(<WeeklyReviewCard />);
+    fireEvent.click(screen.getByRole("button", { name: "Generate" }));
+    expect(await screen.findByText("You finished 5 items last week.")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Collapse weekly review" }));
+    expect(screen.queryByText("You finished 5 items last week.")).not.toBeInTheDocument();
+    expect(screen.getByText("Weekly Review")).toBeInTheDocument();
+    expect(screen.getByTestId("weekly-collapsed-summary")).toHaveTextContent("Generated today");
+    expect(localStorage.getItem("cadence.weeklyReview.collapsed")).toBe("1");
+
+    fireEvent.click(screen.getByRole("button", { name: "Expand weekly review" }));
+    expect(screen.getByText("You finished 5 items last week.")).toBeInTheDocument();
+  });
+
+  it("starts collapsed when the choice was remembered", () => {
+    localStorage.setItem("cadence.weeklyReview.collapsed", "1");
+    renderWithProviders(<WeeklyReviewCard />);
+    expect(screen.getByTestId("weekly-collapsed-summary")).toHaveTextContent("Not generated yet");
+    expect(screen.queryByRole("button", { name: "Generate" })).not.toBeInTheDocument();
   });
 });

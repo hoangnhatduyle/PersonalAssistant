@@ -18,6 +18,7 @@ vi.mock("@/components/dashboard/EmailActionDialog", () => ({
 
 import { ApiError } from "@/lib/http/client";
 import { EmailAttentionCard } from "@/components/dashboard/EmailAttentionCard";
+import { resetPersistedCollapseMemory } from "@/hooks/usePersistedCollapse";
 
 function item(id: string, overrides: Partial<TriageItem> = {}): TriageItem {
   return {
@@ -58,6 +59,8 @@ function setup({ items = [], accounts = [{ provider: "google", provider_email: "
 
 beforeEach(() => {
   apiFetch.mockReset();
+  localStorage.clear();
+  resetPersistedCollapseMemory();
 });
 
 describe("EmailAttentionCard", () => {
@@ -203,5 +206,31 @@ describe("EmailAttentionCard", () => {
     fireEvent.click(screen.getByRole("button", { name: "Check email" }));
     fireEvent.click(await screen.findByRole("button", { name: "Run" }));
     expect(await screen.findByRole("status")).toHaveTextContent(/could not check your email/i);
+  });
+});
+
+describe("EmailAttentionCard collapse", () => {
+  it("collapses the list to a count, remembers it, and expands again", async () => {
+    setup({ items: [item("a"), item("b")] });
+    renderWithProviders(<EmailAttentionCard />);
+    expect(await screen.findByText("Subject a")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Collapse needs your attention" }));
+    expect(screen.queryByText("Subject a")).not.toBeInTheDocument();
+    expect(screen.getByTestId("email-collapsed-summary")).toHaveTextContent("2 flagged emails");
+    expect(localStorage.getItem("cadence.emailAttention.collapsed")).toBe("1");
+
+    fireEvent.click(screen.getByRole("button", { name: "Expand needs your attention" }));
+    expect(screen.getByText("Subject a")).toBeInTheDocument();
+  });
+
+  it("expands when Check email is clicked so the run panel is visible", async () => {
+    localStorage.setItem("cadence.emailAttention.collapsed", "1");
+    setup({ items: [item("a")] });
+    renderWithProviders(<EmailAttentionCard />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Check email" }));
+    expect(await screen.findByTestId("email-triage-panel")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Collapse needs your attention" })).toBeInTheDocument();
   });
 });

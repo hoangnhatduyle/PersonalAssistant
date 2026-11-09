@@ -6,20 +6,20 @@ import { Button } from "@/components/ui/Button";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { useSettings } from "@/hooks/useSettings";
 import { useSpeakVoiceResponse } from "@/hooks/useSpeakVoiceResponse";
+import { CollapseToggle } from "@/components/dashboard/CollapseToggle";
+import { usePersistedCollapse } from "@/hooks/usePersistedCollapse";
+import { localDateKey } from "@/lib/local-date-key";
 import { apiFetch } from "@/lib/http/client";
 import { isWeeklyReviewReady } from "@/lib/weekly-review/ready-window";
 import type { WeeklyReviewResponse } from "@/lib/weekly-review/types";
 
 const CACHE_KEY = "cadence.weeklyReview";
+const COLLAPSE_KEY = "cadence.weeklyReview.collapsed";
 
 interface CachedReview {
   review: WeeklyReviewResponse;
   /** Browser-local YYYY-MM-DD the review was generated on. */
   cachedOn: string;
-}
-
-function localDateKey(date: Date): string {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
 function readCacheRaw(): string | null {
@@ -64,6 +64,7 @@ export function WeeklyReviewCard({ onDismiss }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
   const [dismissed, setDismissed] = useState(false);
+  const [collapsed, toggleCollapsed] = usePersistedCollapse(COLLAPSE_KEY);
 
   const { data: settings } = useSettings();
   const { speak, isPending: isSpeaking } = useSpeakVoiceResponse();
@@ -103,6 +104,7 @@ export function WeeklyReviewCard({ onDismiss }: Props) {
     <GlassPanel variant={ready ? "glow-warn" : "default"} className="flex flex-col gap-4 p-5">
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
+          <CollapseToggle collapsed={collapsed} onToggle={toggleCollapsed} label="weekly review" />
           <p className="font-mono text-xs uppercase tracking-wide text-accent-indigo">Weekly Review</p>
           {ready && (
             <span className="rounded-full bg-status-warn/15 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide text-status-warn">
@@ -123,7 +125,11 @@ export function WeeklyReviewCard({ onDismiss }: Props) {
         </button>
       </div>
 
-      {loading ? (
+      {collapsed ? (
+        <p className="text-sm text-text-secondary" data-testid="weekly-collapsed-summary">
+          {loading ? "Generating…" : review ? "Generated today" : "Not generated yet"}
+        </p>
+      ) : loading ? (
         <div className="flex flex-col gap-3">
           <Skeleton className="h-12 w-full" />
           <Skeleton className="h-4 w-3/4" />
