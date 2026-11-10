@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { useSettings } from "@/hooks/useSettings";
 import { useSpeakVoiceResponse } from "@/hooks/useSpeakVoiceResponse";
+import { WEEKLY_COLLAPSE_KEY } from "@/components/dashboard/collapse-keys";
 import { CollapseToggle } from "@/components/dashboard/CollapseToggle";
 import { usePersistedCollapse } from "@/hooks/usePersistedCollapse";
 import { localDateKey } from "@/lib/local-date-key";
@@ -14,7 +15,6 @@ import { isWeeklyReviewReady } from "@/lib/weekly-review/ready-window";
 import type { WeeklyReviewResponse } from "@/lib/weekly-review/types";
 
 const CACHE_KEY = "cadence.weeklyReview";
-const COLLAPSE_KEY = "cadence.weeklyReview.collapsed";
 
 interface CachedReview {
   review: WeeklyReviewResponse;
@@ -64,7 +64,7 @@ export function WeeklyReviewCard({ onDismiss }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
   const [dismissed, setDismissed] = useState(false);
-  const [collapsed, toggleCollapsed] = usePersistedCollapse(COLLAPSE_KEY);
+  const [collapsed, toggleCollapsed] = usePersistedCollapse(WEEKLY_COLLAPSE_KEY);
 
   const { data: settings } = useSettings();
   const { speak, isPending: isSpeaking } = useSpeakVoiceResponse();
@@ -101,8 +101,8 @@ export function WeeklyReviewCard({ onDismiss }: Props) {
 
 
   return (
-    <GlassPanel variant={ready ? "glow-warn" : "default"} className="flex flex-col gap-4 p-5">
-      <div className="flex items-center justify-between gap-3">
+    <GlassPanel variant={ready ? "glow-warn" : "default"} className="h-full flex flex-col gap-4 p-5">
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
         <div className="flex items-center gap-2">
           <CollapseToggle collapsed={collapsed} onToggle={toggleCollapsed} label="weekly review" />
           <p className="font-mono text-xs uppercase tracking-wide text-accent-indigo">Weekly Review</p>
@@ -118,7 +118,7 @@ export function WeeklyReviewCard({ onDismiss }: Props) {
             setDismissed(true);
             onDismiss?.();
           }}
-          className="font-mono text-xs text-text-secondary transition-colors hover:text-text-primary"
+          className="shrink-0 font-mono text-xs text-text-secondary transition-colors hover:text-text-primary"
           aria-label="Dismiss weekly review"
         >
           Dismiss
@@ -137,7 +137,7 @@ export function WeeklyReviewCard({ onDismiss }: Props) {
           <Skeleton className="h-4 w-5/6" />
         </div>
       ) : error ? (
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="text-sm text-text-secondary">Could not generate your weekly review.</p>
           <Button size="sm" variant="secondary" onClick={generate}>
             Retry
@@ -151,7 +151,7 @@ export function WeeklyReviewCard({ onDismiss }: Props) {
           onRefresh={generate}
         />
       ) : (
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="text-sm text-text-secondary">See how last week went and what next week looks like.</p>
           <Button size="sm" variant="secondary" onClick={generate}>
             Generate

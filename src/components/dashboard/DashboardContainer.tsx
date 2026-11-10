@@ -11,6 +11,8 @@ import { UpNextPanel } from "@/components/dashboard/UpNextPanel";
 import { MomentumCard } from "@/components/dashboard/MomentumCard";
 import { DailyIntelligenceCard } from "@/components/dashboard/DailyIntelligenceCard";
 import { WeeklyReviewCard } from "@/components/dashboard/WeeklyReviewCard";
+import { usePersistedCollapse } from "@/hooks/usePersistedCollapse";
+import { DAILY_COLLAPSE_KEY, EMAIL_COLLAPSE_KEY, WEEKLY_COLLAPSE_KEY } from "@/components/dashboard/collapse-keys";
 import { EmailAttentionCard } from "@/components/dashboard/EmailAttentionCard";
 import { WorkloadDensityStrip } from "@/components/dashboard/WorkloadDensityStrip";
 import { StaleItemsCard } from "@/components/dashboard/StaleItemsCard";
@@ -18,9 +20,23 @@ import { CourseProgressList } from "@/components/dashboard/CourseProgressList";
 import { Skeleton } from "@/components/ui/Skeleton";
 
 /** No /api/dashboard route exists — composes already-fetched entity hooks client-side. */
+// Full class names (not interpolated) so Tailwind can see them. The 768-899px and 900px+ ranges never overlap, so class order cannot decide which one wins.
+const PAIR_COLUMNS: Record<number, string> = { 0: "", 1: "", 2: "min-[768px]:max-[899px]:grid-cols-2" };
+const WIDE_COLUMNS: Record<number, string> = {
+  1: "",
+  2: "min-[900px]:grid-cols-2",
+  3: "min-[900px]:grid-cols-3",
+};
+
 export function DashboardContainer() {
   const [dailyDismissed, setDailyDismissed] = useState(false);
   const [weeklyDismissed, setWeeklyDismissed] = useState(false);
+  const [dailyCollapsed] = usePersistedCollapse(DAILY_COLLAPSE_KEY);
+  const [weeklyCollapsed] = usePersistedCollapse(WEEKLY_COLLAPSE_KEY);
+  const [emailCollapsed] = usePersistedCollapse(EMAIL_COLLAPSE_KEY);
+  // Equal heights only while every visible card is collapsed; once one is open the rest keep their collapsed height.
+  const allCollapsed = (dailyDismissed || dailyCollapsed) && (weeklyDismissed || weeklyCollapsed) && emailCollapsed;
+  const pairCount = (dailyDismissed ? 0 : 1) + (weeklyDismissed ? 0 : 1);
   // Deadlines are owner-only everywhere now (People feature — matches Voice
   // Assistant's get_person_schedule, which never returns a tracked person's
   // Deadlines either).
@@ -65,18 +81,17 @@ export function DashboardContainer() {
         </div>
       ) : (
         <>
-          {/* Daily Intelligence + Weekly Review stay a pair. "Needs your attention" is a compact third column on very wide screens (2xl) and a full-width row beneath the pair everywhere else. */}
-          <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-6 2xl:grid-cols-[minmax(0,1fr)_minmax(300px,360px)]">
-            {/* Side by side from md up. Dismissing one card lets the other take the full row. */}
-            <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-6 md:grid-cols-2">
-              <div className={dailyDismissed ? "hidden" : weeklyDismissed ? "md:col-span-2" : ""}>
-                <DailyIntelligenceCard onDismiss={() => setDailyDismissed(true)} />
-              </div>
-              <div className={weeklyDismissed ? "hidden" : dailyDismissed ? "md:col-span-2" : ""}>
-                <WeeklyReviewCard onDismiss={() => setWeeklyDismissed(true)} />
-              </div>
+          {/* The three briefing cards share one grid so they are always the same width and height. 3 across from 900px; between md and 900px the pair sits side by side with "Needs your attention" as a full row beneath. Cards are equal height only while all are collapsed. Dismissed cards drop out and the rest re-divide the row. */}
+          <div className={`grid grid-cols-[minmax(0,1fr)] ${allCollapsed ? "items-stretch" : "items-start"} gap-6 ${PAIR_COLUMNS[pairCount]} ${WIDE_COLUMNS[pairCount + 1]}`}>
+            <div className={dailyDismissed ? "hidden" : "min-w-0"}>
+              <DailyIntelligenceCard onDismiss={() => setDailyDismissed(true)} />
             </div>
-            <EmailAttentionCard />
+            <div className={weeklyDismissed ? "hidden" : "min-w-0"}>
+              <WeeklyReviewCard onDismiss={() => setWeeklyDismissed(true)} />
+            </div>
+            <div className={`min-w-0 ${pairCount === 2 ? "min-[768px]:max-[899px]:col-span-2" : ""}`}>
+              <EmailAttentionCard />
+            </div>
           </div>
           <WorkloadDensityStrip
             deadlines={deadlines?.rows ?? []}

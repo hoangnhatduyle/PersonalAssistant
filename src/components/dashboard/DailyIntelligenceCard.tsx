@@ -13,6 +13,7 @@ import { usePersonalizationSuggestions } from "@/hooks/usePersonalizationSuggest
 import { useReviewSuggestionsAloud } from "@/hooks/useReviewSuggestionsAloud";
 import { resolveTargetTitle } from "@/lib/personalization/target-title";
 import { toneClasses } from "@/lib/status-colors";
+import { DAILY_COLLAPSE_KEY } from "@/components/dashboard/collapse-keys";
 import { CollapseToggle } from "@/components/dashboard/CollapseToggle";
 import { usePersistedCollapse } from "@/hooks/usePersistedCollapse";
 import { localDateKey } from "@/lib/local-date-key";
@@ -21,7 +22,6 @@ import type { DailyIntelligenceResponse } from "@/app/api/intelligence/route";
 import type { StatusTone } from "@/lib/status-colors";
 
 const CACHE_KEY = "cadence.intelligence";
-const COLLAPSE_KEY = "cadence.intelligence.collapsed";
 
 interface CachedIntelligence {
   narrative: string;
@@ -61,7 +61,7 @@ export function DailyIntelligenceCard({ onDismiss }: Props = {}) {
   const [loading, setLoading] = useState(false);
   const [dismissed, setDismissed] = useState(false);
   const [error, setError] = useState(false);
-  const [collapsed, toggleCollapsed] = usePersistedCollapse(COLLAPSE_KEY);
+  const [collapsed, toggleCollapsed] = usePersistedCollapse(DAILY_COLLAPSE_KEY);
 
   const { data: settings } = useSettings();
   const { speak, isPending: isSpeaking } = useSpeakVoiceResponse();
@@ -105,9 +105,9 @@ export function DailyIntelligenceCard({ onDismiss }: Props = {}) {
   const pendingSuggestions = suggestions?.rows ?? [];
 
   return (
-    <GlassPanel variant="glow-ok" className="flex flex-col gap-4 p-5">
+    <GlassPanel variant="glow-ok" className="h-full flex flex-col gap-4 p-5">
       {/* Header */}
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
         <div className="flex items-center gap-2">
           <CollapseToggle collapsed={collapsed} onToggle={toggleCollapsed} label="daily intelligence" />
           <p className="font-mono text-xs uppercase tracking-wide text-accent-teal">Daily Intelligence</p>
@@ -118,7 +118,7 @@ export function DailyIntelligenceCard({ onDismiss }: Props = {}) {
             setDismissed(true);
             onDismiss?.();
           }}
-          className="font-mono text-xs text-text-secondary transition-colors hover:text-text-primary"
+          className="shrink-0 font-mono text-xs text-text-secondary transition-colors hover:text-text-primary"
           aria-label="Dismiss intelligence"
         >
           Dismiss
@@ -137,7 +137,7 @@ export function DailyIntelligenceCard({ onDismiss }: Props = {}) {
           <Skeleton className="h-4 w-5/6" />
         </div>
       ) : error ? (
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="text-sm text-text-secondary">Could not generate your daily intelligence.</p>
           <Button size="sm" variant="secondary" onClick={fetchIntelligence}>
             Retry
@@ -190,7 +190,7 @@ export function DailyIntelligenceCard({ onDismiss }: Props = {}) {
           </div>
         </>
       ) : (
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="text-sm text-text-secondary">Tap to generate today&apos;s daily intelligence.</p>
           <Button size="sm" variant="secondary" onClick={fetchIntelligence}>
             Generate

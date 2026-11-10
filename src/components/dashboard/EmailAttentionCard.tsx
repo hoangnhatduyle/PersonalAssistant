@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/Input";
 import { MailProviderIcon } from "@/components/dashboard/MailProviderIcon";
 import { TriageBucketBadge } from "@/components/dashboard/TriageBucketBadge";
 import { EmailActionDialog, actionLabel } from "@/components/dashboard/EmailActionDialog";
+import { EMAIL_COLLAPSE_KEY } from "@/components/dashboard/collapse-keys";
 import { CollapseToggle } from "@/components/dashboard/CollapseToggle";
 import { usePersistedCollapse } from "@/hooks/usePersistedCollapse";
 import { useMailAccounts } from "@/hooks/useMailAccounts";
@@ -21,7 +22,6 @@ import type { TriageItem, TriageRunResponse } from "@/lib/email-triage/types";
 import type { MailProvider } from "@/lib/mail/types";
 
 const PROVIDER_LABEL: Record<MailProvider, string> = { google: "Gmail", microsoft: "Outlook" };
-const COLLAPSE_KEY = "cadence.emailAttention.collapsed";
 const PRESET_DAYS = [1, 3, 7, 14] as const;
 
 function isMailProvider(value: string): value is MailProvider {
@@ -41,7 +41,7 @@ export function EmailAttentionCard() {
   const updateItem = useUpdateTriageItem();
 
   const [panelOpen, setPanelOpen] = useState(false);
-  const [collapsed, toggleCollapsed] = usePersistedCollapse(COLLAPSE_KEY);
+  const [collapsed, toggleCollapsed] = usePersistedCollapse(EMAIL_COLLAPSE_KEY);
   const [chosenProvider, setChosenProvider] = useState<MailProvider | null>(null);
   const [days, setDays] = useState<number>(TRIAGE_DEFAULT_DAYS);
   const [customDays, setCustomDays] = useState("");
@@ -99,8 +99,8 @@ export function EmailAttentionCard() {
   };
 
   return (
-    <GlassPanel className="flex flex-col gap-3 p-5" data-testid="email-attention-card">
-      <div className="flex items-center justify-between gap-3">
+    <GlassPanel className="h-full flex flex-col gap-3 p-5" data-testid="email-attention-card">
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
         <div className="flex items-center gap-2">
           <CollapseToggle collapsed={collapsed} onToggle={toggleCollapsed} label="needs your attention" />
           <p className="font-mono text-xs uppercase tracking-wide text-accent-teal">Needs your attention</p>
@@ -236,7 +236,7 @@ export function EmailAttentionCard() {
       ) : items.length === 0 ? (
         <p className="text-sm text-text-secondary">No flagged emails. Check to see new ones.</p>
       ) : (
-        <ul className="flex flex-col divide-y divide-panel-border">
+        <ul className="flex max-h-[28rem] flex-col divide-y divide-panel-border overflow-y-auto">
           {items.map((item) => (
             <li key={item.id} className="flex flex-col gap-1.5 py-3 first:pt-0 last:pb-0">
               <div className="flex items-start justify-between gap-2">
