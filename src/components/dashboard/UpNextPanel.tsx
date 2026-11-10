@@ -23,6 +23,12 @@ import { ITEM_KIND_BG_CLASS, ITEM_KIND_LABEL, ITEM_KIND_STROKE_CLASS } from "@/l
 import { EventTransitionButtons } from "@/components/calendar/EventTransitionButtons";
 import { MailInboxCard } from "@/components/dashboard/MailInboxCard";
 import { LongTermTasksCard } from "@/components/dashboard/LongTermTasksCard";
+import { UpNextGanttView, type GanttOpenTarget } from "@/components/dashboard/gantt/UpNextGanttView";
+import { UP_NEXT_VIEW_KEY } from "@/components/dashboard/collapse-keys";
+import { BoardCardDetailDialog } from "@/components/board/BoardCardDetailDialog";
+import { DeadlineDetailDialog } from "@/components/deadlines/DeadlineDetailDialog";
+import { SessionEditDialog } from "@/components/deadlines/SessionEditDialog";
+import { usePersistedView } from "@/hooks/usePersistedView";
 import type { AppointmentRow, CourseRow, DeadlineRow, EventStatus, PersonRow, TaskRow, TodoListRow } from "@/lib/api/entity-types";
 
 type Props = {
@@ -39,6 +45,12 @@ type Props = {
   /** Last-touched-via-checklist/attachment/note per task id, feeding the Long-term card's "touched Nd ago". */
   taskActivity?: Map<string, Date>;
 };
+
+const UP_NEXT_VIEWS = ["list", "gantt"] as const;
+type UpNextView = (typeof UP_NEXT_VIEWS)[number];
+const VIEW_LABEL: Record<UpNextView, string> = { list: "List", gantt: "Gantt" };
+const NO_ITEMS: UpcomingItem[] = [];
+const MINUTE_MS = 60_000;
 
 const RING_ITEM_LIMIT = 5;
 const COUNTDOWN_TICK_MS = 1_000;
@@ -93,6 +105,9 @@ export function UpNextPanel({ deadlines, tasks, people, todoLists, courses, appo
   const isMounted = useIsMounted();
   const [, forceTick] = useState(0);
   const [timeWindow, setTimeWindow] = useState<TimeWindowFilter>("today");
+  const [view, setView] = usePersistedView(UP_NEXT_VIEW_KEY, UP_NEXT_VIEWS);
+  /** The deadline / task / session whose dialog is open, opened by clicking a Gantt bar. */
+  const [openTarget, setOpenTarget] = useState<GanttOpenTarget | null>(null);
   /** The ring currently hovered/focused, anchored at its bounding box for the floating tooltip. */
   const [hoveredRing, setHoveredRing] = useState<{ item: UpcomingItem; x: number; y: number } | null>(null);
 
@@ -190,6 +205,18 @@ export function UpNextPanel({ deadlines, tasks, people, todoLists, courses, appo
   }, [tasks, todoLists, courses]);
 
   const queueItems = now ? filterUpcomingItemsByTimeWindow(allQueueItems, timeWindow, now) : allQueueItems;
+
+  // The Gantt only needs to be redrawn when something it shows changes, not on every one-second
+  // countdown tick, so it gets its own item list and "today", both stable within a minute.
+  const nowMinute = now ? Math.floor(now.getTime() / MINUTE_MS) : null;
+  const ganttNow = useMemo(() => (nowMinute === null ? null : new Date(nowMinute * MINUTE_MS)), [nowMinute]);
+  const ganttItems = useMemo(
+    () =>
+      view === "gantt" && ganttNow
+        ? filterUpcomingItemsByTimeWindow(buildUpcomingItems({ deadlines, tasks, appointments, people, courses }), timeWindow, ganttNow)
+        : NO_ITEMS,
+    [view, ganttNow, deadlines, tasks, appointments, people, courses, timeWindow],
+  );
   const emptyCopy = EMPTY_COPY[timeWindow];
 
   const heroItem = ringItems[0] ?? null;
@@ -320,6 +347,22 @@ export function UpNextPanel({ deadlines, tasks, people, todoLists, courses, appo
                 </p>
               )}
             </div>
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            <div role="group" aria-label="Up Next view" className="flex items-center gap-1 rounded-full border border-panel-border p-0.5">
+              {UP_NEXT_VIEWS.map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  aria-pressed={view === option}
+                  onClick={() => setView(option)}
+                  className={`rounded-full px-2.5 py-0.5 font-mono text-xs uppercase tracking-wide transition-colors ${
+                    view === option ? "bg-accent-indigo text-white" : "text-text-secondary hover:text-text-primary"
+                  }`}
+                >
+                  {VIEW_LABEL[option]}
+                </button>
+              ))}
+            </div>
             <div role="group" aria-label="Filter by due date" className="flex flex-wrap items-center gap-2">
               {TIME_WINDOW_FILTERS.map((filter) => {
                 const isActive = timeWindow === filter.value;
@@ -338,15 +381,26 @@ export function UpNextPanel({ deadlines, tasks, people, todoLists, courses, appo
                 );
               })}
             </div>
+            </div>
           </div>
 
           {queueItems.length === 0 ? (
             <EmptyState title={emptyCopy.title} description={emptyCopy.description} />
+          ) : view === "gantt" && ganttNow ? (
+            <UpNextGanttView
+              items={ganttItems}
+              deadlines={deadlines}
+              tasks={tasks}
+              appointments={appointments}
+              window={timeWindow}
+              now={ganttNow}
+              onOpen={setOpenTarget}
+            />
           ) : (
             <ul className="flex max-h-[20rem] flex-col divide-y divide-panel-border overflow-y-auto pr-1">
               {queueItems.map((item) => {
                 const { status, tone } = resolveItemStatus(item);
-                const showPastDueTag = item.urgent && item.kind !== "deadline";
+                const showPastDueTag = item.urgent;
                 const taskListInfo = item.kind === "task" ? taskListLabelMap.get(item.id) : undefined;
                 const kindLabel = ITEM_KIND_LABEL[item.kind];
 
@@ -385,7 +439,7 @@ export function UpNextPanel({ deadlines, tasks, people, todoLists, courses, appo
                           Past due
                         </span>
                       )}
-                      {status && tone && <StatusPill status={status} tone={tone} />}
+                      {!item.urgent && status && tone && <StatusPill status={status} tone={tone} />}
                       {item.kind === "appointment" &&
                         (() => {
                           const appointment = appointmentById.get(item.id)!;
@@ -422,6 +476,11 @@ export function UpNextPanel({ deadlines, tasks, people, todoLists, courses, appo
           <MailInboxCard />
         </div>
       </div>
+
+      {/* Clicking a Gantt bar opens that item's own edit dialog here, so it can be edited without leaving the dashboard. */}
+      <BoardCardDetailDialog taskId={openTarget?.kind === "task" ? openTarget.id : null} onClose={() => setOpenTarget(null)} />
+      <DeadlineDetailDialog deadlineId={openTarget?.kind === "deadline" ? openTarget.id : null} onClose={() => setOpenTarget(null)} />
+      <SessionEditDialog sessionId={openTarget?.kind === "session" ? openTarget.id : null} onClose={() => setOpenTarget(null)} />
     </GlassPanel>
   );
 }
@@ -466,7 +525,7 @@ function RingTooltip({ hovered, now, resolveStatus }: RingTooltipProps) {
             Past due
           </span>
         )}
-        {status && tone && <StatusPill status={status} tone={tone} />}
+        {!item.urgent && status && tone && <StatusPill status={status} tone={tone} />}
         {item.kind === "task" && item.personId && <Badge tone="accent">For {item.personLabel}</Badge>}
         {item.kind === "appointment" && item.conflict && <Badge tone="urgent">Conflict</Badge>}
         {item.kind === "appointment" && item.courseConflict && <Badge tone="purple">Course Conflict</Badge>}

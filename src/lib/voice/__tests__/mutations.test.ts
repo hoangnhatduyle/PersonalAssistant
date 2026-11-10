@@ -56,6 +56,43 @@ describe("executePendingMutation", () => {
       expect(new Date((result.data as { due_at: string }).due_at).getTime()).toBe(new Date(newDueAt).getTime());
     });
 
+    it("creates a deadline with an estimate and hand-set progress", async () => {
+      const courseId = await createCourse(admin, userId);
+      const result = await executePendingMutation(user.client, userId, {
+        targetType: "deadline",
+        operation: "create",
+        payload: {
+          course_id: courseId,
+          title: "Lab report",
+          due_at: new Date(Date.now() + 86_400_000).toISOString(),
+          estimated_hours: 6,
+          progress_percent: 0,
+          progress_note: "not started",
+        },
+      });
+
+      const { data } = await admin.from("deadlines").select("estimated_hours, progress_percent, progress_note").eq("id", (result.data as { id: string }).id).single();
+      expect(Number(data?.estimated_hours)).toBe(6);
+      expect(data?.progress_percent).toBe(0); // a deliberate 0 is stored as 0, not null
+      expect(data?.progress_note).toBe("not started");
+    });
+
+    it("updates only the progress, leaving the rest of the deadline alone", async () => {
+      const courseId = await createCourse(admin, userId);
+      const deadlineId = await createDeadline(admin, userId, courseId, { title: "Keep my title", estimated_hours: 8 });
+
+      await executePendingMutation(user.client, userId, {
+        targetType: "deadline",
+        operation: "update",
+        targetId: deadlineId,
+        payload: { progress_percent: 60, progress_note: "outline done" },
+      });
+
+      const { data } = await admin.from("deadlines").select("title, estimated_hours, progress_percent, progress_note").eq("id", deadlineId).single();
+      expect(data).toMatchObject({ title: "Keep my title", progress_percent: 60, progress_note: "outline done" });
+      expect(Number(data?.estimated_hours)).toBe(8);
+    });
+
     it("deletes a deadline (soft-delete)", async () => {
       const courseId = await createCourse(admin, userId);
       const deadlineId = await createDeadline(admin, userId, courseId);
@@ -351,7 +388,79 @@ describe("executePendingMutation", () => {
     });
   });
 
+  describe("task estimate and progress", () => {
+    it("creates a task with an estimate and updates its progress", async () => {
+      const created = await executePendingMutation(user.client, userId, {
+        targetType: "task",
+        operation: "create",
+        payload: { title: "Write intro", due_at: null, estimated_hours: 1.5 },
+      });
+      const taskId = (created.data as { id: string }).id;
+
+      await executePendingMutation(user.client, userId, { targetType: "task", operation: "update", targetId: taskId, payload: { progress_percent: 100 } });
+
+      const { data } = await admin.from("tasks").select("title, estimated_hours, progress_percent").eq("id", taskId).single();
+      expect(data?.title).toBe("Write intro");
+      expect(Number(data?.estimated_hours)).toBe(1.5);
+      expect(data?.progress_percent).toBe(100);
+    });
+  });
+
   describe("session", () => {
+    it("updates a session's estimate and progress without touching its status or schedule", async () => {
+      const courseId = await createCourse(admin, userId);
+      const deadlineId = await createDeadline(admin, userId, courseId);
+      const sessionId = await createSession(admin, userId, deadlineId, { title: "Draft outline", date: "2026-09-06", time: "10:00" });
+
+      const result = await executePendingMutation(user.client, userId, {
+        targetType: "session",
+        operation: "update",
+        targetId: sessionId,
+        payload: { duration_minutes: 120, progress_percent: 50, progress_note: "half the reading" },
+      });
+
+      expect(result.summary).toMatch(/Draft outline/);
+      const { data } = await admin.from("appointments").select("title, date, time, session_status, duration_minutes, progress_percent, progress_note").eq("id", sessionId).single();
+      expect(data).toMatchObject({
+        title: "Draft outline",
+        date: "2026-09-06",
+        time: "10:00",
+        session_status: "planned",
+        duration_minutes: 120,
+        progress_percent: 50,
+        progress_note: "half the reading",
+      });
+    });
+
+    it("refuses to update a general event through the session path", async () => {
+      const eventId = await createAppointment(admin, userId, { title: "Dentist" });
+      await expect(
+        executePendingMutation(user.client, userId, { targetType: "session", operation: "update", targetId: eventId, payload: { progress_percent: 10 } }),
+      ).rejects.toBeInstanceOf(MutationTargetNotFoundError);
+    });
+
+    it("refuses to update another user's session", async () => {
+      const other = await createAuthenticatedUser();
+      const courseId = await createCourse(admin, other.userId);
+      const deadlineId = await createDeadline(admin, other.userId, courseId);
+      const sessionId = await createSession(admin, other.userId, deadlineId);
+
+      await expect(
+        executePendingMutation(user.client, userId, { targetType: "session", operation: "update", targetId: sessionId, payload: { progress_percent: 10 } }),
+      ).rejects.toBeInstanceOf(MutationTargetNotFoundError);
+    });
+
+    it("throws MutationTargetNotFoundError updating a deleted session", async () => {
+      const courseId = await createCourse(admin, userId);
+      const deadlineId = await createDeadline(admin, userId, courseId);
+      const sessionId = await createSession(admin, userId, deadlineId);
+      await admin.from("appointments").update({ deleted_at: new Date().toISOString() }).eq("id", sessionId);
+
+      await expect(
+        executePendingMutation(user.client, userId, { targetType: "session", operation: "update", targetId: sessionId, payload: { progress_percent: 10 } }),
+      ).rejects.toBeInstanceOf(MutationTargetNotFoundError);
+    });
+
     it("creates a session under a live deadline, forcing category and session_status", async () => {
       const courseId = await createCourse(admin, userId);
       const deadlineId = await createDeadline(admin, userId, courseId);

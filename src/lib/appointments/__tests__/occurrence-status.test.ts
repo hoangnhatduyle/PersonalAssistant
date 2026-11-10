@@ -18,6 +18,8 @@ function makeAppointment(overrides: Partial<AppointmentRow> = {}): AppointmentRo
     deadline_id: null,
     duration_minutes: 60,
     session_status: null,
+    progress_percent: null,
+    progress_note: null,
     event_status: "planned",
     meeting_blocks: [],
     recurrence_start_date: null,

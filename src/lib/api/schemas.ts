@@ -39,6 +39,16 @@ const RECURRENCE_DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 // .optional() enum can't express (undefined can't be sent over the wire).
 const itemPrioritySchema = z.enum(["Low", "Medium", "High", "Urgent"]).nullable().optional();
 
+// Estimate + hand-set progress (supabase/migrations/0063_estimate_and_progress.sql).
+// All nullable for the same reason as itemPrioritySchema: `null` over JSON clears
+// a previously-set value. A null progress_percent means "derive it" (see
+// src/lib/progress/resolve-progress.ts), so 0 is a real, deliberate value.
+export const MAX_ESTIMATED_HOURS = 9999;
+export const MAX_PROGRESS_NOTE_LENGTH = 1000;
+const estimatedHoursSchema = z.number().positive().max(MAX_ESTIMATED_HOURS).nullable().optional();
+const progressPercentSchema = z.number().int().min(0).max(100).nullable().optional();
+const progressNoteSchema = z.string().trim().max(MAX_PROGRESS_NOTE_LENGTH).nullable().optional();
+
 // person_id: nullable/optional on Courses and Tasks -- null/omitted means
 // "the account owner's own item", a non-null value must reference a People
 // row the caller owns (verified by the route, and backstopped by the
@@ -106,6 +116,9 @@ const deadlineBaseSchema = z.object({
   title: z.string().trim().min(1),
   due_at: z.iso.datetime({ offset: true }),
   priority: itemPrioritySchema,
+  estimated_hours: estimatedHoursSchema,
+  progress_percent: progressPercentSchema,
+  progress_note: progressNoteSchema,
   recurrence_days: z
     .array(z.number().int().min(0).max(6))
     .max(7)
@@ -166,6 +179,9 @@ const appointmentBaseSchema = z.object({
     .max(MAX_APPOINTMENT_DURATION_MINUTES, "duration_minutes cannot exceed 1440 (24 hours) — use one appointment per day, or a recurring appointment, for anything spanning multiple days")
     .nullable()
     .optional(),
+  // A Session's estimate is duration_minutes above; these two record how far along it is.
+  progress_percent: progressPercentSchema,
+  progress_note: progressNoteSchema,
   meeting_blocks: z.array(meetingBlockSchema).max(10).optional(),
   recurrence_start_date: z.string().regex(RECURRENCE_DATE_REGEX, "Expected YYYY-MM-DD").nullable().optional(),
   recurrence_end_date: z.string().regex(RECURRENCE_DATE_REGEX, "Expected YYYY-MM-DD").nullable().optional(),
@@ -241,6 +257,9 @@ const taskBaseSchema = z.object({
   reminder_lead_minutes: z.number().int().nonnegative().max(MAX_REMINDER_LEAD_MINUTES).optional(),
   person_id: z.uuid().nullable().optional(),
   priority: itemPrioritySchema,
+  estimated_hours: estimatedHoursSchema,
+  progress_percent: progressPercentSchema,
+  progress_note: progressNoteSchema,
   // Board merge (supabase/migrations/0029_board_merge.sql): a Task is now
   // also a Board Card. list_id null means "Miscellaneous" (not a DB row) — see
   // guard_task_list_ownership for the DB-side enforcement this mirrors.

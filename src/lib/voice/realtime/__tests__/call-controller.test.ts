@@ -66,7 +66,7 @@ interface Rig {
   setToolHandler: (handler: ToolHandler) => void;
 }
 
-function rig(options: { sessionStatus?: number; sessionError?: string; maxSeconds?: number; mic?: () => Promise<MediaStream>; greet?: boolean } = {}): Rig {
+function rig(options: { sessionStatus?: number; sessionError?: string; maxSeconds?: number; mic?: () => Promise<MediaStream>; greet?: boolean; endOnHidden?: boolean } = {}): Rig {
   const pc = new FakePeerConnection();
   const { track, stream } = fakeStream();
   const calls: Rig["calls"] = [];
@@ -108,7 +108,7 @@ function rig(options: { sessionStatus?: number; sessionError?: string; maxSecond
   };
 
   return {
-    controller: new CallController(deps, { greet: options.greet }),
+    controller: new CallController(deps, { greet: options.greet, endOnHidden: options.endOnHidden }),
     pc,
     dc: pc.dc,
     track,
@@ -485,6 +485,30 @@ describe("time limits", () => {
     await advanceWhileActive(r, 60_000);
     expect(r.controller.getSnapshot().phase).toBe("live");
 
+    r.controller.setHidden(true);
+    await vi.advanceTimersByTimeAsync((REALTIME_HIDDEN_GRACE_SECONDS + 1) * 1000);
+    expect(r.controller.getSnapshot()).toMatchObject({ phase: "ended", endReason: "hidden" });
+  });
+
+  it("keeps a desktop call running when its tab is in the background, bounded by the call cap", async () => {
+    const r = await live({ greet: false, endOnHidden: false });
+    r.controller.setHidden(true);
+    await advanceWhileActive(r, (REALTIME_HIDDEN_GRACE_SECONDS + 60) * 1000);
+    expect(r.controller.getSnapshot().phase).toBe("live");
+  });
+
+  it("still takes the wake lock back when a desktop call's tab returns", async () => {
+    const r = await live({ greet: false, endOnHidden: false });
+    await settle();
+    const before = (r.deps.requestWakeLock as ReturnType<typeof vi.fn>).mock.calls.length;
+    r.controller.setHidden(true);
+    r.controller.setHidden(false);
+    await settle();
+    expect((r.deps.requestWakeLock as ReturnType<typeof vi.fn>).mock.calls.length).toBe(before + 1);
+  });
+
+  it("an explicit endOnHidden of true behaves like the default", async () => {
+    const r = await live({ greet: false, endOnHidden: true });
     r.controller.setHidden(true);
     await vi.advanceTimersByTimeAsync((REALTIME_HIDDEN_GRACE_SECONDS + 1) * 1000);
     expect(r.controller.getSnapshot()).toMatchObject({ phase: "ended", endReason: "hidden" });

@@ -1,0 +1,107 @@
+/* Maps the Gantt library's CSS variables onto the dashboard's tokens (src/styles/tokens.css). */
+/* The library sets its variables on its own theme element (.wx-theme), inside this wrapper, so the overrides must target it. */
+.cadence-gantt,
+.cadence-gantt .wx-theme {
+  --wx-font-family: var(--font-sans, system-ui, sans-serif);
+  --wx-font-size: 12px;
+  --wx-background: transparent;
+  --wx-background-alt: var(--bg-void-elevated);
+  --wx-color-font: var(--text-primary);
+  --wx-color-secondary: var(--text-secondary);
+  --wx-gantt-border-color: var(--panel-border);
+  --wx-gantt-task-color: transparent;
+  --wx-gantt-task-fill-color: transparent;
+  --wx-gantt-task-border-color: transparent;
+  --wx-gantt-task-border: none;
+  --wx-gantt-select-color: color-mix(in srgb, var(--accent-indigo) 18%, transparent);
+}
+
+.cadence-gantt {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+.cadence-gantt .wx-theme {
+  height: 100%;
+  width: 100%;
+}
+
+.cadence-gantt .cadence-gantt-today {
+  background: color-mix(in srgb, var(--accent-teal) 12%, transparent);
+}
+
+/* Bars */
+.cadence-bar {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--bar-color) 22%, transparent);
+  border: 1px solid color-mix(in srgb, var(--bar-color) 60%, transparent);
+  cursor: pointer;
+}
+.cadence-bar--deadline { --bar-color: var(--accent-teal); }
+.cadence-bar--task { --bar-color: var(--accent-indigo); }
+.cadence-bar--session { --bar-color: var(--status-warn); }
+.cadence-bar--overdue { --bar-color: var(--status-urgent); }
+.cadence-bar--clipped { border-left-style: dashed; border-top-left-radius: 0; border-bottom-left-radius: 0; }
+.cadence-bar__fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: color-mix(in srgb, var(--bar-color) 70%, transparent);
+}
+.cadence-bar__label {
+  position: relative;
+  padding: 0 6px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 10px;
+  line-height: 1;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  height: 100%;
+}
+
+/* Legend swatches under the chart */
+.cadence-legend-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+}
+.cadence-legend-swatch--deadline { background: var(--accent-teal); }
+.cadence-legend-swatch--task { background: var(--accent-indigo); }
+.cadence-legend-swatch--session { background: var(--status-warn); }
+.cadence-legend-swatch--overdue { background: var(--status-urgent); }
+
+/* Title column beside the bars */
+.cadence-gantt-label {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px 0 0;
+  background: none;
+  border: 0;
+  text-align: left;
+  font-size: 12px;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+.cadence-gantt-label:hover { color: var(--accent-teal); }
+.cadence-gantt-label:focus-visible { outline: 2px solid var(--accent-indigo); outline-offset: 1px; border-radius: 4px; }
+.cadence-gantt-label__dot { flex: none; width: 6px; height: 6px; border-radius: 999px; background: var(--dot-color, var(--accent-teal)); }
+.cadence-gantt-label--task { --dot-color: var(--accent-indigo); }
+.cadence-gantt-label--session { --dot-color: var(--status-warn); }
+.cadence-gantt-label--session span:last-child { color: var(--text-secondary); }
+.cadence-gantt-label--overdue { --dot-color: var(--status-urgent); }
+
+/* Date header: small mono labels like the dashboard's other chart axes */
+.cadence-gantt,
+.cadence-gantt .wx-theme {
+  --wx-timescale-font: 500 11px var(--font-mono, ui-monospace, monospace);
+  --wx-timescale-font-color: var(--text-secondary);
+  --wx-timescale-border: var(--panel-border);
+}

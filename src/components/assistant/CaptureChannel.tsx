@@ -10,6 +10,7 @@ import { TranscriptBubble } from "@/components/assistant/TranscriptBubble";
 import { AssistantResponse } from "@/components/assistant/AssistantResponse";
 import { ConfirmationBar } from "@/components/assistant/ConfirmationBar";
 import { useVoiceCapture, type VoiceTurnOrigin } from "@/components/assistant/VoiceCaptureProvider";
+import { useIsInCall } from "@/components/assistant/RealtimeCallProvider";
 import { useVoiceTurn, type VoiceTurnClientInput } from "@/hooks/useVoiceTurn";
 import { useSpeakVoiceResponse } from "@/hooks/useSpeakVoiceResponse";
 import { useResetVoiceConversation } from "@/hooks/useResetVoiceConversation";
@@ -313,6 +314,14 @@ export function CaptureChannel({ compact = false, large = false }: Props) {
     startRecordingRef.current = startRecording;
   }, [startRecording]);
 
+  // A call takes over the microphone and speaker: drop any recording or reply in progress the moment one starts.
+  const inCall = useIsInCall();
+  useEffect(() => {
+    if (!inCall) return;
+    cancelRecording();
+    stopPlayback();
+  }, [inCall, cancelRecording]);
+
   const handleMicClick = async () => {
     if (recorderStatus === "listening") {
       stopRecording();
@@ -366,7 +375,7 @@ export function CaptureChannel({ compact = false, large = false }: Props) {
             type="button"
             aria-pressed={isRecording}
             aria-label="Tap to talk"
-            disabled={localStatus === "transcribing"}
+            disabled={localStatus === "transcribing" || inCall}
             onClick={handleMicClick}
             className={`relative flex items-center justify-center rounded-full border transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${large ? "h-28 w-28" : "h-16 w-16"} ${MIC_STATE_CLASSES[micVisualState]}`}
           >

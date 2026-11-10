@@ -101,3 +101,72 @@ describe("TaskForm", () => {
     });
   });
 });
+
+describe("TaskForm estimate and progress", () => {
+  const savedTask = (overrides = {}) => ({ ...makeTask({ id: "t-9", title: "Read paper" }), task_labels: [], ...overrides });
+
+  it("submits an estimate and a hand-set progress with a note", async () => {
+    const onSubmit = vi.fn();
+    renderWithProviders(<TaskForm onSubmit={onSubmit} />);
+
+    fireEvent.change(screen.getByLabelText("Title"), { target: { value: "Write report" } });
+    fireEvent.change(screen.getByLabelText("Estimate (hours)"), { target: { value: "2.5" } });
+    fireEvent.click(screen.getByRole("button", { name: "50%" }));
+    fireEvent.change(screen.getByLabelText(/progress note/i), { target: { value: "outline done" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({ estimated_hours: 2.5, progress_percent: 50, progress_note: "outline done" });
+  });
+
+  it("sends explicit nulls when nothing is set, so a later edit can clear them", async () => {
+    const onSubmit = vi.fn();
+    renderWithProviders(<TaskForm onSubmit={onSubmit} />);
+
+    fireEvent.change(screen.getByLabelText("Title"), { target: { value: "Write report" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({ estimated_hours: null, progress_percent: null, progress_note: null });
+  });
+
+  it("clears a stored estimate and goes back to automatic progress", async () => {
+    const onSubmit = vi.fn();
+    const task = savedTask({ estimated_hours: 4, progress_percent: 30 });
+    renderWithProviders(<TaskForm task={task} onSubmit={onSubmit} autoProgress={{ percent: 60, hint: "From checklist items done" }} />);
+
+    expect(screen.getByLabelText("Estimate (hours)")).toHaveValue(4);
+    expect(screen.getByText("30%")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Estimate (hours)"), { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: /use automatic/i }));
+    expect(screen.getByText("Auto 60%")).toBeInTheDocument();
+    expect(screen.getByText("From checklist items done")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({ estimated_hours: null, progress_percent: null });
+  });
+
+  it("keeps a deliberate 0 percent", async () => {
+    const onSubmit = vi.fn();
+    renderWithProviders(<TaskForm task={savedTask()} onSubmit={onSubmit} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "0%" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(onSubmit.mock.calls[0][0].progress_percent).toBe(0);
+  });
+
+  it("rejects a non-positive estimate", async () => {
+    const onSubmit = vi.fn();
+    renderWithProviders(<TaskForm onSubmit={onSubmit} />);
+
+    fireEvent.change(screen.getByLabelText("Title"), { target: { value: "Write report" } });
+    fireEvent.change(screen.getByLabelText("Estimate (hours)"), { target: { value: "0" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(screen.getByRole("alert")).toBeInTheDocument());
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+});

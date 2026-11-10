@@ -45,6 +45,13 @@ export interface SessionCreatePayload {
   duration_minutes?: number;
 }
 
+/** The only fields voice may change on an existing Deadline Session. */
+export interface SessionUpdatePayload {
+  duration_minutes?: number;
+  progress_percent?: number;
+  progress_note?: string;
+}
+
 /**
  * SPEC-VOICE-005 shared_schemas' pending_mutation: the parsed target entity
  * type/id, operation, and payload persisted verbatim at AwaitingConfirmation
@@ -73,6 +80,8 @@ export type PendingMutation =
   | { targetType: "note"; operation: "delete"; targetId: string }
   | { targetType: "reminder"; operation: "acknowledge"; targetId: string; event: ReminderTransitionEvent; snoozeUntil?: string }
   | { targetType: "session"; operation: "create"; payload: SessionCreatePayload }
+  // Narrow on purpose: a session's estimate (duration_minutes) and its hand-set progress/note only -- its title/date/time stay unchangeable by voice.
+  | { targetType: "session"; operation: "update"; targetId: string; payload: SessionUpdatePayload }
   | { targetType: "session"; operation: "delete"; targetId: string }
   | { targetType: "session"; operation: "transition"; targetId: string; event: SessionTransitionEvent }
   | { targetType: "todo_list"; operation: "create"; payload: TodoListPayload }
@@ -556,6 +565,22 @@ async function executeSessionMutation(
     if (error) throw error;
     if (!data) throw new MutationTargetNotFoundError(`session ${mutation.targetId} not found or already deleted`);
     return { summary: "Session deleted.", data: { id: mutation.targetId } };
+  }
+
+  if (mutation.operation === "update") {
+    // Scoped to this user's live Deadline Sessions: a general Event shares the table but is not editable here.
+    const { data: updated, error } = await supabase
+      .from("appointments")
+      .update(mutation.payload)
+      .eq("id", mutation.targetId)
+      .eq("user_id", userId)
+      .eq("category", "Session")
+      .is("deleted_at", null)
+      .select("*")
+      .maybeSingle();
+    if (error) throw error;
+    if (!updated) throw new MutationTargetNotFoundError(`session ${mutation.targetId} not found or already deleted`);
+    return { summary: `Updated session "${updated.title}".`, data: updated };
   }
 
   if (mutation.operation === "create") {

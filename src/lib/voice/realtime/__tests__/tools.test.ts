@@ -98,3 +98,23 @@ describe("adaptDescriptionForCall", () => {
     expect(adaptDescriptionForCall("Look up the user's schedule.")).toBe("Look up the user's schedule.");
   });
 });
+
+describe("estimate and progress fields reach the call too", () => {
+  const properties = (toolName: string) => {
+    const tool = buildRealtimeTools().find((candidate) => candidate.name === toolName);
+    return ((tool?.parameters as { properties?: Record<string, { type?: unknown; description?: string }> }).properties ?? {});
+  };
+
+  it.each(["propose_mutation", "save_mutation_draft"])("%s carries estimated_hours, progress_percent and progress_note", (toolName) => {
+    const fields = properties(toolName);
+    expect(fields.estimated_hours?.type).toEqual(["number", "null"]);
+    expect(fields.progress_percent?.type).toEqual(["integer", "null"]);
+    expect(fields.progress_note?.type).toEqual(["string", "null"]);
+  });
+
+  it("tells the model never to infer progress, and that a session's estimate is its duration", () => {
+    const fields = properties("propose_mutation");
+    expect(fields.progress_percent?.description).toMatch(/only when the user actually says/i);
+    expect(fields.estimated_hours?.description).toMatch(/duration_minutes/);
+  });
+});

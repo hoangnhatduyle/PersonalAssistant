@@ -6,6 +6,7 @@ import { getFirstOccurrenceEndOfDay } from "@/lib/deadlines/recurrence";
 import { localEndOfTodayUtc } from "@/lib/voice/schedule-time-window";
 import { MAX_REMINDER_LEAD_MINUTES } from "@/lib/reminders/lead-time";
 import { MAX_APPOINTMENT_DURATION_MINUTES } from "@/lib/appointments/types";
+import { MAX_ESTIMATED_HOURS, MAX_PROGRESS_NOTE_LENGTH } from "@/lib/api/schemas";
 import {
   getValidDeadlineEvents,
   getValidEventEvents,
@@ -26,6 +27,13 @@ import {
 // rejects outright. Tolerate the omission as equivalent to null; an
 // explicitly-provided invalid value is still rejected.
 const itemPriorityMutationSchema = z.enum(["Low", "Medium", "High", "Urgent"]).nullable().default(null);
+
+// Estimate + hand-set progress (0063_estimate_and_progress.sql). Same omission tolerance as
+// priority (.default(null)). 0 percent is a real answer ("I haven't started"), so toPendingMutation
+// checks these with `!== null`, never truthiness.
+const estimatedHoursMutationSchema = z.number().positive().max(MAX_ESTIMATED_HOURS).nullable().default(null);
+const progressPercentMutationSchema = z.number().int().min(0).max(100).nullable().default(null);
+const progressNoteMutationSchema = z.string().trim().max(MAX_PROGRESS_NOTE_LENGTH).nullable().default(null);
 
 // Deadline/Task/Session status fields only ever change through one of these
 // explicit transition events (NC-API-002, mirrors src/lib/api/transitions.ts
@@ -62,6 +70,9 @@ const mutationSchemaBase = z.discriminatedUnion("target_type", [
     title: z.string().nullable(),
     due_at: z.iso.datetime({ offset: true }).nullable(),
     priority: itemPriorityMutationSchema,
+    estimated_hours: estimatedHoursMutationSchema,
+    progress_percent: progressPercentMutationSchema,
+    progress_note: progressNoteMutationSchema,
     event: deadlineTransitionEventSchema,
     // Weekly roll-forward recurrence (0041_deadline_recurrence.sql).
     // `recurring`: null = the user hasn't answered/been asked yet (the
@@ -94,6 +105,9 @@ const mutationSchemaBase = z.discriminatedUnion("target_type", [
     // exactly at due_at rather than some minutes before it.
     reminder_lead_minutes: z.number().int().min(0).max(MAX_REMINDER_LEAD_MINUTES).nullable(),
     priority: itemPriorityMutationSchema,
+    estimated_hours: estimatedHoursMutationSchema,
+    progress_percent: progressPercentMutationSchema,
+    progress_note: progressNoteMutationSchema,
     event: taskTransitionEventSchema,
     // Board merge (0029_board_merge.sql): optional Board List placement.
     // null on create = Miscellaneous; null on update = leave list_id unchanged
@@ -114,18 +128,21 @@ const mutationSchemaBase = z.discriminatedUnion("target_type", [
     event: z.enum(["user_acknowledges", "user_dismisses", "user_snoozes"]),
     snooze_until: z.iso.datetime({ offset: true }).nullable(),
   }),
-  // Deadline Sessions (appointments rows tagged category "Session"). No
-  // "update" operation — the UI itself has no edit action for an existing
-  // session, only create/delete/mark done/mark skipped (SessionsSection.tsx).
+  // Deadline Sessions (appointments rows tagged category "Session"). "update" is
+  // deliberately narrow: only the session's estimate (duration_minutes) and its
+  // hand-set progress/note. A session's title/date/time are not changeable by voice,
+  // matching what the conversation prompt tells the model.
   z.object({
     target_type: z.literal("session"),
-    operation: z.enum(["create", "delete", "transition"]),
+    operation: z.enum(["create", "update", "delete", "transition"]),
     target_id: z.uuid().nullable(),
     deadline_id: z.uuid().nullable(),
     title: z.string().nullable(),
     date: z.iso.date().nullable(),
     time: z.string().nullable(),
     duration_minutes: z.number().int().positive().nullable(),
+    progress_percent: progressPercentMutationSchema,
+    progress_note: progressNoteMutationSchema,
     event: sessionTransitionEventSchema,
   }),
   // Board List (todo_lists row). A Task is placed into one via the "task"
@@ -485,6 +502,22 @@ function defaultDeadlineDueAt(raw: RawDeadlineMutation, now: Date, timeZone: str
 }
 
 /**
+ * The estimate/progress fields a Deadline or Task create/update may carry. Each is included only when the
+ * user actually said it (not null): 0 percent is a real answer, so these are `!== null` checks, never truthiness.
+ */
+function estimateAndProgressFields(raw: {
+  estimated_hours: number | null;
+  progress_percent: number | null;
+  progress_note: string | null;
+}): { estimated_hours?: number; progress_percent?: number; progress_note?: string } {
+  return {
+    ...(raw.estimated_hours !== null ? { estimated_hours: raw.estimated_hours } : {}),
+    ...(raw.progress_percent !== null ? { progress_percent: raw.progress_percent } : {}),
+    ...(raw.progress_note ? { progress_note: raw.progress_note } : {}),
+  };
+}
+
+/**
  * mutationSchema's superRefine above guarantees every field this function
  * asserts non-null on (`!`) is actually present for the given operation —
  * these are no longer bare compile-time-only assertions papering over a
@@ -532,6 +565,7 @@ export function toPendingMutation(raw: RawMutation, now: Date, timeZone: string)
             // due-by instant, unlike a Task.
             due_at: raw.due_at ?? defaultDeadlineDueAt(raw, now, timeZone),
             priority: raw.priority ?? "Medium",
+            ...estimateAndProgressFields(raw),
             ...recurrenceFields(raw),
           },
           ...(raw.triage_item_id ? { triageItemId: raw.triage_item_id } : {}),
@@ -557,6 +591,7 @@ export function toPendingMutation(raw: RawMutation, now: Date, timeZone: string)
           ...(raw.title ? { title: raw.title } : {}),
           ...(raw.due_at ? { due_at: raw.due_at } : {}),
           ...(raw.priority ? { priority: raw.priority } : {}),
+          ...estimateAndProgressFields(raw),
           // recurring null = leave the rule alone; true sets it; false clears it.
           ...(raw.recurring === false ? { recurrence_days: [], recurrence_end_date: null } : recurrenceFields(raw)),
         },
@@ -575,6 +610,7 @@ export function toPendingMutation(raw: RawMutation, now: Date, timeZone: string)
             // due_at itself stays null when unspecified (an undated Task,
             // e.g. a shopping item, is a legitimate product state).
             priority: raw.priority ?? "Medium",
+            ...estimateAndProgressFields(raw),
             ...(raw.list_id ? { list_id: raw.list_id } : {}),
           },
           ...(raw.triage_item_id ? { triageItemId: raw.triage_item_id } : {}),
@@ -599,6 +635,7 @@ export function toPendingMutation(raw: RawMutation, now: Date, timeZone: string)
           ...(raw.due_at !== null ? { due_at: raw.due_at } : {}),
           ...(raw.reminder_lead_minutes !== null ? { reminder_lead_minutes: raw.reminder_lead_minutes } : {}),
           ...(raw.priority ? { priority: raw.priority } : {}),
+          ...estimateAndProgressFields(raw),
           // Same omission-tolerant convention as priority above (list_id
           // also defaults to null when the model omits it) — a mentioned
           // list_id moves the Task into it; unmentioned leaves it
@@ -641,6 +678,19 @@ export function toPendingMutation(raw: RawMutation, now: Date, timeZone: string)
       }
       if (raw.operation === "delete") {
         return { targetType: "session", operation: "delete", targetId: raw.target_id! };
+      }
+      if (raw.operation === "update") {
+        // Estimate (duration_minutes) and progress only -- see the session branch of mutationSchemaBase.
+        return {
+          targetType: "session",
+          operation: "update",
+          targetId: raw.target_id!,
+          payload: {
+            ...(raw.duration_minutes !== null ? { duration_minutes: raw.duration_minutes } : {}),
+            ...(raw.progress_percent !== null ? { progress_percent: raw.progress_percent } : {}),
+            ...(raw.progress_note ? { progress_note: raw.progress_note } : {}),
+          },
+        };
       }
       return { targetType: "session", operation: "transition", targetId: raw.target_id!, event: raw.event! };
     }

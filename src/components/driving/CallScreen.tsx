@@ -17,7 +17,8 @@ const ACTIVITY_LABEL: Record<CallActivity, string> = {
   speaking: "Speaking…",
 };
 
-function formatClock(totalSeconds: number): string {
+/** m:ss, shared with the header pill so both show the same clock. */
+export function formatClock(totalSeconds: number): string {
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
   return `${minutes}:${String(seconds).padStart(2, "0")}`;
@@ -35,6 +36,10 @@ interface Props {
   isDeciding: boolean;
   /** The developer diagnostics overlay, when it is switched on. */
   diagnostics?: ReactNode;
+  /** Tuck the full-screen view away while the call keeps running. Omitted where there is nowhere to bring it back from (Driving Mode). */
+  onMinimize?: () => void;
+  /** The "screen stays on / may lock" note. Only a phone can lock itself out of a call, so a desktop turns this off. Defaults to on. */
+  showScreenLockHint?: boolean;
 }
 
 type IconProps = { className?: string };
@@ -74,6 +79,11 @@ const WarningIcon = ({ className }: IconProps) => (
   <svg {...ICON_PROPS} className={className}>
     <path d="M12 3 2 21h20L12 3Z" />
     <path d="M12 10v5M12 18h.01" />
+  </svg>
+);
+const MinimizeIcon = ({ className }: IconProps) => (
+  <svg {...ICON_PROPS} className={className}>
+    <path d="m6 9 6 6 6-6" />
   </svg>
 );
 const HangUpIcon = ({ className }: IconProps) => (
@@ -117,7 +127,7 @@ function Control({ label, icon, onClick, disabled = false, pressed }: ControlPro
  * until the call is over. It owns nothing: every state and action comes from
  * the call snapshot and the handlers CallPanel passes in.
  */
-export function CallScreen({ snapshot, onEnd, onMuteChange, onAsk, onDecision, isDeciding, diagnostics }: Props) {
+export function CallScreen({ snapshot, onEnd, onMuteChange, onAsk, onDecision, isDeciding, diagnostics, onMinimize, showScreenLockHint = true }: Props) {
   const { phase, activity, muted, maxSeconds, secondsLeft, userLine, assistantLine, pending, citations, extractionLabel, debug } = snapshot;
   const [captionsOn, setCaptionsOn] = useState(false);
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -148,14 +158,28 @@ export function CallScreen({ snapshot, onEnd, onMuteChange, onAsk, onDecision, i
       <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-2/3 bg-[radial-gradient(120%_70%_at_50%_-10%,rgb(99_102_241/0.32),transparent_65%)]" />
 
       <div className="relative flex min-h-0 flex-1 flex-col">
-        <p
-          className={`mx-auto flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs ${
-            wakeLockMissing ? "border-status-warn/45 bg-status-warn/10 text-status-warn" : "border-panel-border bg-panel text-text-secondary"
-          }`}
-        >
-          {wakeLockMissing ? <WarningIcon className="h-3.5 w-3.5 shrink-0" /> : <SunIcon className="h-3.5 w-3.5 shrink-0" />}
-          {wakeLockMissing ? "Screen may lock. Keep it awake or the call ends." : "Screen stays on during the call"}
-        </p>
+        {onMinimize ? (
+          <button
+            type="button"
+            onClick={onMinimize}
+            aria-label="Minimize call"
+            title="Minimize: the call keeps running"
+            className="absolute left-0 top-0 z-10 flex h-9 w-9 items-center justify-center rounded-full border border-panel-border bg-panel text-text-primary outline-offset-2 transition-colors hover:border-panel-border-hover focus-visible:outline-2 focus-visible:outline-accent-teal"
+          >
+            <MinimizeIcon className="h-4 w-4" />
+          </button>
+        ) : null}
+
+        {showScreenLockHint ? (
+          <p
+            className={`mx-auto flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs ${
+              wakeLockMissing ? "border-status-warn/45 bg-status-warn/10 text-status-warn" : "border-panel-border bg-panel text-text-secondary"
+            }`}
+          >
+            {wakeLockMissing ? <WarningIcon className="h-3.5 w-3.5 shrink-0" /> : <SunIcon className="h-3.5 w-3.5 shrink-0" />}
+            {wakeLockMissing ? "Screen may lock. Keep it awake or the call ends." : "Screen stays on during the call"}
+          </p>
+        ) : null}
 
         <div className="mt-8 flex flex-col items-center gap-1.5 text-center">
           <div className="relative flex h-24 w-24 items-center justify-center rounded-full bg-gradient-to-br from-accent-indigo to-accent-violet font-display text-4xl font-bold text-text-primary">

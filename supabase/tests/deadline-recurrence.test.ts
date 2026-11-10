@@ -96,6 +96,25 @@ describe("recurring deadlines", () => {
     expect(reminder?.acknowledgment_state).toBe("Scheduled");
   });
 
+  it("the next occurrence inherits the estimate but starts with no progress", async () => {
+    const due = new Date(Date.now() + 2 * DAY_MS);
+    due.setUTCHours(22, 0, 0, 0);
+    const { id, seriesId } = await createRecurring(due, {
+      estimated_hours: 6,
+      progress_percent: 40,
+      progress_note: "outline done",
+      recurrence_days: [dow(due), dow(new Date(due.getTime() + 3 * DAY_MS))],
+    });
+
+    await finish(id);
+
+    const rows = await series(seriesId);
+    expect(rows).toHaveLength(2);
+    expect(Number(rows[1].estimated_hours)).toBe(6);
+    expect(rows[1].progress_percent).toBeNull();
+    expect(rows[1].progress_note).toBeNull();
+  });
+
   it("when an occurrence comes due unfinished, the next one appears and they stack as separate deadlines", async () => {
     const { seriesId } = await createRecurring(new Date(Date.now() - 10 * DAY_MS));
 

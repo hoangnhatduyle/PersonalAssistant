@@ -3,6 +3,7 @@
 import { usePathname } from "next/navigation";
 import { SearchTrigger } from "@/components/search/SearchTrigger";
 import { CaptureQuickAction } from "@/components/assistant/CaptureQuickAction";
+import { CallHeaderButton } from "@/components/assistant/CallHeaderButton";
 import { SignOutButton } from "@/components/auth/SignOutButton";
 
 type Props = {
@@ -24,6 +25,7 @@ export function AppHeader({ email }: Props) {
       </div>
       <div className="flex items-center gap-3">
         <SearchTrigger />
+        <CallHeaderButton />
         <CaptureQuickAction />
         <SignOutButton />
       </div>

@@ -337,3 +337,58 @@ describe("voiceSpeakSchema", () => {
     expect(voiceSpeakSchema.safeParse({}).success).toBe(false);
   });
 });
+
+describe("estimate and progress fields", () => {
+  const deadline = { course_id: "550e8400-e29b-41d4-a716-446655440000", title: "Essay", due_at: "2026-09-01T12:00:00Z" };
+  const task = { title: "Read paper" };
+  const appointment = { title: "Draft outline", date: "2026-09-01" };
+
+  it.each([
+    ["deadline", (extra: object) => deadlinePayloadSchema.safeParse({ ...deadline, ...extra })],
+    ["task", (extra: object) => taskPayloadSchema.safeParse({ ...task, ...extra })],
+  ])("%s accepts an estimate, a 0-100 progress and a note", (_name, parse) => {
+    expect(parse({ estimated_hours: 7.5, progress_percent: 0, progress_note: "outline done" }).success).toBe(true);
+    expect(parse({ progress_percent: 100 }).success).toBe(true);
+  });
+
+  it.each([
+    ["deadline", (extra: object) => deadlinePayloadSchema.safeParse({ ...deadline, ...extra })],
+    ["task", (extra: object) => taskPayloadSchema.safeParse({ ...task, ...extra })],
+  ])("%s rejects out-of-range estimates, progress and notes", (_name, parse) => {
+    expect(parse({ progress_percent: 101 }).success).toBe(false);
+    expect(parse({ progress_percent: -1 }).success).toBe(false);
+    expect(parse({ progress_percent: 12.5 }).success).toBe(false);
+    expect(parse({ estimated_hours: 0 }).success).toBe(false);
+    expect(parse({ estimated_hours: -2 }).success).toBe(false);
+    expect(parse({ estimated_hours: 10_000 }).success).toBe(false);
+    expect(parse({ progress_note: "x".repeat(1001) }).success).toBe(false);
+  });
+
+  it("patch schemas accept an explicit null so a client can clear a value", () => {
+    const parsed = deadlinePatchSchema.safeParse({ estimated_hours: null, progress_percent: null, progress_note: null });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) expect(parsed.data).toEqual({ estimated_hours: null, progress_percent: null, progress_note: null });
+    expect(taskPatchSchema.safeParse({ progress_percent: null }).success).toBe(true);
+    expect(appointmentPatchSchema.safeParse({ progress_percent: null, progress_note: null }).success).toBe(true);
+  });
+
+  it("keeps a deliberate 0 percent (0 is a real value, not 'unset')", () => {
+    const parsed = taskPatchSchema.safeParse({ progress_percent: 0 });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) expect(parsed.data.progress_percent).toBe(0);
+  });
+
+  it("appointments take progress but have no estimate field (duration_minutes is the estimate)", () => {
+    const parsed = appointmentPayloadSchema.safeParse({ ...appointment, progress_percent: 50, progress_note: "half", estimated_hours: 3 });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.progress_percent).toBe(50);
+      expect("estimated_hours" in parsed.data).toBe(false);
+    }
+  });
+
+  it("trims the note", () => {
+    const parsed = taskPatchSchema.safeParse({ progress_note: "  draft done  " });
+    expect(parsed.success && parsed.data.progress_note).toBe("draft done");
+  });
+});

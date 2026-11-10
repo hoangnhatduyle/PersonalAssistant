@@ -826,7 +826,30 @@ describe("runConversationTurn", () => {
     });
   });
 
-  describe("get_deadline_progress", () => {
+  describe("estimate and progress in the system prompt", () => {
+  it("teaches explicit-only estimate, percent and note, like priority", () => {
+    expect(CONVERSATION_SYSTEM_PROMPT).toMatch(/estimated_hours is how long the work is expected to take/);
+    expect(CONVERSATION_SYSTEM_PROMPT).toMatch(/never infer progress from status, sessions, or a checklist/);
+  });
+
+  it("says a stated percent is not a status change", () => {
+    expect(CONVERSATION_SYSTEM_PROMPT).toMatch(/Saying a percent is not a status change/);
+  });
+
+  it("describes the narrow session update instead of saying there is none", () => {
+    expect(CONVERSATION_SYSTEM_PROMPT).not.toMatch(/There is no session "update"/);
+    expect(CONVERSATION_SYSTEM_PROMPT).toMatch(/A session "update" exists only for the session's estimate and progress/);
+    expect(CONVERSATION_SYSTEM_PROMPT).toMatch(/title, date, or time has no supported mutation/);
+  });
+
+  it("includes worked examples for deadline progress, estimates and a session update", () => {
+    expect(CONVERSATION_SYSTEM_PROMPT).toMatch(/"My term paper is about 60% done"/);
+    expect(CONVERSATION_SYSTEM_PROMPT).toMatch(/"Set the estimate for the lab report to 6 hours"/);
+    expect(CONVERSATION_SYSTEM_PROMPT).toMatch(/target_type "session", operation update/);
+  });
+});
+
+describe("get_deadline_progress", () => {
     it("resolves a deadline_id present in the entity context and relays the lookup's message", async () => {
       vi.mocked(loadEntityContext).mockResolvedValueOnce({
         courses: [],

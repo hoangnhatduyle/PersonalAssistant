@@ -157,7 +157,9 @@ export function SessionsSection({ deadlineId }: Props) {
                     {formatSessionDate(session.date)}
                     {session.time ? ` · ${session.time}` : ""}
                     {session.duration_minutes ? ` · ${session.duration_minutes}m` : ""}
+                    {session.progress_percent != null ? ` · ${session.progress_percent}%` : ""}
                   </span>
+                  {session.progress_note && <p className="text-xs text-text-secondary">{session.progress_note}</p>}
                   <SessionTransitionButtons session={session} />
                 </div>
                 <div className="flex shrink-0 gap-2">

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useTask, useUpdateTask } from "@/hooks/useTasks";
 import { useTodoLists } from "@/hooks/useTodoLists";
+import { useChecklistItems } from "@/hooks/useChecklistItems";
 import { TaskForm } from "@/components/board/TaskForm";
 import { TaskTransitionMenu } from "@/components/board/TaskTransitionMenu";
 import { DeleteTaskButton } from "@/components/board/DeleteTaskButton";
@@ -14,9 +15,11 @@ import { GlassPanel } from "@/components/ui/GlassPanel";
 import { StatusPill } from "@/components/ui/StatusPill";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { Button } from "@/components/ui/Button";
+import { ProgressSummary } from "@/components/ui/ProgressSummary";
 import { useToast } from "@/components/ui/Toast";
 import { TASK_STATUS_TONE } from "@/lib/status-colors";
 import type { TaskPayload } from "@/lib/api/schemas";
+import { resolveTaskProgress, toAutoProgress, type ChecklistTotals } from "@/lib/progress/resolve-progress";
 
 type Props = {
   taskId: string;
@@ -36,6 +39,8 @@ export function BoardCardDetailContainer({
 }: Props) {
   const { data: task, isLoading } = useTask(taskId);
   const { data: todoLists } = useTodoLists({ limit: 100 });
+  // Same query ChecklistSection runs, so this shares its cache entry rather than fetching twice.
+  const { data: checklistItems } = useChecklistItems(taskId);
   const updateTask = useUpdateTask(taskId);
   const { showToast } = useToast();
   const [isEditing, setIsEditing] = useState(false);
@@ -62,8 +67,18 @@ export function BoardCardDetailContainer({
     }
   };
 
+  const checklist: ChecklistTotals = {
+    done: (checklistItems ?? []).filter((item) => item.is_done).length,
+    total: (checklistItems ?? []).length,
+  };
+  const progress = resolveTaskProgress(task, checklist);
+  // What the slider would show if the hand-set value were cleared.
+  const autoProgress = toAutoProgress(resolveTaskProgress({ ...task, progress_percent: null }, checklist));
+
   const content = (
     <>
+      <ProgressSummary progress={progress} estimatedHours={task.estimated_hours} />
+
       <div className="flex flex-wrap gap-2">
         <TaskTransitionMenu taskId={task.id} status={task.status} />
         <Button
@@ -82,6 +97,7 @@ export function BoardCardDetailContainer({
       {isEditing && (
         <TaskForm
           task={task}
+          autoProgress={autoProgress}
           onSubmit={handleUpdate}
           onCancel={() => setIsEditing(false)}
           submitLabel="Save changes"

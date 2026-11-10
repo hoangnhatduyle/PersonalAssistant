@@ -7,7 +7,7 @@ vi.mock("@/components/assistant/AssistantResponse", () => ({
   AssistantResponse: ({ message }: { message: string }) => <p data-testid="assistant-line">{message}</p>,
 }));
 
-import { CallScreen, TODAY_PROMPT } from "../CallScreen";
+import { CallScreen, formatClock, TODAY_PROMPT } from "../CallScreen";
 
 const baseSnapshot: CallSnapshot = {
   phase: "live",
@@ -39,7 +39,7 @@ const handlers = {
   onDecision: vi.fn(),
 };
 
-function renderScreen(patch: Partial<CallSnapshot> = {}, props: { isDeciding?: boolean; diagnostics?: React.ReactNode } = {}) {
+function renderScreen(patch: Partial<CallSnapshot> = {}, props: { isDeciding?: boolean; diagnostics?: React.ReactNode; onMinimize?: () => void; showScreenLockHint?: boolean } = {}) {
   return render(<CallScreen snapshot={{ ...baseSnapshot, ...patch }} isDeciding={false} {...handlers} {...props} />);
 }
 
@@ -106,6 +106,38 @@ describe("CallScreen", () => {
       renderScreen({ debug: { ...baseSnapshot.debug, wakeLockActive: false } });
       expect(screen.getByText("Screen may lock. Keep it awake or the call ends.")).toBeTruthy();
       expect(screen.queryByText("Screen stays on during the call")).toBeNull();
+    });
+  });
+
+  describe("on a desktop", () => {
+    it("hides the screen-lock note, which only a phone needs", () => {
+      renderScreen({}, { showScreenLockHint: false });
+      expect(screen.queryByText("Screen stays on during the call")).toBeNull();
+      renderScreen({ debug: { ...baseSnapshot.debug, wakeLockActive: false } }, { showScreenLockHint: false });
+      expect(screen.queryByText("Screen may lock. Keep it awake or the call ends.")).toBeNull();
+    });
+  });
+
+  describe("minimizing", () => {
+    it("has no minimize button unless the page can bring the call back", () => {
+      renderScreen();
+      expect(screen.queryByRole("button", { name: "Minimize call" })).toBeNull();
+    });
+
+    it("minimizes without ending the call", () => {
+      const onMinimize = vi.fn();
+      renderScreen({}, { onMinimize });
+      fireEvent.click(button("Minimize call"));
+      expect(onMinimize).toHaveBeenCalledTimes(1);
+      expect(handlers.onEnd).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("formatClock", () => {
+    it("formats seconds as m:ss", () => {
+      expect(formatClock(0)).toBe("0:00");
+      expect(formatClock(65)).toBe("1:05");
+      expect(formatClock(600)).toBe("10:00");
     });
   });
 

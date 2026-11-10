@@ -53,6 +53,16 @@ describe("duplicate_task", () => {
     });
   });
 
+  it("carries the estimate over but not progress", async () => {
+    const sourceId = await makeDoneTask({ estimated_hours: 3.5, progress_percent: 100, progress_note: "shipped" });
+    const copyId = await duplicate(sourceId);
+
+    const { data: copy } = await admin.from("tasks").select("estimated_hours, progress_percent, progress_note").eq("id", copyId).single();
+    expect(Number(copy?.estimated_hours)).toBe(3.5);
+    expect(copy?.progress_percent).toBeNull();
+    expect(copy?.progress_note).toBeNull();
+  });
+
   it("leaves the original card's Done status and completed_at untouched", async () => {
     const sourceId = await makeDoneTask();
     const { data: before } = await admin.from("tasks").select("status, completed_at").eq("id", sourceId).single();

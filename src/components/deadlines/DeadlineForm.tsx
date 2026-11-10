@@ -15,6 +15,8 @@ import { DatePicker } from "@/components/ui/DatePicker";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Checkbox } from "@/components/ui/Checkbox";
+import { ProgressField } from "@/components/ui/ProgressField";
+import type { AutoProgress } from "@/lib/progress/resolve-progress";
 import { DayOfWeekToggle } from "@/components/recurrence/DayOfWeekToggle";
 import { formatLeadMinutes } from "@/lib/reminders/lead-time";
 
@@ -25,6 +27,8 @@ type Props = {
   /** Pre-fill the title / course when creating from an email-triage suggestion (src/components/dashboard/EmailActionDialog.tsx). Ignored when editing. */
   defaultTitle?: string;
   defaultCourseId?: string;
+  /** What progress would be without a hand-set value (derived from sessions); shown beside the slider. Edit only. */
+  autoProgress?: AutoProgress;
   onSubmit: (values: DeadlinePayload) => Promise<void> | void;
   onCancel?: () => void;
   submitLabel?: string;
@@ -34,6 +38,9 @@ type Props = {
 // (not undefined), which isn't a valid enum value. Normalize at submit time
 // so leaving it on "Unset" actually omits the key.
 const emptyToUndefined = (value: string) => (value === "" ? undefined : value);
+
+// Blank -> null so a cleared estimate is sent as an explicit null (undefined would leave the stored value alone).
+const emptyToNullNumber = (value: unknown) => (value === "" || value == null ? null : Number(value));
 
 // Blank -> null so the optional end date can be cleared (same pattern as RecurrencePicker's emptyToNull).
 const emptyToNull = (value: string) => (value === "" ? null : value);
@@ -49,6 +56,7 @@ export function DeadlineForm({
   defaultDueAt,
   defaultTitle,
   defaultCourseId,
+  autoProgress,
   onSubmit,
   onCancel,
   submitLabel = "Save",
@@ -72,6 +80,9 @@ export function DeadlineForm({
       title: deadline?.title ?? defaultTitle ?? "",
       due_at: deadline?.due_at ?? defaultDueAt ?? "",
       priority: deadline?.priority ?? undefined,
+      estimated_hours: deadline?.estimated_hours ?? null,
+      progress_percent: deadline?.progress_percent ?? null,
+      progress_note: deadline?.progress_note ?? null,
       recurrence_days: deadline?.recurrence_days ?? [],
       recurrence_end_date: deadline?.recurrence_end_date ?? null,
     },
@@ -100,6 +111,8 @@ export function DeadlineForm({
     await onSubmit(values);
   };
 
+  const progressPercent = watch("progress_percent") ?? null;
+  const progressNote = watch("progress_note") ?? null;
   const courseId = watch("course_id");
   const selectedCourse = (courses?.rows ?? []).find((course) => course.id === courseId);
 
@@ -210,6 +223,29 @@ export function DeadlineForm({
           <option value="Urgent">Urgent</option>
         </Select>
       </FormField>
+
+      <FormField label="Estimate (hours)" htmlFor="estimated_hours" error={errors.estimated_hours?.message}>
+        <Input
+          id="estimated_hours"
+          type="number"
+          inputMode="decimal"
+          min={0}
+          step={0.25}
+          placeholder="How long will this take?"
+          invalid={Boolean(errors.estimated_hours)}
+          {...register("estimated_hours", { setValueAs: emptyToNullNumber })}
+        />
+      </FormField>
+
+      <ProgressField
+        idPrefix="deadline"
+        percent={progressPercent}
+        note={progressNote}
+        autoPercent={autoProgress?.percent}
+        autoHint={autoProgress?.hint}
+        onPercentChange={(percent) => setValue("progress_percent", percent, { shouldDirty: true })}
+        onNoteChange={(note) => setValue("progress_note", note, { shouldDirty: true })}
+      />
 
       <div className="flex justify-end gap-2">
         {onCancel && (

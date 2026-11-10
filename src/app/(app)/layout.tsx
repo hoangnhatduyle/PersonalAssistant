@@ -4,6 +4,7 @@ import { createClient, getAuthenticatedUser } from "@/lib/supabase/server";
 import { IconRail } from "@/components/layout/IconRail";
 import { AppHeader } from "@/components/layout/AppHeader";
 import { VoiceCaptureProvider } from "@/components/assistant/VoiceCaptureProvider";
+import { RealtimeCallProvider } from "@/components/assistant/RealtimeCallProvider";
 import { CommandPalette } from "@/components/search/CommandPalette";
 import { DrivingModePrompt } from "@/components/driving/DrivingModePrompt";
 
@@ -21,6 +22,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
 
   return (
     <VoiceCaptureProvider>
+      <RealtimeCallProvider>
       <div className="flex min-h-screen">
         <IconRail email={user.email ?? ""} />
         <div className="flex min-w-0 flex-1 flex-col">
@@ -30,6 +32,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
           <DrivingModePrompt />
         </div>
       </div>
+      </RealtimeCallProvider>
     </VoiceCaptureProvider>
   );
 }

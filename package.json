@@ -25,6 +25,7 @@
     "@hookform/resolvers": "^5.9.1",
     "@supabase/ssr": "^0.12.5",
     "@supabase/supabase-js": "^2.112.4",
+    "@svar-ui/react-gantt": "^2.8.2",
     "@tanstack/react-query": "^5.102.8",
     "file-type": "^22.0.2",
     "fluent-ffmpeg": "^2.1.3",

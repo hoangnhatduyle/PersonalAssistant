@@ -53,6 +53,16 @@ const ADVERTISED: Array<{ target_type: string; operation: string; field: string 
   { target_type: "event", operation: "create", field: "location" },
   { target_type: "event", operation: "update", field: "title" },
   { target_type: "event", operation: "update", field: "location" },
+  // Estimate + hand-set progress (0063): Deadline/Task carry all three; a Session update carries its
+  // estimate (duration_minutes) and progress only.
+  ...(["deadline", "task"] as const).flatMap((target_type) =>
+    (["create", "update"] as const).flatMap((operation) =>
+      (["estimated_hours", "progress_percent", "progress_note"] as const).map((field) => ({ target_type, operation, field })),
+    ),
+  ),
+  { target_type: "session", operation: "update", field: "duration_minutes" },
+  { target_type: "session", operation: "update", field: "progress_percent" },
+  { target_type: "session", operation: "update", field: "progress_note" },
 ];
 
 const CREATE_ONLY = new Set(["deadline.create.course_id"]);
@@ -70,6 +80,8 @@ const API_SCHEMAS: Record<string, { create?: z.ZodType; update?: z.ZodType }> = 
   course: { create: coursePayloadSchema, update: coursePatchSchema },
   todo_list: { create: todoListPayloadSchema, update: todoListPatchSchema },
   event: { create: appointmentPayloadSchema, update: appointmentPatchSchema },
+  // A session is an appointments row, so its update is the appointment patch.
+  session: { update: appointmentPatchSchema },
 };
 
 function objectShape(schema: z.ZodType | undefined): Record<string, unknown> | undefined {
@@ -186,6 +198,9 @@ function sampleArgs(targetType: string, operation: string, field: string): Recor
     time: "3:00 PM",
     duration_minutes: 60,
     location: "Room 1",
+    estimated_hours: 4.5,
+    progress_percent: 60,
+    progress_note: "outline done",
     event: null,
     snooze_until: null,
     deadline_id: null,
@@ -193,3 +208,73 @@ function sampleArgs(targetType: string, operation: string, field: string): Recor
   if (field === "course_id" && targetType === "todo_list") base.course_id = COURSE_ID;
   return base;
 }
+
+describe("estimate and progress edge cases", () => {
+  const parse = (args: Record<string, unknown>) => mutationSchema.safeParse(args);
+  const pending = (args: Record<string, unknown>) => {
+    const raw = parse(args);
+    if (!raw.success) throw new Error(raw.error.message);
+    return toPendingMutation(raw.data, NOW, TIMEZONE);
+  };
+
+  it("keeps a deliberate 0 percent (it is a real answer, not 'unset')", () => {
+    const result = pending({ ...sampleArgs("task", "update", "title"), progress_percent: 0 });
+    expect(result).toMatchObject({ payload: { progress_percent: 0 } });
+  });
+
+  it("omits the fields entirely when the user did not say them", () => {
+    const result = pending({ ...sampleArgs("deadline", "update", "title"), estimated_hours: null, progress_percent: null, progress_note: null });
+    if (!("payload" in result)) throw new Error("expected a payload");
+    expect(result.payload).not.toHaveProperty("estimated_hours");
+    expect(result.payload).not.toHaveProperty("progress_percent");
+    expect(result.payload).not.toHaveProperty("progress_note");
+  });
+
+  it("tolerates the model leaving the keys out altogether", () => {
+    const args = { ...sampleArgs("task", "update", "title") } as Record<string, unknown>;
+    delete args.estimated_hours;
+    delete args.progress_percent;
+    delete args.progress_note;
+    expect(parse(args).success).toBe(true);
+  });
+
+  it.each([
+    ["progress_percent", 101],
+    ["progress_percent", -1],
+    ["progress_percent", 33.5],
+    ["estimated_hours", 0],
+    ["estimated_hours", -2],
+    ["estimated_hours", 10_000],
+  ])("rejects an out-of-range %s of %s", (field, value) => {
+    expect(parse({ ...sampleArgs("deadline", "update", "title"), [field]: value }).success).toBe(false);
+  });
+
+  it("drops a blank progress note rather than saving an empty one", () => {
+    const result = pending({ ...sampleArgs("task", "update", "title"), progress_note: "   " });
+    if (!("payload" in result)) throw new Error("expected a payload");
+    expect(result.payload).not.toHaveProperty("progress_note");
+  });
+
+  it("a session update carries only the estimate and progress, never title, date or time", () => {
+    const result = pending({
+      ...sampleArgs("session", "update", "progress_percent"),
+      title: "Renamed",
+      date: "2026-07-01",
+      time: "9:00 AM",
+    });
+    expect(result).toMatchObject({ targetType: "session", operation: "update", targetId: ID });
+    if (!("payload" in result)) throw new Error("expected a payload");
+    expect(Object.keys(result.payload).sort()).toEqual(["duration_minutes", "progress_note", "progress_percent"]);
+  });
+
+  it("a session update needs a target id", () => {
+    expect(parse({ ...sampleArgs("session", "update", "progress_percent"), target_id: null }).success).toBe(false);
+  });
+
+  it("an estimate is advertised on propose_mutation for deadlines and tasks, not sessions", () => {
+    expect(MUTATION_FIELD_NAMES).toContain("estimated_hours");
+    const session = pending({ ...sampleArgs("session", "update", "progress_percent"), estimated_hours: 3 });
+    if (!("payload" in session)) throw new Error("expected a payload");
+    expect(session.payload).not.toHaveProperty("estimated_hours");
+  });
+});

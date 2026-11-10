@@ -40,6 +40,7 @@ export const todoListKeys = {
 export const checklistItemKeys = {
   all: ["checklist-items"] as const,
   list: (filters?: object) => [...checklistItemKeys.all, "list", filters ?? {}] as const,
+  summary: () => [...checklistItemKeys.all, "summary"] as const,
 };
 
 export const labelKeys = {

@@ -16,6 +16,8 @@ import { Switch } from "@/components/ui/Switch";
 import { ReminderLeadInput } from "@/components/ui/ReminderLeadInput";
 import { Button } from "@/components/ui/Button";
 import { LabelChip } from "@/components/ui/LabelChip";
+import { ProgressField } from "@/components/ui/ProgressField";
+import type { AutoProgress } from "@/lib/progress/resolve-progress";
 import { LabelsPopover } from "@/components/board/LabelsPopover";
 
 type Props = {
@@ -26,6 +28,8 @@ type Props = {
   defaultDueAt?: string;
   /** Pre-fills the title when creating from an email-triage suggestion (src/components/dashboard/EmailActionDialog.tsx). Ignored when editing an existing card. */
   defaultTitle?: string;
+  /** What progress would be without a hand-set value (derived from the checklist); shown beside the slider. Edit only. */
+  autoProgress?: AutoProgress;
   onSubmit: (values: TaskPayload) => Promise<void> | void;
   onCancel?: () => void;
   submitLabel?: string;
@@ -42,11 +46,15 @@ const emptyToUndefined = (value: string) => (value === "" ? undefined : value);
 // list_id untouched.
 const emptyToNull = (value: string) => (value === "" ? null : value);
 
+// Same idea for the numeric estimate: a cleared box is an explicit null, not an omitted key.
+const emptyToNullNumber = (value: unknown) => (value === "" || value == null ? null : Number(value));
+
 export function TaskForm({
   task,
   defaultListId,
   defaultDueAt,
   defaultTitle,
+  autoProgress,
   onSubmit,
   onCancel,
   submitLabel = "Save",
@@ -71,11 +79,16 @@ export function TaskForm({
       reminder_lead_minutes: task?.reminder_lead_minutes ?? 30,
       person_id: task?.person_id ?? undefined,
       priority: task?.priority ?? undefined,
+      estimated_hours: task?.estimated_hours ?? null,
+      progress_percent: task?.progress_percent ?? null,
+      progress_note: task?.progress_note ?? null,
       list_id: task ? task.list_id : (defaultListId ?? null),
       label_ids: task?.task_labels.map(({ label }) => label.id) ?? [],
     },
   });
 
+  const progressPercent = watch("progress_percent") ?? null;
+  const progressNote = watch("progress_note") ?? null;
   const isLongTerm = watch("is_long_term") ?? false;
   // A long-term task has no due date, so there's nothing for a reminder to
   // count down to either — the whole due/reminder block is hidden while it's on.
@@ -214,6 +227,29 @@ export function TaskForm({
           <option value="Urgent">Urgent</option>
         </Select>
       </FormField>
+
+      <FormField label="Estimate (hours)" htmlFor="estimated_hours" error={errors.estimated_hours?.message}>
+        <Input
+          id="estimated_hours"
+          type="number"
+          inputMode="decimal"
+          min={0}
+          step={0.25}
+          placeholder="How long will this take?"
+          invalid={Boolean(errors.estimated_hours)}
+          {...register("estimated_hours", { setValueAs: emptyToNullNumber })}
+        />
+      </FormField>
+
+      <ProgressField
+        idPrefix="task"
+        percent={progressPercent}
+        note={progressNote}
+        autoPercent={autoProgress?.percent}
+        autoHint={autoProgress?.hint}
+        onPercentChange={(percent) => setValue("progress_percent", percent, { shouldDirty: true })}
+        onNoteChange={(note) => setValue("progress_note", note, { shouldDirty: true })}
+      />
 
       <FormField label="Labels">
         <div className="flex flex-wrap items-center gap-1.5">

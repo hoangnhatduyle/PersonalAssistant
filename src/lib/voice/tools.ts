@@ -68,6 +68,12 @@ export interface ProposeMutationArgs {
   due_at: string | null;
   body: string | null;
   priority: "Low" | "Medium" | "High" | "Urgent" | null;
+  // Estimate + hand-set progress (supabase/migrations/0063_estimate_and_progress.sql).
+  // estimated_hours: Deadline/Task only (a Session's estimate is duration_minutes below).
+  // progress_percent (0-100) / progress_note: Deadline, Task, and Session update.
+  estimated_hours: number | null;
+  progress_percent: number | null;
+  progress_note: string | null;
   reminder_lead_minutes: number | null;
   event:
     | "user_acknowledges"
@@ -195,6 +201,21 @@ const MUTATION_FIELD_PROPERTIES_BASE = {
   },
   body: { type: ["string", "null"], description: "Note body." },
   priority: { type: ["string", "null"], enum: ["Low", "Medium", "High", "Urgent", null], description: "Deadline/Task priority." },
+  estimated_hours: {
+    type: ["number", "null"],
+    description:
+      "Deadline/Task create/update only: how many hours the work is expected to take, e.g. \"it'll take about 8 hours\" -> 8, \"half an hour\" -> 0.5. Set it only when the user states an estimate; null otherwise. A Session has no estimated_hours -- its estimate is duration_minutes.",
+  },
+  progress_percent: {
+    type: ["integer", "null"],
+    description:
+      "Deadline/Task/Session update (or create for a Deadline/Task): how far along the item is, 0-100, as the USER states it (\"the paper is about 60% done\" -> 60, \"I haven't started\" -> 0, \"it's basically finished\" -> 100). Set it only when the user actually says how far along something is; null otherwise. Never infer it from status or from sessions.",
+  },
+  progress_note: {
+    type: ["string", "null"],
+    description:
+      "Deadline/Task/Session update (or create for a Deadline/Task): a short status line the user wants recorded with the progress, e.g. \"waiting on data\" or \"outline done\". Null unless the user gave one. At most 1000 characters.",
+  },
   reminder_lead_minutes: { type: ["integer", "null"] },
   event: {
     type: ["string", "null"],
@@ -236,7 +257,7 @@ const MUTATION_FIELD_PROPERTIES_BASE = {
   duration_minutes: {
     type: ["integer", "null"],
     description:
-      "A Deadline Session's planned duration in minutes, if the user gave one. For a general Event/Appointment, this is required to create one -- if missing, use save_mutation_draft to ask for it rather than guessing. Capped at 1440 (24 hours) for an Event -- never inflate it to cover a multi-day span (e.g. a 4-day festival is NOT duration_minutes 5760); propose one Event per day instead, starting with the first day.",
+      "A Deadline Session's planned duration in minutes -- this IS a session's estimate (\"that session will take 2 hours\" -> 120) -- if the user gave one. For a general Event/Appointment, this is required to create one -- if missing, use save_mutation_draft to ask for it rather than guessing. Capped at 1440 (24 hours) for an Event -- never inflate it to cover a multi-day span (e.g. a 4-day festival is NOT duration_minutes 5760); propose one Event per day instead, starting with the first day.",
   },
   list_id: {
     type: ["string", "null"],

@@ -23,6 +23,8 @@ function makeSession(sessionStatus: SessionStatus): AppointmentRow {
     deadline_id: "d-1",
     duration_minutes: null,
     session_status: sessionStatus,
+    progress_percent: null,
+    progress_note: null,
     event_status: null,
     meeting_blocks: [],
     recurrence_start_date: null,

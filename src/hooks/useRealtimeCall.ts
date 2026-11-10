@@ -34,6 +34,16 @@ function browserDeps(): CallControllerDeps {
   };
 }
 
+/**
+ * Whether going to the background should end the call. On a phone it means the screen locked or the
+ * app was left, so nobody can hear it; on a desktop it is just another tab in front, and the user is
+ * still on the call. Told apart by the pointer: touch screens report "coarse".
+ */
+function shouldEndOnHidden(): boolean {
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") return true;
+  return window.matchMedia("(pointer: coarse)").matches;
+}
+
 export interface UseRealtimeCall {
   snapshot: CallSnapshot;
   /** Call straight from a click handler (see CallController.start). */
@@ -49,7 +59,7 @@ export interface UseRealtimeCall {
 export function useRealtimeCall(): UseRealtimeCall {
   const queryClient = useQueryClient();
   // Constructing the controller touches no browser API; those are reached only when a call starts.
-  const [controller] = useState(() => new CallController(browserDeps()));
+  const [controller] = useState(() => new CallController(browserDeps(), { endOnHidden: shouldEndOnHidden() }));
   const snapshot = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
 
   // A call nobody can hear is only cost: leave it when the app goes to the background, and

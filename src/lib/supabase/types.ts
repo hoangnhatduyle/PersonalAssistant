@@ -82,6 +82,8 @@ export type Database = {
           location: string | null
           meeting_blocks: Json
           notes: string[]
+          progress_note: string | null
+          progress_percent: number | null
           recurrence_end_date: string | null
           recurrence_start_date: string | null
           reminder_lead_minutes: number
@@ -104,6 +106,8 @@ export type Database = {
           location?: string | null
           meeting_blocks?: Json
           notes?: string[]
+          progress_note?: string | null
+          progress_percent?: number | null
           recurrence_end_date?: string | null
           recurrence_start_date?: string | null
           reminder_lead_minutes?: number
@@ -126,6 +130,8 @@ export type Database = {
           location?: string | null
           meeting_blocks?: Json
           notes?: string[]
+          progress_note?: string | null
+          progress_percent?: number | null
           recurrence_end_date?: string | null
           recurrence_start_date?: string | null
           reminder_lead_minutes?: number
@@ -305,9 +311,12 @@ export type Database = {
           created_at: string
           deleted_at: string | null
           due_at: string
+          estimated_hours: number | null
           id: string
           person_id: string | null
           priority: Database["public"]["Enums"]["item_priority"] | null
+          progress_note: string | null
+          progress_percent: number | null
           recurrence_anchor_due_at: string | null
           recurrence_days: number[]
           recurrence_end_date: string | null
@@ -325,9 +334,12 @@ export type Database = {
           created_at?: string
           deleted_at?: string | null
           due_at: string
+          estimated_hours?: number | null
           id?: string
           person_id?: string | null
           priority?: Database["public"]["Enums"]["item_priority"] | null
+          progress_note?: string | null
+          progress_percent?: number | null
           recurrence_anchor_due_at?: string | null
           recurrence_days?: number[]
           recurrence_end_date?: string | null
@@ -345,9 +357,12 @@ export type Database = {
           created_at?: string
           deleted_at?: string | null
           due_at?: string
+          estimated_hours?: number | null
           id?: string
           person_id?: string | null
           priority?: Database["public"]["Enums"]["item_priority"] | null
+          progress_note?: string | null
+          progress_percent?: number | null
           recurrence_anchor_due_at?: string | null
           recurrence_days?: number[]
           recurrence_end_date?: string | null
@@ -1897,12 +1912,15 @@ export type Database = {
           created_at: string
           deleted_at: string | null
           due_at: string | null
+          estimated_hours: number | null
           id: string
           is_long_term: boolean
           list_id: string | null
           person_id: string | null
           position: number
           priority: Database["public"]["Enums"]["item_priority"] | null
+          progress_note: string | null
+          progress_percent: number | null
           reminder_lead_minutes: number
           reminders_enabled: boolean
           status: Database["public"]["Enums"]["task_status"]
@@ -1917,12 +1935,15 @@ export type Database = {
           created_at?: string
           deleted_at?: string | null
           due_at?: string | null
+          estimated_hours?: number | null
           id?: string
           is_long_term?: boolean
           list_id?: string | null
           person_id?: string | null
           position?: number
           priority?: Database["public"]["Enums"]["item_priority"] | null
+          progress_note?: string | null
+          progress_percent?: number | null
           reminder_lead_minutes?: number
           reminders_enabled?: boolean
           status?: Database["public"]["Enums"]["task_status"]
@@ -1937,12 +1958,15 @@ export type Database = {
           created_at?: string
           deleted_at?: string | null
           due_at?: string | null
+          estimated_hours?: number | null
           id?: string
           is_long_term?: boolean
           list_id?: string | null
           person_id?: string | null
           position?: number
           priority?: Database["public"]["Enums"]["item_priority"] | null
+          progress_note?: string | null
+          progress_percent?: number | null
           reminder_lead_minutes?: number
           reminders_enabled?: boolean
           status?: Database["public"]["Enums"]["task_status"]
@@ -2421,9 +2445,12 @@ export type Database = {
           created_at: string | null
           deleted_at: string | null
           due_at: string | null
+          estimated_hours: number | null
           id: string | null
           person_id: string | null
           priority: Database["public"]["Enums"]["item_priority"] | null
+          progress_note: string | null
+          progress_percent: number | null
           recurrence_anchor_due_at: string | null
           recurrence_days: number[] | null
           recurrence_end_date: string | null
@@ -2441,9 +2468,12 @@ export type Database = {
           created_at?: string | null
           deleted_at?: string | null
           due_at?: string | null
+          estimated_hours?: number | null
           id?: string | null
           person_id?: string | null
           priority?: Database["public"]["Enums"]["item_priority"] | null
+          progress_note?: string | null
+          progress_percent?: number | null
           recurrence_anchor_due_at?: string | null
           recurrence_days?: number[] | null
           recurrence_end_date?: string | null
@@ -2461,9 +2491,12 @@ export type Database = {
           created_at?: string | null
           deleted_at?: string | null
           due_at?: string | null
+          estimated_hours?: number | null
           id?: string | null
           person_id?: string | null
           priority?: Database["public"]["Enums"]["item_priority"] | null
+          progress_note?: string | null
+          progress_percent?: number | null
           recurrence_anchor_due_at?: string | null
           recurrence_days?: number[] | null
           recurrence_end_date?: string | null
@@ -3102,12 +3135,15 @@ export type Database = {
           created_at: string | null
           deleted_at: string | null
           due_at: string | null
+          estimated_hours: number | null
           id: string | null
           is_long_term: boolean | null
           list_id: string | null
           person_id: string | null
           position: number | null
           priority: Database["public"]["Enums"]["item_priority"] | null
+          progress_note: string | null
+          progress_percent: number | null
           reminder_lead_minutes: number | null
           reminders_enabled: boolean | null
           status: Database["public"]["Enums"]["task_status"] | null
@@ -3122,12 +3158,15 @@ export type Database = {
           created_at?: string | null
           deleted_at?: string | null
           due_at?: string | null
+          estimated_hours?: number | null
           id?: string | null
           is_long_term?: boolean | null
           list_id?: string | null
           person_id?: string | null
           position?: number | null
           priority?: Database["public"]["Enums"]["item_priority"] | null
+          progress_note?: string | null
+          progress_percent?: number | null
           reminder_lead_minutes?: number | null
           reminders_enabled?: boolean | null
           status?: Database["public"]["Enums"]["task_status"] | null
@@ -3142,12 +3181,15 @@ export type Database = {
           created_at?: string | null
           deleted_at?: string | null
           due_at?: string | null
+          estimated_hours?: number | null
           id?: string | null
           is_long_term?: boolean | null
           list_id?: string | null
           person_id?: string | null
           position?: number | null
           priority?: Database["public"]["Enums"]["item_priority"] | null
+          progress_note?: string | null
+          progress_percent?: number | null
           reminder_lead_minutes?: number | null
           reminders_enabled?: boolean | null
           status?: Database["public"]["Enums"]["task_status"] | null

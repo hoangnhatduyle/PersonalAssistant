@@ -67,6 +67,13 @@ export interface CallControllerDeps {
 export interface CallControllerOptions {
   /** Say a one-line hello when the call connects. */
   greet?: boolean;
+  /**
+   * Hang up after a grace period when the page goes to the background (default true). A phone call
+   * nobody can hear, with the screen locked, is only cost. A desktop tab that merely sits behind
+   * another one is still a call the user is on, so the desktop passes false: the per-call and daily
+   * caps already bound it, and the header shows it is live.
+   */
+  endOnHidden?: boolean;
 }
 
 interface SessionResponse {
@@ -327,6 +334,7 @@ export class CallController {
     }
     if (this.snapshot.phase !== "live" && this.snapshot.phase !== "connecting") return;
     if (hidden) {
+      if (this.options.endOnHidden === false) return;
       this.hiddenTimer = setTimeout(() => this.end("hidden"), REALTIME_HIDDEN_GRACE_SECONDS * 1000);
     } else if (this.snapshot.phase === "live") {
       void this.acquireWakeLock(); // the browser drops the lock when the page is hidden

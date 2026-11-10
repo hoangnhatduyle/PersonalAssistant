@@ -11,10 +11,12 @@ type Props = {
   deadlineId: string;
   /** A recurring deadline is one row per occurrence (see deadline-recurrence-gate.ts) — deleting this id only ever removes this one occurrence, never the series. The dialog copy says so explicitly so it doesn't read as ambiguous with the Cancel action's occurrence/series choice. */
   isRecurring?: boolean;
+  /** Called after a successful delete instead of navigating to the deadlines list -- for when this sits in a dialog on another page (the dashboard's Up Next) that should just close. */
+  onDeleted?: () => void;
 };
 
 /** Discloses `sessionsAffected` from the cascade result, mirroring how DeleteTaskButton discloses `notesUnlinked`. */
-export function DeleteDeadlineButton({ deadlineId, isRecurring = false }: Props) {
+export function DeleteDeadlineButton({ deadlineId, isRecurring = false, onDeleted }: Props) {
   const [open, setOpen] = useState(false);
   const router = useRouter();
   const deleteDeadline = useDeleteDeadline(deadlineId);
@@ -30,7 +32,8 @@ export function DeleteDeadlineButton({ deadlineId, isRecurring = false }: Props)
         "success",
       );
       setOpen(false);
-      router.push("/courses/deadlines");
+      if (onDeleted) onDeleted();
+      else router.push("/courses/deadlines");
     } catch {
       showToast("Could not delete deadline", "error");
     }
