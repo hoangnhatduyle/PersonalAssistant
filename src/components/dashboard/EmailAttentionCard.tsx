@@ -234,7 +234,7 @@ export function EmailAttentionCard() {
       ) : isError ? (
         <p className="text-sm text-text-secondary">Could not load your flagged emails.</p>
       ) : items.length === 0 ? (
-        <p className="text-sm text-text-secondary">No flagged emails. Check email to look for new ones.</p>
+        <p className="text-sm text-text-secondary">No flagged emails. Check to see new ones.</p>
       ) : (
         <ul className="flex flex-col divide-y divide-panel-border">
           {items.map((item) => (
