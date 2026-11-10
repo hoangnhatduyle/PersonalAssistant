@@ -48,14 +48,26 @@ function formatWeekRange(start: Date, end: Date): string {
   return `${startLabel} – ${endLabel}`;
 }
 
-export function WeekGridContainer() {
+/** Week offset and weekday index for a `YYYY-MM-DD` target, relative to today's week. */
+function locateDate(isoDate: string | undefined): { weekOffset: number; dayIndex: number } | null {
+  if (!isoDate) return null;
+  const [y, m, d] = isoDate.split("-").map(Number);
+  const target = new Date(y, m - 1, d);
+  if (Number.isNaN(target.getTime())) return null;
+  const targetWeek = weekRangeFor(target).start.getTime();
+  const thisWeek = weekRangeFor(new Date()).start.getTime();
+  return { weekOffset: Math.round((targetWeek - thisWeek) / WEEK_MS), dayIndex: target.getDay() };
+}
+
+export function WeekGridContainer({ initialDate }: { initialDate?: string } = {}) {
+  const [located] = useState(() => locateDate(initialDate));
   // Whole-week offset from the current week (0 = this week, -1 = last week, 1 = next week).
-  const [weekOffset, setWeekOffset] = useState(0);
+  const [weekOffset, setWeekOffset] = useState(located?.weekOffset ?? 0);
   // Below `md`, the grid shows one day at a time instead of all 7 columns —
   // scrolling a squeezed 7-column week on a phone is unusable.
   const isMobile = useMediaQuery("(max-width: 767px)");
   // Index into weekGrid.days (0 = Sunday .. 6 = Saturday) for the mobile day view.
-  const [selectedDayIndex, setSelectedDayIndex] = useState(() => new Date().getDay());
+  const [selectedDayIndex, setSelectedDayIndex] = useState(() => located?.dayIndex ?? new Date().getDay());
   const { data: courses, isLoading: coursesLoading } = useCourses(CALENDAR_LIST_FILTERS);
   const { data: deadlines, isLoading: deadlinesLoading } = useDeadlines(CALENDAR_LIST_FILTERS);
   const { data: tasks, isLoading: tasksLoading } = useTasks(CALENDAR_LIST_FILTERS);

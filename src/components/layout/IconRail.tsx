@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { useIsStandalone } from "@/hooks/useIsStandalone";
 
 type NavItem = {
@@ -71,13 +71,11 @@ const NAV_ITEMS: NavItem[] = [
 export function IconRail({ email }: Props) {
   const pathname = usePathname();
   const isStandalone = useIsStandalone();
-  const [isMobileOpen, setIsMobileOpen] = useState(false);
-
-  // Route changes (including nav-link taps) should close the mobile drawer
-  // rather than leaving it open over the newly navigated page.
-  useEffect(() => {
-    setIsMobileOpen(false);
-  }, [pathname]);
+  // The drawer is open only for the pathname it was opened on, so a route change
+  // (including a nav-link tap) closes it rather than leaving it over the new page.
+  const [openedOnPath, setOpenedOnPath] = useState<string | null>(null);
+  const isMobileOpen = openedOnPath === pathname;
+  const setIsMobileOpen = (open: boolean) => setOpenedOnPath(open ? pathname : null);
 
   // Driving Mode renders its own full-screen chrome -- no sidebar there.
   if (pathname.startsWith("/driving")) return null;

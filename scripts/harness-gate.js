@@ -41,7 +41,7 @@ function tracedFilesFor(specId) {
       `grep -rl --include="*.test.ts" --exclude-dir=node_modules -e "Traces:.*${specId}" .`,
       { cwd: REPO_ROOT, encoding: "utf8" },
     );
-  } catch (err) {
+  } catch {
     if (err.status === 1) return [];
     throw err;
   }
@@ -81,7 +81,7 @@ function main() {
       cwd: REPO_ROOT,
       stdio: "inherit",
     });
-  } catch (err) {
+  } catch {
     console.error(
       "\n[harness-gate] BLOCKED: a test linked to an active spec failed. " +
         "This means a commit would regress behavior already declared spec-compliant. Fix the test or the code before committing.",

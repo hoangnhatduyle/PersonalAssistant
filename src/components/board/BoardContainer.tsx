@@ -107,9 +107,10 @@ export function BoardContainer() {
     [tasksData, lists],
   );
   const [columns, setColumns] = useState<ColumnsState>(serverColumns);
-  const lastServerColumnsRef = useRef(serverColumns);
-  if (lastServerColumnsRef.current !== serverColumns) {
-    lastServerColumnsRef.current = serverColumns;
+  // Adopt fresh server data during render (React's "derive state from props" pattern).
+  const [lastServerColumns, setLastServerColumns] = useState(serverColumns);
+  if (lastServerColumns !== serverColumns) {
+    setLastServerColumns(serverColumns);
     setColumns(serverColumns);
   }
 

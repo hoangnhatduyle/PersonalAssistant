@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/Badge";
 import { LabelChip } from "@/components/ui/LabelChip";
 import { ITEM_PRIORITY_TONE } from "@/lib/status-colors";
 import { formatDate } from "@/lib/format/zoned-datetime";
+import { useNowMinute } from "@/hooks/useNowMinute";
 import { useUserTimezone } from "@/hooks/useUserTimezone";
 import type { TaskWithLabels } from "@/lib/api/entity-types";
 
@@ -35,11 +36,13 @@ export function BoardCard({ task, personName, onOpenCard }: Props) {
   });
   const timeZone = useUserTimezone();
 
+  const nowMs = useNowMinute();
   const isResolved = task.status !== "Open";
   const isOverdue =
     task.status === "Open" &&
     Boolean(task.due_at) &&
-    new Date(task.due_at!).getTime() < Date.now();
+    nowMs !== null &&
+    new Date(task.due_at!).getTime() < nowMs;
 
   return (
     <div

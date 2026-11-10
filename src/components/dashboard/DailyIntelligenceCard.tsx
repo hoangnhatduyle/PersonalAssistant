@@ -70,6 +70,8 @@ export function DailyIntelligenceCard({ onDismiss }: Props = {}) {
   const { data: tasks } = useTasks();
   const reviewAloud = useReviewSuggestionsAloud();
 
+  const isHandsFree = settings?.hands_free_voice_enabled;
+
   const fetchIntelligence = useCallback(async () => {
     setLoading(true);
     setError(false);
@@ -82,7 +84,7 @@ export function DailyIntelligenceCard({ onDismiss }: Props = {}) {
       // Refetch live suggestion list so Apply/Dismiss state is current
       const { data: fresh } = await refetchSuggestions();
 
-      if (settings?.hands_free_voice_enabled && fresh && fresh.rows.length > 0) {
+      if (isHandsFree && fresh && fresh.rows.length > 0) {
         await reviewAloud.start(fresh.rows);
       }
     } catch {
@@ -90,12 +92,14 @@ export function DailyIntelligenceCard({ onDismiss }: Props = {}) {
     } finally {
       setLoading(false);
     }
-  }, [refetchSuggestions, reviewAloud, settings?.hands_free_voice_enabled]);
+  }, [refetchSuggestions, reviewAloud, isHandsFree]);
 
+  // The cache lives in localStorage, which can't be read during SSR/hydration without a markup mismatch,
+  // so it is adopted once after mount.
   useEffect(() => {
     const cached = getCachedIntelligence();
     if (cached) {
-      setNarrative(cached.narrative);
+      /* eslint-disable react-hooks/set-state-in-effect */      setNarrative(cached.narrative);
       setWorkload(cached.workload);
     }
   }, []);

@@ -10,18 +10,24 @@ const TYPE_ICON: Record<SearchResult["type"], string> = {
   course: "C",
   deadline: "D",
   task: "T",
+  session: "S",
+  event: "E",
 };
 
 const TYPE_LABEL: Record<SearchResult["type"], string> = {
   course: "Course",
   deadline: "Deadline",
   task: "Task",
+  session: "Session",
+  event: "Event",
 };
 
 const TYPE_COLOR: Record<SearchResult["type"], string> = {
   course: "bg-accent-teal/20 text-accent-teal",
   deadline: "bg-status-urgent/20 text-status-urgent",
   task: "bg-accent-indigo/20 text-accent-indigo",
+  session: "bg-accent-teal/20 text-accent-teal",
+  event: "bg-accent-indigo/20 text-accent-indigo",
 };
 
 export function CommandPalette() {
@@ -33,6 +39,9 @@ export function CommandPalette() {
   const inputRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const router = useRouter();
+
+  // Results for a query that has since dropped below the minimum are hidden rather than cleared in an effect.
+  const visibleResults = query.trim().length < 2 ? [] : results;
 
   const close = useCallback(() => {
     setOpen(false);
@@ -60,10 +69,7 @@ export function CommandPalette() {
 
   useEffect(() => {
     const trimmed = query.trim();
-    if (trimmed.length < 2) {
-      setResults([]);
-      return;
-    }
+    if (trimmed.length < 2) return;
 
     abortRef.current?.abort();
     const controller = new AbortController();
@@ -103,13 +109,13 @@ export function CommandPalette() {
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "ArrowDown") {
       e.preventDefault();
-      setActiveIndex((prev) => (prev + 1) % Math.max(results.length, 1));
+      setActiveIndex((prev) => (prev + 1) % Math.max(visibleResults.length, 1));
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
-      setActiveIndex((prev) => (prev - 1 + results.length) % Math.max(results.length, 1));
-    } else if (e.key === "Enter" && results[activeIndex]) {
+      setActiveIndex((prev) => (prev - 1 + visibleResults.length) % Math.max(visibleResults.length, 1));
+    } else if (e.key === "Enter" && visibleResults[activeIndex]) {
       e.preventDefault();
-      navigate(results[activeIndex].href);
+      navigate(visibleResults[activeIndex].href);
     } else if (e.key === "Escape") {
       close();
     }
@@ -118,7 +124,7 @@ export function CommandPalette() {
   if (!open) return null;
 
   const grouped = new Map<SearchResult["type"], SearchResult[]>();
-  for (const result of results) {
+  for (const result of visibleResults) {
     const group = grouped.get(result.type) ?? [];
     group.push(result);
     grouped.set(result.type, group);
@@ -164,12 +170,12 @@ export function CommandPalette() {
         </div>
 
         <div className="max-h-80 overflow-y-auto">
-          {loading && results.length === 0 && (
+          {loading && visibleResults.length === 0 && (
             <div className="px-4 py-8 text-center text-sm text-text-secondary">Searching…</div>
           )}
 
-          {!loading && query.trim().length >= 2 && results.length === 0 && (
-            <div className="px-4 py-8 text-center text-sm text-text-secondary">No results found.</div>
+          {!loading && query.trim().length >= 2 && visibleResults.length === 0 && (
+            <div className="px-4 py-8 text-center text-sm text-text-secondary">No visibleResults found.</div>
           )}
 
           {query.trim().length < 2 && (
@@ -216,7 +222,7 @@ export function CommandPalette() {
 
         <div className="flex items-center justify-between border-t border-panel-border px-4 py-2">
           <span className="font-mono text-[10px] text-text-secondary">
-            {results.length > 0 ? `${results.length} result${results.length === 1 ? "" : "s"}` : ""}
+            {visibleResults.length > 0 ? `${visibleResults.length} result${visibleResults.length === 1 ? "" : "s"}` : ""}
           </span>
           <div className="flex items-center gap-2">
             <kbd className="rounded border border-panel-border px-1.5 py-0.5 font-mono text-[10px] text-text-secondary">↑↓</kbd>
