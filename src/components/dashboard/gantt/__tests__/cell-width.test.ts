@@ -15,7 +15,7 @@ describe("fitCellWidth", () => {
   });
 
   it("does not stretch a short range into huge cells", () => {
-    expect(fitCellWidth("day", start, daysLater(3), 600)).toBe(56);
+    expect(fitCellWidth("day", start, daysLater(3), 600)).toBe(80);
   });
 
   it("never goes below a readable minimum, so a long range scrolls instead", () => {
@@ -38,6 +38,6 @@ describe("labelColumnWidth", () => {
 
   it("stays within readable limits at both extremes", () => {
     expect(labelColumnWidth(207)).toBe(84);
-    expect(labelColumnWidth(900)).toBe(156);
+    expect(labelColumnWidth(1200)).toBe(260);
   });
 });

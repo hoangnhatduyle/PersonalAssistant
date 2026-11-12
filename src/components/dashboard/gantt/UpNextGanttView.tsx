@@ -62,7 +62,7 @@ export function UpNextGanttView({ items, deadlines, tasks, appointments, window,
   return (
     <div className="flex flex-col gap-2">
       {/* The chart is drawn at full height and this box scrolls, so the title column and the bars stay in step. */}
-      <div className="max-h-[22rem] overflow-y-auto overflow-x-hidden">
+      <div className="max-h-[58vh] overflow-y-auto overflow-x-hidden">
         <div style={{ height: ganttHeightPx(model.rows.length) }}>
           <GanttChart rows={model.rows} rangeStart={model.rangeStart} rangeEnd={model.rangeEnd} unit={model.unit} now={now} onOpenRow={handleOpenRow} />
         </div>

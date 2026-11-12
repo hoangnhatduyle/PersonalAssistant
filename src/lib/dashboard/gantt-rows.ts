@@ -194,7 +194,7 @@ const SOURCE_PHRASE: Record<ProgressSource, string> = {
   none: "",
 };
 
-const formatDay = (date: Date) => date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+export const formatDay = (date: Date) => date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 
 /** One line for a bar's tooltip and its screen-reader label: what it is, when, how far along, and why. */
 export function describeGanttRow(row: GanttRow): string {

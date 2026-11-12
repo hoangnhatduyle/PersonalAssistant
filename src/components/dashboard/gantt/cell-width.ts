@@ -3,7 +3,7 @@ import type { GanttUnit } from "@/lib/dashboard/gantt-rows";
 const DAY_MS = 86_400_000;
 const WEEK_DAYS = 7;
 const MIN_CELL_PX: Record<GanttUnit, number> = { day: 26, week: 40 };
-const MAX_CELL_PX: Record<GanttUnit, number> = { day: 56, week: 72 };
+const MAX_CELL_PX: Record<GanttUnit, number> = { day: 80, week: 96 };
 /** Used before the pane has been measured. */
 const FALLBACK_CELL_PX: Record<GanttUnit, number> = { day: 44, week: 56 };
 
@@ -21,7 +21,7 @@ export function fitCellWidth(unit: GanttUnit, rangeStart: Date, rangeEnd: Date, 
 
 const LABEL_SHARE = 0.34;
 const MIN_LABEL_PX = 84;
-const MAX_LABEL_PX = 156;
+const MAX_LABEL_PX = 260;
 const FALLBACK_LABEL_PX = 112;
 
 /** Title-column width: about a third of the card, so the bars always keep the larger share, within readable limits. */

@@ -1,9 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { fireEvent, screen, within } from "@testing-library/react";
 import { renderWithProviders } from "@/test/render";
 import { UpNextPanel } from "@/components/dashboard/UpNextPanel";
-import { resetPersistedViewMemory } from "@/hooks/usePersistedView";
-import { UP_NEXT_VIEW_KEY } from "@/components/dashboard/collapse-keys";
 import { makeDeadline, makeTask } from "@/lib/dashboard/__tests__/fixtures";
 import type { GanttOpenTarget } from "@/components/dashboard/gantt/UpNextGanttView";
 import type { UpcomingItem } from "@/lib/dashboard/upcoming-items";
@@ -44,80 +42,48 @@ function renderPanel() {
   );
 }
 
-const viewGroup = () => screen.getByRole("group", { name: "Up Next view" });
 const filterGroup = () => screen.getByRole("group", { name: "Filter by due date" });
+const openGantt = () => fireEvent.click(screen.getByRole("button", { name: "Gantt" }));
+const ganttRange = () => screen.getByRole("group", { name: "Gantt range" });
 
-beforeEach(() => {
-  localStorage.clear();
-  resetPersistedViewMemory();
-});
-
-describe("UpNextPanel view toggle", () => {
-  it("starts on the list view", () => {
+describe("UpNextPanel Gantt dialog", () => {
+  it("always shows the list and keeps the Gantt closed until asked", () => {
     renderPanel();
-    expect(within(viewGroup()).getByRole("button", { name: "List" })).toHaveAttribute("aria-pressed", "true");
-    expect(within(viewGroup()).getByRole("button", { name: "Gantt" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getAllByText("Due this evening").length).toBeGreaterThan(0);
+    expect(screen.queryByRole("dialog", { name: "Gantt" })).not.toBeInTheDocument();
     expect(screen.queryByTestId("gantt")).not.toBeInTheDocument();
-    // The queue row is a link; the rings legend repeats the title as plain text.
-    expect(screen.getByRole("link", { name: "Due this evening" })).toBeInTheDocument();
   });
 
-  it("switches to the Gantt and back, remembering the choice", () => {
+  it("opens the Gantt in a dialog and closes it on Escape, leaving the list in place", () => {
     renderPanel();
-    fireEvent.click(within(viewGroup()).getByRole("button", { name: "Gantt" }));
-
+    openGantt();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
     expect(screen.getByTestId("gantt")).toBeInTheDocument();
-    expect(within(viewGroup()).getByRole("button", { name: "Gantt" })).toHaveAttribute("aria-pressed", "true");
-    expect(localStorage.getItem(UP_NEXT_VIEW_KEY)).toBe("gantt");
 
-    fireEvent.click(within(viewGroup()).getByRole("button", { name: "List" }));
+    fireEvent.keyDown(window, { key: "Escape" });
     expect(screen.queryByTestId("gantt")).not.toBeInTheDocument();
-    // The queue row is a link; the rings legend repeats the title as plain text.
-    expect(screen.getByRole("link", { name: "Due this evening" })).toBeInTheDocument();
-    expect(localStorage.getItem(UP_NEXT_VIEW_KEY)).toBe("list");
+    expect(screen.getAllByText("Due this evening").length).toBeGreaterThan(0);
   });
 
-  it("opens on the Gantt when that was the last choice", () => {
-    localStorage.setItem(UP_NEXT_VIEW_KEY, "gantt");
+  it("has its own range, defaulting to 7 days, independent of the list filter", () => {
     renderPanel();
-    expect(screen.getByTestId("gantt")).toBeInTheDocument();
-  });
-});
+    expect(within(filterGroup()).getByRole("button", { name: "Today" })).toHaveAttribute("aria-pressed", "true");
 
-describe("UpNextPanel filter shared by both views", () => {
-  it("gives the Gantt only what the selected window covers, and widens with it", () => {
-    localStorage.setItem(UP_NEXT_VIEW_KEY, "gantt");
-    renderPanel();
-
-    expect(screen.getByTestId("gantt")).toHaveAttribute("data-window", "today");
-    expect(screen.getByTestId("gantt-items")).toHaveTextContent("Due this evening");
-    expect(screen.getByTestId("gantt-items")).not.toHaveTextContent("Due in five days");
-
-    fireEvent.click(within(filterGroup()).getByRole("button", { name: "All" }));
-    expect(screen.getByTestId("gantt")).toHaveAttribute("data-window", "all");
-    expect(screen.getByTestId("gantt-items")).toHaveTextContent("Due this evening|Due in five days");
-  });
-
-  it("keeps the selected window when switching views", () => {
-    renderPanel();
-    fireEvent.click(within(filterGroup()).getByRole("button", { name: "7 Days" }));
-    fireEvent.click(within(viewGroup()).getByRole("button", { name: "Gantt" }));
+    openGantt();
     expect(screen.getByTestId("gantt")).toHaveAttribute("data-window", "7days");
-  });
+    expect(screen.getByTestId("gantt-items")).toHaveTextContent("Due this evening|Due in five days");
 
-  it("shows the empty state instead of an empty chart when nothing is due in the window", () => {
-    localStorage.setItem(UP_NEXT_VIEW_KEY, "gantt");
-    renderWithProviders(<UpNextPanel deadlines={[]} tasks={[]} people={[]} todoLists={[]} courses={[]} appointments={[]} longTermTasks={[]} />);
-    expect(screen.queryByTestId("gantt")).not.toBeInTheDocument();
-    expect(screen.getByText("Nothing due today")).toBeInTheDocument();
+    fireEvent.click(within(ganttRange()).getByRole("button", { name: "Today" }));
+    expect(screen.getByTestId("gantt")).toHaveAttribute("data-window", "today");
+    expect(screen.getByTestId("gantt-items")).not.toHaveTextContent("Due in five days");
+    expect(within(filterGroup()).getByRole("button", { name: "Today" })).toHaveAttribute("aria-pressed", "true");
   });
 });
 
 describe("UpNextPanel opening an item from the Gantt", () => {
-  beforeEach(() => localStorage.setItem(UP_NEXT_VIEW_KEY, "gantt"));
-
   it("opens nothing until a bar is clicked", () => {
     renderPanel();
+    openGantt();
     expect(screen.queryByTestId("deadline-dialog")).not.toBeInTheDocument();
     expect(screen.queryByTestId("task-dialog")).not.toBeInTheDocument();
     expect(screen.queryByTestId("session-dialog")).not.toBeInTheDocument();
@@ -129,6 +95,7 @@ describe("UpNextPanel opening an item from the Gantt", () => {
     ["open session bar", "session-dialog", "s-open"],
   ])("%s opens only that kind's dialog", (buttonName, dialogTestId, id) => {
     renderPanel();
+    openGantt();
     fireEvent.click(screen.getByRole("button", { name: buttonName }));
 
     expect(screen.getByTestId(dialogTestId)).toHaveTextContent(id);
@@ -136,8 +103,17 @@ describe("UpNextPanel opening an item from the Gantt", () => {
     for (const other of others) expect(screen.queryByTestId(other)).not.toBeInTheDocument();
   });
 
+  it("Escape while an item dialog is open leaves the Gantt dialog open", () => {
+    renderPanel();
+    openGantt();
+    fireEvent.click(screen.getByRole("button", { name: "open task bar" }));
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.getByTestId("gantt")).toBeInTheDocument();
+  });
+
   it("switching to another bar replaces the open dialog", () => {
     renderPanel();
+    openGantt();
     fireEvent.click(screen.getByRole("button", { name: "open deadline bar" }));
     fireEvent.click(screen.getByRole("button", { name: "open task bar" }));
     expect(screen.queryByTestId("deadline-dialog")).not.toBeInTheDocument();

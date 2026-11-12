@@ -4,14 +4,14 @@ import { useEffect } from "react";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 
-type DialogSize = "md" | "lg" | "xl";
+type DialogSize = "md" | "lg" | "xl" | "full";
 
 type Props = {
   open: boolean;
   onClose: () => void;
   title: string;
   children: ReactNode;
-  /** "md" (default) fits the usual single-column forms; "lg" gives a single-column form more breathing room; "xl" is for wider content like CourseForm's two-column recurrence picker. */
+  /** "md" (default) fits the usual single-column forms; "lg" gives a single-column form more breathing room; "xl" is for wider content like CourseForm's two-column recurrence picker; "full" is the widest, for data-dense views such as the Gantt chart (still a dialog, not full screen). */
   size?: DialogSize;
 };
 
@@ -19,6 +19,7 @@ const SIZE_CLASSES: Record<DialogSize, string> = {
   md: "max-w-lg",
   lg: "max-w-2xl",
   xl: "max-w-5xl",
+  full: "max-w-7xl",
 };
 
 export function Dialog({ open, onClose, title, children, size = "md" }: Props) {

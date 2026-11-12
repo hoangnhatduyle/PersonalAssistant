@@ -7,7 +7,7 @@ import "@svar-ui/react-gantt/style.css";
 import "./gantt-theme.css";
 import { describeGanttRow, type GanttRow, type GanttUnit } from "@/lib/dashboard/gantt-rows";
 import { CELL_HEIGHT, SCALE_HEIGHT } from "@/components/dashboard/gantt/gantt-metrics";
-import { GanttRowLabels } from "@/components/dashboard/gantt/GanttRowLabels";
+import { DATES_COLUMN_PX, GanttRowLabels } from "@/components/dashboard/gantt/GanttRowLabels";
 import { fitCellWidth, labelColumnWidth } from "@/components/dashboard/gantt/cell-width";
 import { useElementWidth } from "@/hooks/useElementWidth";
 
@@ -133,7 +133,7 @@ export const GanttChart = memo(function GanttChart({ rows, rangeStart, rangeEnd,
   return (
     <BarContext.Provider value={barContext}>
       <div ref={outerRef} className="flex h-full w-full">
-        <GanttRowLabels rows={rows} onOpenRow={onOpenRow} widthPx={labelWidth} />
+        <GanttRowLabels rows={rows} onOpenRow={onOpenRow} widthPx={labelWidth + DATES_COLUMN_PX} />
       <div ref={paneRef} className="cadence-gantt min-w-[120px] flex-1" data-unit={unit}>
         <WillowDark fonts={false}>
           <Gantt
