@@ -6,6 +6,8 @@ import {
   EMPLOYER_NAME_MAX_CHARS,
   INTERVIEW_KINDS,
   INTERVIEW_OUTCOMES,
+  LETTER_STATUSES,
+  RECOMMENDER_STATUSES,
   MAX_TAG_CHARS,
   MAX_TAGS_PER_POST,
   MAX_TECH_STACK_CHARS,
@@ -162,3 +164,34 @@ export type LibraryContactPayload = z.infer<typeof libraryContactPayloadSchema>;
 
 export const libraryContactPatchSchema = libraryContactFieldsSchema;
 export type LibraryContactPatch = z.infer<typeof libraryContactPatchSchema>;
+
+const optionalDate = z.preprocess(blankToNullValue, z.iso.date().nullable()).optional();
+
+const libraryRecommenderBaseSchema = z.object({
+  name: z.string().trim().min(1, "Enter a name").max(120),
+  affiliation: z.string().trim().max(200).optional(),
+  email: z.string().trim().max(200).optional(),
+  relationship: z.string().trim().max(200).optional(),
+  status: z.enum(RECOMMENDER_STATUSES).optional(),
+  notes: z.string().max(5000).optional(),
+});
+
+export const libraryRecommenderPayloadSchema = libraryRecommenderBaseSchema;
+export type LibraryRecommenderPayload = z.infer<typeof libraryRecommenderPayloadSchema>;
+export type LibraryRecommenderFormInput = z.input<typeof libraryRecommenderPayloadSchema>;
+export const libraryRecommenderPatchSchema = libraryRecommenderBaseSchema.partial();
+export type LibraryRecommenderPatch = z.infer<typeof libraryRecommenderPatchSchema>;
+
+const libraryRecommenderLetterBaseSchema = z.object({
+  purpose: z.string().trim().min(1, "What is the letter for?").max(200),
+  status: z.enum(LETTER_STATUSES).optional(),
+  requested_on: optionalDate,
+  received_on: optionalDate,
+  notes: z.string().max(2000).optional(),
+});
+
+export const libraryRecommenderLetterPayloadSchema = libraryRecommenderLetterBaseSchema;
+export type LibraryRecommenderLetterPayload = z.infer<typeof libraryRecommenderLetterPayloadSchema>;
+export type LibraryRecommenderLetterFormInput = z.input<typeof libraryRecommenderLetterPayloadSchema>;
+export const libraryRecommenderLetterPatchSchema = libraryRecommenderLetterBaseSchema.partial();
+export type LibraryRecommenderLetterPatch = z.infer<typeof libraryRecommenderLetterPatchSchema>;

@@ -50,3 +50,9 @@ export type ContactKind = (typeof CONTACT_KINDS)[number];
 
 export const EMPLOYER_VIEWS = ["list", "board"] as const;
 export type EmployerView = (typeof EMPLOYER_VIEWS)[number];
+
+export const RECOMMENDER_STATUSES = ["potential", "asked", "agreed", "declined"] as const;
+export type RecommenderStatus = (typeof RECOMMENDER_STATUSES)[number];
+
+export const LETTER_STATUSES = ["requested", "received", "declined"] as const;
+export type LetterStatus = (typeof LETTER_STATUSES)[number];

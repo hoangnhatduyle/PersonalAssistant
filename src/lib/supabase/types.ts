@@ -842,6 +842,107 @@ export type Database = {
           },
         ]
       }
+      library_recommender_letters: {
+        Row: {
+          created_at: string
+          id: string
+          notes: string
+          purpose: string
+          received_on: string | null
+          recommender_id: string
+          requested_on: string | null
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          notes?: string
+          purpose: string
+          received_on?: string | null
+          recommender_id: string
+          requested_on?: string | null
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          notes?: string
+          purpose?: string
+          received_on?: string | null
+          recommender_id?: string
+          requested_on?: string | null
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "library_recommender_letters_recommender_id_fkey"
+            columns: ["recommender_id"]
+            isOneToOne: false
+            referencedRelation: "library_recommenders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "library_recommender_letters_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      library_recommenders: {
+        Row: {
+          affiliation: string
+          created_at: string
+          email: string
+          id: string
+          name: string
+          notes: string
+          relationship: string
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          affiliation?: string
+          created_at?: string
+          email?: string
+          id?: string
+          name: string
+          notes?: string
+          relationship?: string
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          affiliation?: string
+          created_at?: string
+          email?: string
+          id?: string
+          name?: string
+          notes?: string
+          relationship?: string
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "library_recommenders_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       library_interviews: {
         Row: {
           application_id: string

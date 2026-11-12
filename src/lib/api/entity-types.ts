@@ -2,7 +2,7 @@ import type { Database } from "@/lib/supabase/types";
 import type { MeetingBlock } from "@/lib/calendar/recurrence";
 import type { LabelColorToken } from "@/lib/label-colors";
 import type { ApplicationStatus } from "@/lib/library/application-status";
-import type { ContactKind, InterviewKind, InterviewOutcome, WorkMode } from "@/lib/library/constants";
+import type { ContactKind, InterviewKind, InterviewOutcome, LetterStatus, RecommenderStatus, WorkMode } from "@/lib/library/constants";
 import type { SalaryPeriod } from "@/lib/library/salary";
 
 // Row types for every entity a hook fetches/mutates. Kept separate from
@@ -263,3 +263,11 @@ export interface LibraryInterviewWithPerson extends LibraryInterview {
 export type LibraryTimelineEntry =
   | { type: "status"; id: string; at: string; from_status: ApplicationStatus | null; to_status: ApplicationStatus }
   | { type: "interview"; id: string; at: string; interview: LibraryInterviewWithPerson };
+
+export type LibraryRecommenderLetter = Omit<Database["public"]["Tables"]["library_recommender_letters"]["Row"], "status"> & {
+  status: LetterStatus;
+};
+export type LibraryRecommender = Omit<Database["public"]["Tables"]["library_recommenders"]["Row"], "status"> & {
+  status: RecommenderStatus;
+  letters: LibraryRecommenderLetter[];
+};

@@ -7,6 +7,7 @@ import { EmployerCard } from "@/components/library/EmployerCard";
 import { EmployerForm } from "@/components/library/EmployerForm";
 import { PipelineBoard } from "@/components/library/PipelineBoard";
 import { PipelineFunnel } from "@/components/library/PipelineFunnel";
+import { RecommendationSection } from "@/components/library/RecommendationSection";
 import { Button } from "@/components/ui/Button";
 import { Dialog } from "@/components/ui/Dialog";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -210,6 +211,8 @@ export function EmployersBrowser() {
           itemLabel="employers"
         />
       )}
+
+      <RecommendationSection />
 
       <Dialog open={isEmployerOpen} onClose={() => setEmployerOpen(false)} title="Add an employer" size="lg">
         <EmployerForm onSubmit={handleCreateEmployer} onCancel={() => setEmployerOpen(false)} submitLabel="Add employer" />

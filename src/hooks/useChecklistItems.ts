@@ -55,3 +55,32 @@ export function useDeleteChecklistItem(id: string, taskId: string) {
     onSuccess: () => invalidateChecklistQueries(queryClient, taskId),
   });
 }
+
+/** Persists a new order: renumbers positions 0..n-1 and PATCHes only the rows whose position changed. The list cache is updated optimistically and rolled back on failure. */
+export function useReorderChecklistItems(taskId: string) {
+  const queryClient = useQueryClient();
+  const listKey = checklistItemKeys.list({ taskId });
+  return useMutation({
+    mutationFn: async (ordered: ChecklistItemRow[]) => {
+      const changed = ordered.flatMap((item, position) => (item.position === position ? [] : [{ id: item.id, position }]));
+      await Promise.all(
+        changed.map(({ id, position }) =>
+          apiFetch<ChecklistItemRow>(`/api/checklist-items/${id}`, { method: "PATCH", body: { position } }),
+        ),
+      );
+    },
+    onMutate: async (ordered) => {
+      await queryClient.cancelQueries({ queryKey: listKey });
+      const previous = queryClient.getQueryData<ChecklistItemRow[]>(listKey);
+      queryClient.setQueryData<ChecklistItemRow[]>(
+        listKey,
+        ordered.map((item, position) => ({ ...item, position })),
+      );
+      return { previous };
+    },
+    onError: (_error, _ordered, context) => {
+      if (context?.previous) queryClient.setQueryData(listKey, context.previous);
+    },
+    onSettled: () => invalidateChecklistQueries(queryClient, taskId),
+  });
+}

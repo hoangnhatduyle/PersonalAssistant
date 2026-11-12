@@ -103,4 +103,5 @@ export const libraryKeys = {
   applicationsAll: () => [...libraryKeys.all, "applications"] as const,
   interviews: (applicationId: string) => [...libraryKeys.all, "interviews", applicationId] as const,
   timeline: (applicationId: string) => [...libraryKeys.all, "timeline", applicationId] as const,
+  recommenders: () => [...libraryKeys.all, "recommenders"] as const,
 };
