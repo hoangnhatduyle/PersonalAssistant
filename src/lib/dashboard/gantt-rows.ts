@@ -183,9 +183,9 @@ function groupSessionsUnderDeadlines(rows: GanttRow[]): GanttRow[] {
   return top.flatMap((row) => [row, ...(childrenByParent.get(row.id) ?? [])]);
 }
 
-const KIND_LABEL: Record<GanttRowKind, string> = { deadline: "Deadline", task: "Task", session: "Session" };
+export const KIND_LABEL: Record<GanttRowKind, string> = { deadline: "Deadline", task: "Task", session: "Session" };
 
-const SOURCE_PHRASE: Record<ProgressSource, string> = {
+export const SOURCE_PHRASE: Record<ProgressSource, string> = {
   manual: "set by you",
   "session-time": "from done sessions vs estimate",
   "session-count": "from done sessions",

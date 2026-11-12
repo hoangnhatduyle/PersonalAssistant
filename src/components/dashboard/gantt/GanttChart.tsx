@@ -1,12 +1,13 @@
 "use client";
 
-import { createContext, memo, useContext, useEffect, useMemo, useRef } from "react";
+import { createContext, memo, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 import { Gantt, WillowDark, type IApi, type ITask } from "@svar-ui/react-gantt";
 import "@svar-ui/react-gantt/style.css";
 import "./gantt-theme.css";
 import { describeGanttRow, type GanttRow, type GanttUnit } from "@/lib/dashboard/gantt-rows";
 import { CELL_HEIGHT, SCALE_HEIGHT } from "@/components/dashboard/gantt/gantt-metrics";
+import { GanttTooltip } from "@/components/dashboard/gantt/GanttTooltip";
 import { DATES_COLUMN_PX, GanttRowLabels } from "@/components/dashboard/gantt/GanttRowLabels";
 import { fitCellWidth, labelColumnWidth } from "@/components/dashboard/gantt/cell-width";
 import { useElementWidth } from "@/hooks/useElementWidth";
@@ -43,16 +44,17 @@ const isSameDay = (a: Date, b: Date) => a.getFullYear() === b.getFullYear() && a
 interface BarContextValue {
   rowsById: Map<string, GanttRow>;
   open: (rowId: string) => void;
+  hover: (rowId: string | null, anchor: DOMRect | null) => void;
 }
 
-const BarContext = createContext<BarContextValue>({ rowsById: new Map(), open: () => undefined });
+const BarContext = createContext<BarContextValue>({ rowsById: new Map(), open: () => undefined, hover: () => undefined });
 
 /**
  * One bar's contents: the library supplies position and size, this supplies the look (kind colour,
  * progress fill, label), a tooltip, and keyboard access (the library's own bars are not focusable).
  */
 function Bar({ data }: { data: ITask }) {
-  const { rowsById, open } = useContext(BarContext);
+  const { rowsById, open, hover } = useContext(BarContext);
   const id = String(data.id);
   const row = rowsById.get(id);
   if (!row) return null;
@@ -70,8 +72,11 @@ function Bar({ data }: { data: ITask }) {
       role="button"
       tabIndex={0}
       aria-label={summary}
-      title={summary}
       onKeyDown={handleKeyDown}
+      onMouseEnter={(event) => hover(id, event.currentTarget.getBoundingClientRect())}
+      onMouseLeave={() => hover(null, null)}
+      onFocus={(event) => hover(id, event.currentTarget.getBoundingClientRect())}
+      onBlur={() => hover(null, null)}
       className={`cadence-bar cadence-bar--${row.kind}${row.overdue ? " cadence-bar--overdue" : ""}${row.clippedStart ? " cadence-bar--clipped" : ""}`}
     >
       <div className="cadence-bar__fill" style={{ width: `${fill}%` }} />
@@ -111,9 +116,13 @@ export const GanttChart = memo(function GanttChart({ rows, rangeStart, rangeEnd,
     [rows],
   );
 
+  const [hovered, setHovered] = useState<{ rowId: string; anchor: DOMRect } | null>(null);
+  const hover = useCallback((rowId: string | null, anchor: DOMRect | null) => setHovered(rowId && anchor ? { rowId, anchor } : null), []);
+  const hoveredRow = hovered ? rows.find((row) => row.id === hovered.rowId) : undefined;
+
   const barContext = useMemo<BarContextValue>(
-    () => ({ rowsById: new Map(rows.map((row) => [row.id, row])), open: (rowId) => onOpenRef.current(rowId) }),
-    [rows],
+    () => ({ rowsById: new Map(rows.map((row) => [row.id, row])), open: (rowId) => onOpenRef.current(rowId), hover }),
+    [rows, hover],
   );
 
   const highlightTime = useMemo(
@@ -130,32 +139,41 @@ export const GanttChart = memo(function GanttChart({ rows, rangeStart, rangeEnd,
     [],
   );
 
+  // Hovering only moves the tooltip, so the chart element is kept stable and React skips redrawing it.
+  const chart = useMemo(
+    () => (
+      <WillowDark fonts={false}>
+        <Gantt
+          tasks={tasks}
+          links={[]}
+          readonly
+          columns={false}
+          displayMode={CHART_ONLY}
+          scales={SCALES[unit]}
+          start={rangeStart}
+          end={rangeEnd}
+          autoScale={false}
+          cellWidth={cellWidth}
+          cellHeight={CELL_HEIGHT}
+          scaleHeight={SCALE_HEIGHT}
+          taskTemplate={Bar}
+          highlightTime={highlightTime}
+          init={init}
+        />
+      </WillowDark>
+    ),
+    [tasks, rangeStart, rangeEnd, unit, cellWidth, highlightTime, init],
+  );
+
   return (
     <BarContext.Provider value={barContext}>
       <div ref={outerRef} className="flex h-full w-full">
-        <GanttRowLabels rows={rows} onOpenRow={onOpenRow} widthPx={labelWidth + DATES_COLUMN_PX} />
+        <GanttRowLabels rows={rows} onOpenRow={onOpenRow} onHoverRow={hover} widthPx={labelWidth + DATES_COLUMN_PX} />
       <div ref={paneRef} className="cadence-gantt min-w-[120px] flex-1" data-unit={unit}>
-        <WillowDark fonts={false}>
-          <Gantt
-            tasks={tasks}
-            links={[]}
-            readonly
-            columns={false}
-            displayMode={CHART_ONLY}
-            scales={SCALES[unit]}
-            start={rangeStart}
-            end={rangeEnd}
-            autoScale={false}
-            cellWidth={cellWidth}
-            cellHeight={CELL_HEIGHT}
-            scaleHeight={SCALE_HEIGHT}
-            taskTemplate={Bar}
-            highlightTime={highlightTime}
-            init={init}
-          />
-        </WillowDark>
+        {chart}
       </div>
       </div>
+      {hovered && hoveredRow && <GanttTooltip row={hoveredRow} anchor={hovered.anchor} now={now} />}
     </BarContext.Provider>
   );
 });

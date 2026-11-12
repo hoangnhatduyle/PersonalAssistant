@@ -1,11 +1,13 @@
 "use client";
 
-import { describeGanttRow, formatDay, type GanttRow } from "@/lib/dashboard/gantt-rows";
+import { formatDay, type GanttRow } from "@/lib/dashboard/gantt-rows";
 import { CELL_HEIGHT, SCALE_HEIGHT, SCALE_ROWS } from "@/components/dashboard/gantt/gantt-metrics";
 
 type Props = {
   rows: GanttRow[];
   onOpenRow: (rowId: string) => void;
+  /** Reports the hovered/focused title (with its box, to anchor the tooltip), or null when it is left. */
+  onHoverRow: (rowId: string | null, anchor: DOMRect | null) => void;
   /** Column width in px. Chosen by the chart from the card's real width, since a viewport breakpoint cannot know how wide this card's column is. */
   widthPx: number;
 };
@@ -17,7 +19,7 @@ export const DATES_COLUMN_PX = 128;
  * The title column to the left of the bars: one fixed-height button per row, lined up with the chart's rows by
  * sharing its row height and starting below its two-row scale header. Clicking one opens the same dialog as its bar.
  */
-export function GanttRowLabels({ rows, onOpenRow, widthPx }: Props) {
+export function GanttRowLabels({ rows, onOpenRow, onHoverRow, widthPx }: Props) {
   return (
     <ul className="cadence-gantt-labels m-0 shrink-0 list-none p-0" style={{ width: widthPx }}>
       <li
@@ -34,8 +36,11 @@ export function GanttRowLabels({ rows, onOpenRow, widthPx }: Props) {
         <li key={row.id} style={{ height: CELL_HEIGHT }} className="flex items-center gap-2">
           <button
             type="button"
-            title={describeGanttRow(row)}
             onClick={() => onOpenRow(row.id)}
+            onMouseEnter={(event) => onHoverRow(row.id, event.currentTarget.getBoundingClientRect())}
+            onMouseLeave={() => onHoverRow(null, null)}
+            onFocus={(event) => onHoverRow(row.id, event.currentTarget.getBoundingClientRect())}
+            onBlur={() => onHoverRow(null, null)}
             className={`cadence-gantt-label cadence-gantt-label--${row.kind}${row.overdue ? " cadence-gantt-label--overdue" : ""}`}
           >
             <span aria-hidden="true" className="cadence-gantt-label__dot" />
