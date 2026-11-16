@@ -20,9 +20,9 @@ const cardsIn = (headingName: string) => {
 };
 
 describe("SettingsPageContainer", () => {
-  it("groups time zone, reminders, voice, call voice and call diagnostics under Preferences, in that order", () => {
+  it("groups time zone, reminders, voice, call diagnostics and call voice under Preferences, in that order", () => {
     render(<SettingsPageContainer />);
-    expect(cardsIn("Preferences")).toEqual(["Time zone", "Reminder cadence", "Reminder notifications", "Hands-free voice", "Call voice", "Call diagnostics"]);
+    expect(cardsIn("Preferences")).toEqual(["Time zone", "Reminder cadence", "Reminder notifications", "Hands-free voice", "Call diagnostics", "Call voice"]);
   });
 
   it("keeps only the app updates card under App", () => {

@@ -34,6 +34,12 @@ describe("buildSessionConfig", () => {
     expect(custom.audio?.output?.voice).toBe("cedar");
   });
 
+  it("sets the spoken speed only when it is not the default", () => {
+    expect(config.audio?.output).not.toHaveProperty("speed");
+    expect(buildSessionConfig({ instructions: "x", speed: 1 }).audio?.output).not.toHaveProperty("speed");
+    expect(buildSessionConfig({ instructions: "x", speed: 1.15 }).audio?.output?.speed).toBe(1.15);
+  });
+
   it("asks for low reasoning effort on a reasoning model, and omits the field otherwise", () => {
     expect(config.reasoning).toEqual({ effort: "low" });
     expect(buildSessionConfig({ instructions: "x", model: "gpt-realtime-mini" })).not.toHaveProperty("reasoning");

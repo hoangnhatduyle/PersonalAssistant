@@ -19,8 +19,8 @@ export function SettingsPageContainer() {
           <ReminderCadenceCard />
           <ReminderNotificationsCard />
           <HandsFreeVoiceToggleCard />
-          <VoicePersonaCard />
           <CallDiagnosticsToggleCard />
+          <VoicePersonaCard />
         </div>
       </section>
 

@@ -23,7 +23,7 @@ describe("voice personas", () => {
   });
 
   it("tells the model the style never changes what it does", () => {
-    expect(buildToneBlock(VOICE_PERSONAS.butler)).toMatch(/never to what you do/i);
+    expect(buildToneBlock(VOICE_PERSONAS.jarvis)).toMatch(/never to what you do/i);
   });
 
   it("falls back to the default for an unknown, null or undefined id", () => {

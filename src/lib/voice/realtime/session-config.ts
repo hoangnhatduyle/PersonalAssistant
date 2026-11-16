@@ -13,6 +13,8 @@ export interface SessionConfigInput {
   instructions: string;
   model?: string;
   voice?: string;
+  /** Spoken-audio speed multiplier (1 = normal). Omitted from the session when 1, so the default stays the API's own. */
+  speed?: number;
 }
 
 /**
@@ -60,7 +62,7 @@ export function buildSessionConfig(input: SessionConfigInput): RealtimeSessionCr
         // the user starts -- the interruption behaviour of a real conversation.
         turn_detection: { type: "semantic_vad", eagerness: "auto", create_response: true, interrupt_response: true },
       },
-      output: { voice: input.voice ?? resolveVoice() },
+      output: { voice: input.voice ?? resolveVoice(), ...(input.speed && input.speed !== 1 ? { speed: input.speed } : {}) },
     },
   };
 }

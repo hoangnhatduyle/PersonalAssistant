@@ -18,7 +18,7 @@ export async function buildCallInstructions(
   now: Date = new Date(),
   /** A specific conversation to build for. Defaults to the user's active one; the eval passes its own so concurrent cases stay isolated. */
   conversationId?: string,
-): Promise<{ instructions: string; timezone: string; voice: string }> {
+): Promise<{ instructions: string; timezone: string; voice: string; speed: number }> {
   const conversation = { conversationId: conversationId ?? (await resolveActiveConversation(supabase, userId, now)).conversationId };
   const [timezone, persona, context, todaySchedule, draft, history] = await Promise.all([
     loadUserTimezone(supabase, userId),
@@ -32,6 +32,7 @@ export async function buildCallInstructions(
     timezone,
     // The voice cannot change once a call is under way, but the tone rides in the instructions, which a mid-call refresh rebuilds -- so it must be included here, not only at call start.
     voice: persona.voice,
+    speed: persona.speed,
     instructions: buildRealtimeInstructions({
       now,
       timezone,

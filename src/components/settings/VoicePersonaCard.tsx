@@ -49,7 +49,7 @@ export function VoicePersonaCard() {
   };
 
   return (
-    <GlassPanel className="flex flex-col gap-2 p-4 sm:col-span-2 lg:col-span-3">
+    <GlassPanel className="flex flex-col gap-2 p-4">
       <p className="font-display text-sm font-medium text-text-primary">Call voice</p>
       <p className="text-xs text-text-secondary">
         Choose how the assistant sounds and speaks on a call. It takes effect from your next call.
@@ -62,20 +62,20 @@ export function VoicePersonaCard() {
           </Button>
         </div>
       ) : isLoading || !data ? (
-        <Skeleton className="h-16 w-full" />
+        <Skeleton className="h-40 w-full" />
       ) : (
-        <div role="radiogroup" aria-label="Call voice" className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+        <div role="radiogroup" aria-label="Call voice" className="flex flex-col gap-2">
           {VOICE_PERSONA_IDS.map((id) => {
             const persona = VOICE_PERSONAS[id];
             const selected = data.voice_persona === id;
             return (
               <div
                 key={id}
-                className={`flex flex-col gap-2 rounded-lg border p-3 transition-colors focus-within:ring-2 focus-within:ring-accent-indigo/50 ${
+                className={`flex items-center justify-between gap-3 rounded-lg border p-3 transition-colors focus-within:ring-2 focus-within:ring-accent-indigo/50 ${
                   selected ? "border-accent-indigo bg-accent-indigo/10" : "border-panel-border hover:bg-bg-void-elevated"
                 } ${updateSettings.isPending ? "opacity-70" : ""}`}
               >
-                <label className="flex cursor-pointer flex-col gap-1">
+                <label className="flex min-w-0 flex-1 cursor-pointer flex-col gap-1">
                   <input
                     type="radio"
                     name="voice-persona"
@@ -91,7 +91,7 @@ export function VoicePersonaCard() {
                 <Button
                   size="sm"
                   variant="secondary"
-                  className="self-start"
+                  className="shrink-0"
                   aria-label={`${playingId === id ? "Stop" : "Play"} ${persona.label} sample`}
                   onClick={() => togglePreview(id)}
                 >

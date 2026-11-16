@@ -23,16 +23,20 @@ const outDir = path.join(rootDir, "public", "voice-samples");
 const SAMPLE_TEXT = "Hi, I'm your assistant. You have two deadlines tomorrow and a study session at four. Shall I walk you through them?";
 
 const PERSONAS = [
-  { id: "classic", voice: "marin", tone: "Warm, clear and friendly." },
+  { id: "classic", voice: "marin", speed: 1, tone: "Warm, clear and friendly." },
   {
-    id: "butler",
-    voice: "ash",
-    tone: "A composed, impeccably polite personal butler: calm, formal, dry and understated, with light wit. Never gush.",
+    id: "jarvis",
+    voice: "echo",
+    speed: 1.1,
+    tone: "The ideal AI assistant, like J.A.R.V.I.S.: professional, razor-sharp and quick, energetic, confident and polished, lively varied intonation, with dry clever wit and a touch of smart humor.",
   },
-  { id: "coach", voice: "coral", tone: "An upbeat, encouraging coach: positive energy, sincere and brief." },
-  { id: "calm", voice: "sage", tone: "Soft, slow and unhurried, reassuring and soothing. Never rushed." },
-  { id: "direct", voice: "echo", tone: "Brisk and minimal: answer first, no pleasantries or filler, polite but efficient." },
+  { id: "coach", voice: "coral", speed: 1, tone: "An upbeat, encouraging coach: positive energy, sincere and brief." },
+  { id: "calm", voice: "sage", speed: 0.95, tone: "Soft, slow and unhurried, reassuring and soothing. Never rushed." },
+  { id: "direct", voice: "ash", speed: 1.1, tone: "Brisk and minimal: answer first, no pleasantries or filler, polite but efficient." },
 ];
+
+// Optional ids on the command line regenerate only those clips (each is a paid call).
+const only = process.argv.slice(2);
 
 async function main() {
   if (!process.env.OPENAI_API_KEY) {
@@ -41,12 +45,14 @@ async function main() {
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
   await mkdir(outDir, { recursive: true });
 
-  for (const { id, voice, tone } of PERSONAS) {
+  for (const { id, voice, speed, tone } of PERSONAS) {
+    if (only.length > 0 && !only.includes(id)) continue;
     const response = await openai.audio.speech.create({
       model: "gpt-4o-mini-tts",
       voice,
       input: SAMPLE_TEXT,
       instructions: tone,
+      speed,
       response_format: "mp3",
     });
     const file = path.join(outDir, `${id}.mp3`);

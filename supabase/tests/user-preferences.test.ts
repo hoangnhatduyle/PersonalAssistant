@@ -157,7 +157,7 @@ describe("user_preferences schema", () => {
 
   it("voice_persona accepts the known preset ids and rejects anything else", async () => {
     const user = await createAuthenticatedUser();
-    const id = await createUserPreferences(admin, user.userId, { voice_persona: "butler" });
+    const id = await createUserPreferences(admin, user.userId, { voice_persona: "jarvis" });
     const ok = await admin.from("user_preferences").update({ voice_persona: "calm" }).eq("id", id);
     expect(ok.error).toBeNull();
     const bad = await admin.from("user_preferences").update({ voice_persona: "pirate" }).eq("id", id);

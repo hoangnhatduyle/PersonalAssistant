@@ -37,13 +37,13 @@ describe("VoicePersonaCard", () => {
     renderWithProviders(<VoicePersonaCard />);
     expect(screen.getAllByRole("radio")).toHaveLength(5);
     expect((screen.getByRole("radio", { name: /classic/i }) as HTMLInputElement).checked).toBe(true);
-    expect((screen.getByRole("radio", { name: /butler/i }) as HTMLInputElement).checked).toBe(false);
+    expect((screen.getByRole("radio", { name: /jarvis/i }) as HTMLInputElement).checked).toBe(false);
   });
 
   it("saves the chosen preset's id", async () => {
     renderWithProviders(<VoicePersonaCard />);
-    fireEvent.click(screen.getByRole("radio", { name: /butler/i }));
-    await waitFor(() => expect(mutateAsync).toHaveBeenCalledWith({ voice_persona: "butler" }));
+    fireEvent.click(screen.getByRole("radio", { name: /jarvis/i }));
+    await waitFor(() => expect(mutateAsync).toHaveBeenCalledWith({ voice_persona: "jarvis" }));
   });
 
   it("does not save again when the current preset is picked", () => {
@@ -59,21 +59,21 @@ describe("VoicePersonaCard", () => {
 
   it("plays a preset's pre-rendered sample without selecting it, and stops it on a second press", () => {
     renderWithProviders(<VoicePersonaCard />);
-    fireEvent.click(screen.getByRole("button", { name: /play butler sample/i }));
-    expect(audio.instances[0].src).toBe("/voice-samples/butler.mp3");
+    fireEvent.click(screen.getByRole("button", { name: /play jarvis sample/i }));
+    expect(audio.instances[0].src).toBe("/voice-samples/jarvis.mp3");
     expect(audio.instances[0].play).toHaveBeenCalled();
     expect(mutateAsync).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: /stop butler sample/i }));
+    fireEvent.click(screen.getByRole("button", { name: /stop jarvis sample/i }));
     expect(audio.instances[0].pause).toHaveBeenCalledTimes(2);
-    expect(screen.getByRole("button", { name: /play butler sample/i })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /play jarvis sample/i })).toBeTruthy();
   });
 
   it("switches the one shared player when another sample is started", () => {
     renderWithProviders(<VoicePersonaCard />);
-    fireEvent.click(screen.getByRole("button", { name: /play butler sample/i }));
+    fireEvent.click(screen.getByRole("button", { name: /play jarvis sample/i }));
     fireEvent.click(screen.getByRole("button", { name: /play coach sample/i }));
     expect(audio.instances).toHaveLength(1);
     expect(audio.instances[0].src).toBe("/voice-samples/coach.mp3");
-    expect(screen.getByRole("button", { name: /play butler sample/i })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /play jarvis sample/i })).toBeTruthy();
   });
 });

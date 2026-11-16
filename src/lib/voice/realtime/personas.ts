@@ -7,7 +7,7 @@ import { REALTIME_DEFAULT_VOICE } from "@/lib/voice/realtime/constants";
  * ever choose an id, so the browser can never send an arbitrary voice string
  * or prompt text.
  */
-export const VOICE_PERSONA_IDS = ["classic", "butler", "coach", "calm", "direct"] as const;
+export const VOICE_PERSONA_IDS = ["classic", "jarvis", "coach", "calm", "direct"] as const;
 export type VoicePersonaId = (typeof VOICE_PERSONA_IDS)[number];
 
 export const DEFAULT_VOICE_PERSONA_ID: VoicePersonaId = "classic";
@@ -18,6 +18,8 @@ export interface VoicePersona {
   description: string;
   /** A built-in Realtime voice name. */
   voice: string;
+  /** Playback speed multiplier for the call's spoken audio (1 = normal, Realtime allows 0.25-1.5). */
+  speed: number;
   /** Added to the call instructions; empty keeps the shipped assistant style untouched. */
   tone: string;
 }
@@ -28,20 +30,23 @@ export const VOICE_PERSONAS: Record<VoicePersonaId, VoicePersona> = {
     label: "Classic",
     description: "Warm, clear and friendly. The default.",
     voice: REALTIME_DEFAULT_VOICE,
+    speed: 1,
     tone: "",
   },
-  butler: {
-    id: "butler",
-    label: "Butler",
-    description: "Calm, formal and dry, with understated wit.",
-    voice: "ash",
-    tone: "Speak like a composed, impeccably polite personal butler: calm, formal, dry and understated, with the occasional light wit. Address the user as \"sir\" or \"ma'am\" only if they have told you which they prefer, otherwise avoid titles. Never gush or use exclamation marks.",
+  jarvis: {
+    id: "jarvis",
+    label: "Jarvis",
+    description: "Sharp, witty and quick. A brilliant assistant with a sense of humor.",
+    voice: "echo",
+    speed: 1.1,
+    tone: "Speak like J.A.R.V.I.S., the ideal AI assistant: professional, razor-sharp and quick, with an energetic, confident, polished delivery and lively, varied intonation. Be smartly funny: dry, clever one-liners and light, well-timed wit, never silly and never at the expense of the answer. Sound like you are always one step ahead, anticipating what the user needs next and offering it in a few words. Warm and respectful, never stiff, slow or monotone. Keep the humor to a touch per reply and drop it entirely when the user seems stressed or the matter is serious.",
   },
   coach: {
     id: "coach",
     label: "Coach",
     description: "Upbeat and encouraging, with gentle nudges.",
     voice: "coral",
+    speed: 1,
     tone: "Speak like an upbeat, encouraging coach: positive energy, brief praise for progress, and a gentle nudge when a deadline is close. Stay sincere and keep it short; never lecture.",
   },
   calm: {
@@ -49,13 +54,15 @@ export const VOICE_PERSONAS: Record<VoicePersonaId, VoicePersona> = {
     label: "Calm",
     description: "Soft, slow and unhurried. Good for evenings.",
     voice: "sage",
+    speed: 0.95,
     tone: "Speak softly, slowly and unhurriedly in a reassuring, soothing tone. Use gentle, simple phrasing and leave room to breathe between thoughts; never sound rushed or urgent.",
   },
   direct: {
     id: "direct",
     label: "Straight-shooter",
     description: "Brisk and minimal. No small talk.",
-    voice: "echo",
+    voice: "ash",
+    speed: 1.1,
     tone: "Be brisk and minimal: give the answer first, in as few words as possible, with no pleasantries, filler or small talk. Stay polite, just efficient.",
   },
 };
