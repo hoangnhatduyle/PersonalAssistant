@@ -13,7 +13,7 @@ describe("user_preferences schema", () => {
     const { data, error } = await admin
       .from("user_preferences")
       .select(
-        "default_reminder_lead_minutes, quiet_hours_start, quiet_hours_end, timezone, voice_capture_enabled, email_reminders_enabled, hands_free_voice_enabled, speak_suggestions_aloud, owner_color",
+        "default_reminder_lead_minutes, quiet_hours_start, quiet_hours_end, timezone, voice_capture_enabled, email_reminders_enabled, hands_free_voice_enabled, speak_suggestions_aloud, owner_color, voice_persona",
       )
       .eq("id", id)
       .single();
@@ -28,6 +28,7 @@ describe("user_preferences schema", () => {
       hands_free_voice_enabled: false,
       speak_suggestions_aloud: false,
       owner_color: null,
+      voice_persona: "classic",
     });
   });
 
@@ -42,7 +43,7 @@ describe("user_preferences schema", () => {
     const { data, error } = await admin
       .from("user_preferences")
       .select(
-        "default_reminder_lead_minutes, quiet_hours_start, quiet_hours_end, timezone, voice_capture_enabled, email_reminders_enabled, hands_free_voice_enabled, speak_suggestions_aloud, owner_color",
+        "default_reminder_lead_minutes, quiet_hours_start, quiet_hours_end, timezone, voice_capture_enabled, email_reminders_enabled, hands_free_voice_enabled, speak_suggestions_aloud, owner_color, voice_persona",
       )
       .eq("id", id)
       .single();
@@ -57,6 +58,7 @@ describe("user_preferences schema", () => {
       hands_free_voice_enabled: DEFAULT_USER_PREFERENCES.hands_free_voice_enabled,
       speak_suggestions_aloud: DEFAULT_USER_PREFERENCES.speak_suggestions_aloud,
       owner_color: DEFAULT_USER_PREFERENCES.owner_color,
+      voice_persona: DEFAULT_USER_PREFERENCES.voice_persona,
     });
   });
 
@@ -151,6 +153,15 @@ describe("user_preferences schema", () => {
 
     const { error } = await admin.from("user_preferences").update({ default_reminder_lead_minutes: 43201 }).eq("id", id);
     expect(error).not.toBeNull();
+  });
+
+  it("voice_persona accepts the known preset ids and rejects anything else", async () => {
+    const user = await createAuthenticatedUser();
+    const id = await createUserPreferences(admin, user.userId, { voice_persona: "butler" });
+    const ok = await admin.from("user_preferences").update({ voice_persona: "calm" }).eq("id", id);
+    expect(ok.error).toBeNull();
+    const bad = await admin.from("user_preferences").update({ voice_persona: "pirate" }).eq("id", id);
+    expect(bad.error).not.toBeNull();
   });
 
   it("owner_color accepts a #RRGGBB hex, null, and rejects anything else", async () => {

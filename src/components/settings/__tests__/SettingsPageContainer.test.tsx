@@ -7,6 +7,7 @@ vi.mock("@/components/settings/TimeZoneCard", () => ({ TimeZoneCard: () => <div 
 vi.mock("@/components/settings/ReminderCadenceCard", () => ({ ReminderCadenceCard: () => <div data-testid="card">Reminder cadence</div> }));
 vi.mock("@/components/settings/ReminderNotificationsCard", () => ({ ReminderNotificationsCard: () => <div data-testid="card">Reminder notifications</div> }));
 vi.mock("@/components/settings/HandsFreeVoiceToggleCard", () => ({ HandsFreeVoiceToggleCard: () => <div data-testid="card">Hands-free voice</div> }));
+vi.mock("@/components/settings/VoicePersonaCard", () => ({ VoicePersonaCard: () => <div data-testid="card">Call voice</div> }));
 vi.mock("@/components/settings/CallDiagnosticsToggleCard", () => ({ CallDiagnosticsToggleCard: () => <div data-testid="card">Call diagnostics</div> }));
 vi.mock("@/components/settings/PeopleManagementCard", () => ({ PeopleManagementCard: () => <div data-testid="card">People management</div> }));
 vi.mock("@/components/settings/AppUpdatesCard", () => ({ AppUpdatesCard: () => <div data-testid="card">App updates</div> }));
@@ -19,9 +20,9 @@ const cardsIn = (headingName: string) => {
 };
 
 describe("SettingsPageContainer", () => {
-  it("groups time zone, reminders, voice and call diagnostics under Preferences, in that order", () => {
+  it("groups time zone, reminders, voice, call voice and call diagnostics under Preferences, in that order", () => {
     render(<SettingsPageContainer />);
-    expect(cardsIn("Preferences")).toEqual(["Time zone", "Reminder cadence", "Reminder notifications", "Hands-free voice", "Call diagnostics"]);
+    expect(cardsIn("Preferences")).toEqual(["Time zone", "Reminder cadence", "Reminder notifications", "Hands-free voice", "Call voice", "Call diagnostics"]);
   });
 
   it("keeps only the app updates card under App", () => {

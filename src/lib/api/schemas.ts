@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { KNOWLEDGE_MAX_PASTED_TEXT_CHARS, KNOWLEDGE_MAX_TITLE_CHARS } from "@/lib/knowledge/constants";
 import { MAX_SPEAK_TEXT_CHARS } from "@/lib/voice/constants";
+import { VOICE_PERSONA_IDS } from "@/lib/voice/realtime/personas";
 import { LABEL_COLOR_TOKENS } from "@/lib/label-colors";
 import { MAX_REMINDER_LEAD_MINUTES } from "@/lib/reminders/lead-time";
 import { MAX_APPOINTMENT_DURATION_MINUTES } from "@/lib/appointments/types";
@@ -471,6 +472,7 @@ export const userPreferencesPatchSchema = z
     speak_suggestions_aloud: z.boolean(),
     // null clears the owner's color back to the built-in per-type colors.
     owner_color: z.string().regex(HEX_COLOR_REGEX, "Expected #RRGGBB hex color").nullable(),
+    voice_persona: z.enum(VOICE_PERSONA_IDS),
   })
   .partial()
   .superRefine((value, ctx) => {

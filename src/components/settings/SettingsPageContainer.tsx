@@ -4,6 +4,7 @@ import { ReminderCadenceCard } from "@/components/settings/ReminderCadenceCard";
 import { ReminderNotificationsCard } from "@/components/settings/ReminderNotificationsCard";
 import { PeopleManagementCard } from "@/components/settings/PeopleManagementCard";
 import { AppUpdatesCard } from "@/components/settings/AppUpdatesCard";
+import { VoicePersonaCard } from "@/components/settings/VoicePersonaCard";
 import { CallDiagnosticsToggleCard } from "@/components/settings/CallDiagnosticsToggleCard";
 
 export function SettingsPageContainer() {
@@ -18,6 +19,7 @@ export function SettingsPageContainer() {
           <ReminderCadenceCard />
           <ReminderNotificationsCard />
           <HandsFreeVoiceToggleCard />
+          <VoicePersonaCard />
           <CallDiagnosticsToggleCard />
         </div>
       </section>

@@ -34,12 +34,12 @@ export async function POST() {
     // A previous call that never reported its end (app killed) must not stay open.
     await supabase.rpc("close_open_voice_realtime_calls");
 
-    const { instructions } = await buildCallInstructions(supabase, user.id, now);
+    const { instructions, voice } = await buildCallInstructions(supabase, user.id, now);
     const model = resolveModel();
     const openai = new OpenAI({ apiKey: requireEnv("OPENAI_API_KEY") });
     const secret = await openai.realtime.clientSecrets.create({
       expires_after: { anchor: "created_at", seconds: REALTIME_CLIENT_SECRET_TTL_SECONDS },
-      session: buildSessionConfig({ instructions, model }),
+      session: buildSessionConfig({ instructions, model, voice }),
     });
 
     const { data: call, error } = await supabase.from("voice_realtime_calls").insert({ user_id: user.id }).select("id").single();

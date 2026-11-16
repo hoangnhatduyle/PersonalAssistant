@@ -1,4 +1,5 @@
 import type { Database } from "@/lib/supabase/types";
+import type { VoicePersonaId } from "@/lib/voice/realtime/personas";
 import type { MeetingBlock } from "@/lib/calendar/recurrence";
 import type { LabelColorToken } from "@/lib/label-colors";
 import type { ApplicationStatus } from "@/lib/library/application-status";
@@ -149,6 +150,8 @@ export interface UserPreferences {
   speak_suggestions_aloud: boolean;
   /** The account owner's own display color (#RRGGBB) for Calendar/Courses; null = never chosen, built-in colors apply. */
   owner_color: string | null;
+  /** Which voice + speaking style the live call uses; an id from lib/voice/realtime/personas.ts. */
+  voice_persona: VoicePersonaId;
   updated_at: string | null;
 }
 
@@ -171,6 +174,7 @@ export const DEFAULT_USER_PREFERENCES: UserPreferences = {
   hands_free_voice_enabled: false,
   speak_suggestions_aloud: false,
   owner_color: null,
+  voice_persona: "classic",
   updated_at: null,
 };
 

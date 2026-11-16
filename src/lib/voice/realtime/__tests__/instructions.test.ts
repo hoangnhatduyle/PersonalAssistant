@@ -30,6 +30,13 @@ describe("buildRealtimeInstructions", () => {
     expect(buildRealtimeInstructions(base as never)).toContain(CONVERSATION_SYSTEM_PROMPT);
   });
 
+  it("places the chosen speaking style between the call overrides and the shipped prompt, and adds nothing when there is none", () => {
+    const styled = buildRealtimeInstructions({ ...base, toneBlock: "SPEAKING STYLE -- be terse." } as never);
+    expect(styled.indexOf("SPEAKING STYLE")).toBeGreaterThan(styled.indexOf(REALTIME_ADAPTATION));
+    expect(styled.indexOf("SPEAKING STYLE")).toBeLessThan(styled.indexOf(CONVERSATION_SYSTEM_PROMPT));
+    expect(buildRealtimeInstructions({ ...base, toneBlock: "" } as never)).toBe(buildRealtimeInstructions(base as never));
+  });
+
   it("embeds the user's clock in their timezone and their entity data", () => {
     const text = buildRealtimeInstructions({ ...base, context: { ...context, people: [{ id: "p-1", name: "Châu", relationship: "sister" }] } } as never);
     expect(text).toContain("America/New_York");

@@ -50,12 +50,17 @@ export interface RealtimeInstructionsInput {
   todaySchedule: ScheduleToolPayload;
   draft: DraftMutationRecord | null;
   history: readonly ConversationHistoryTurn[];
+  /** The user's chosen speaking style (see personas.ts buildToneBlock); empty or omitted leaves the shipped style. */
+  toneBlock?: string;
 }
 
 export function buildRealtimeInstructions(input: RealtimeInstructionsInput): string {
   return [
     REALTIME_ADAPTATION,
+    input.toneBlock,
     CONVERSATION_SYSTEM_PROMPT,
     buildTurnContext(input.now, input.timezone, input.context, input.todaySchedule, input.draft) + describeHistory(input.history),
-  ].join("\n\n");
+  ]
+    .filter((part): part is string => Boolean(part))
+    .join("\n\n");
 }
